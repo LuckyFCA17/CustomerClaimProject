@@ -27,7 +27,16 @@ const PROCESS_STEPS = [
   },
 ];
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // Dibaca di server agar halaman login tidak perlu useSearchParams (dan Suspense).
+  const params = await searchParams;
+  const raw = params.callbackUrl;
+  const callbackUrl = typeof raw === "string" ? raw : undefined;
+
   return (
     <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_480px]">
       <section className="hidden flex-col justify-between bg-nid-orange-500 p-10 text-white lg:flex">
@@ -74,7 +83,7 @@ export default function LoginPage() {
               <CardDescription>Masuk untuk mengelola klaim pelanggan, CPAR, dan monitoring CAPA.</CardDescription>
             </CardHeader>
             <CardContent>
-              <LoginForm />
+              <LoginForm callbackUrl={callbackUrl} />
             </CardContent>
           </Card>
         </div>

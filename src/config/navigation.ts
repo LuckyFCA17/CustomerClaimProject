@@ -8,21 +8,12 @@ import {
   LayoutDashboard,
 } from "lucide-react";
 
-/**
- * Kode role (§3). Fase 1 menggantinya dengan enum Prisma `RoleCode`;
- * `tests/unit/navigation.test.ts` menjaga daftarnya tetap sinkron.
- */
-export const ROLE_CODES = [
-  "QA",
-  "QA_HEAD",
-  "USER_DEPT",
-  "USER_HEAD",
-  "FACTORY_MGR",
-  "PRESDIR",
-  "ADMIN",
-] as const;
+import { RoleCode } from "@/generated/prisma/enums";
 
-export type RoleCode = (typeof ROLE_CODES)[number];
+/** Kode role (§3) — sumber kebenarannya enum Prisma `RoleCode`. */
+export const ROLE_CODES = Object.values(RoleCode);
+
+export type { RoleCode };
 
 export const ROLE_LABEL: Record<RoleCode, string> = {
   QA: "QA Staff",

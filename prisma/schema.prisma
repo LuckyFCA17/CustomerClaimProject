@@ -1,0 +1,685 @@
+// NCC Portal — NIFCO Customer Claim
+// Skema ini mengikuti PLAN.md §1. Perubahan skema harus dibarengi pembaruan PLAN.md.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── ENUMS ─────────────────────────────
+
+enum RoleCode {
+  QA
+  QA_HEAD
+  USER_DEPT
+  USER_HEAD
+  FACTORY_MGR
+  PRESDIR
+  ADMIN
+}
+
+enum ClaimStatus {
+  DRAFT
+  PENDING_QA_HEAD_REVIEW
+  REVISION_REQUESTED
+  PUBLISHED
+  IGNORED
+  CPAR_ISSUED
+  CPAR_IN_PROGRESS
+  CPAR_UNDER_VERIFICATION
+  CPAR_REVISION
+  CPAR_APPROVED
+  CAPA_MONITORING
+  VERIFIED_CLOSED
+}
+
+enum ClaimType {
+  OFFICIAL
+  NON_OFFICIAL
+  INFORMATION_ONLY
+}
+
+enum Shift {
+  MORNING
+  NIGHT
+}
+
+enum FailurePlaceType {
+  REGULAR
+  DOMESTIC
+  EXPORT
+  SERVICE_PART
+}
+
+enum OriginPlantType {
+  NID
+  PASSTHROUGH
+  VENDOR_SUBCON
+}
+
+enum OccurrenceCount {
+  FIRST_TIME
+  SECOND_TIME
+  THIRD_OR_MORE
+}
+
+enum PartSide {
+  STANDARD
+  ACTUAL
+}
+
+enum QtyUnit {
+  PCS
+  BOX
+}
+
+enum ResponsibilityType {
+  CFT
+  USER_DEPT
+}
+
+enum CparSectionKey {
+  PROBLEM_DESCRIPTION
+  TEMPORARY_ACTION
+  ROOT_CAUSE_OCCURRENCE
+  ROOT_CAUSE_OUTFLOW
+  PERMANENT_COUNTERMEASURE
+  STANDARDIZATION_HORIZONTAL
+  EFFECTIVENESS_PLAN
+}
+
+enum VerificationDecision {
+  VERIFIED
+  REVISE
+}
+
+enum MonitoringStatus {
+  PENDING
+  EFFECTIVE
+  NOT_EFFECTIVE
+}
+
+enum DocumentKind {
+  BAD_NEWS
+  QUICK_INFO
+  CPAR
+  MONITORING
+  A3
+}
+
+enum NotificationType {
+  CLAIM_REVIEW_REQUEST
+  CLAIM_REVISION_REQUEST
+  NEW_CUSTOMER_CLAIM
+  CPAR_REQUEST
+  CLAIM_IGNORATION
+  CPAR_DAILY_REMINDER
+  CPAR_REVIEW_REQUEST
+  CPAR_REVIEW_REMINDER
+  CPAR_REVISION_REQUEST
+  CPAR_APPROVED
+  MONITORING_EVIDENCE_REQUEST
+  MONITORING_WEEKLY_REMINDER
+  CAPA_NOT_EFFECTIVE
+  MONITORING_FINISHED
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+enum CounterScope {
+  CLAIM
+  CPAR
+}
+
+// ─────────────────────── IDENTITY & ORG ───────────────────────
+
+model Department {
+  id       String  @id @default(cuid())
+  code     String  @unique
+  name     String
+  email    String?
+  isActive Boolean @default(true)
+
+  users            User[]
+  responsibleCpars Cpar[]          @relation("CparResponsibleDept")
+  cftMemberships   CparCftMember[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([deletedAt])
+}
+
+model Role {
+  id    String     @id @default(cuid())
+  code  RoleCode   @unique
+  name  String
+  users UserRole[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model User {
+  id           String      @id @default(cuid())
+  employeeNo   String?     @unique
+  name         String
+  email        String      @unique
+  passwordHash String
+  /// Dicetak di blok tanda tangan PDF (§9).
+  jobTitle     String
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  isActive     Boolean     @default(true)
+  lastLoginAt  DateTime?
+
+  roles           UserRole[]
+  createdClaims   Claim[]             @relation("ClaimCreatedBy")
+  reviewedClaims  Claim[]             @relation("ClaimReviewedBy")
+  ignoredClaims   Claim[]             @relation("ClaimIgnoredBy")
+  verifications   Verification[]
+  auditLogs       AuditLog[]
+  attachments     Attachment[]
+  sections        CparSection[]
+  monitoringFills MonitoringPeriod[]  @relation("MonitoringFilledBy")
+  reports         ImprovementReport[] @relation("ReportSubmittedBy")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([departmentId])
+  @@index([deletedAt])
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+// ─────────────────────── MASTER DATA ───────────────────────
+
+model NonConformanceDetail {
+  id        String  @id @default(cuid())
+  code      String  @unique
+  name      String
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+  claims    Claim[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model ProductCategory {
+  id        String  @id @default(cuid())
+  code      String  @unique
+  name      String
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+  claims    Claim[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model InitialDocument {
+  id        String                @id @default(cuid())
+  code      String                @unique
+  name      String
+  sortOrder Int                   @default(0)
+  isActive  Boolean               @default(true)
+  requests  CparInitialDocument[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Customer {
+  id       String  @id @default(cuid())
+  code     String  @unique
+  name     String
+  isActive Boolean @default(true)
+  claims   Claim[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Part {
+  id             String  @id @default(cuid())
+  internalPartNo String  @unique
+  customerPartNo String?
+  name           String
+  isActive       Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([customerPartNo])
+}
+
+/// Grup penerima email broadcast ("seluruh user portal", dst) — §8, asumsi A-08.
+model RecipientGroup {
+  id          String     @id @default(cuid())
+  code        String     @unique
+  name        String
+  roleCodes   RoleCode[]
+  extraEmails String[]
+  isActive    Boolean    @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+/// Subject/heading email dapat diubah ADMIN tanpa deploy; body tetap React Email.
+model EmailTemplate {
+  id               String           @id @default(cuid())
+  type             NotificationType @unique
+  subject          String
+  heading          String
+  bodyIntro        String
+  ctaLabel         String           @default("Open in portal")
+  recipientGroupId String?
+  isActive         Boolean          @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+// ─────────────────────── CLAIM (§7) ───────────────────────
+
+model Claim {
+  /// null selama DRAFT; terbit saat submit lewat lib/numbering.ts
+  id      String      @id @default(cuid())
+  claimNo String?     @unique
+  status  ClaimStatus @default(DRAFT)
+  type    ClaimType
+
+  // A. Claim Information
+  dateOfOccurrence  DateTime
+  shiftOfOccurrence Shift
+  dateOfReceived    DateTime
+  shiftOfReceived   Shift
+  failurePlace      String
+  failurePlaceType  FailurePlaceType
+  contactPerson     String
+  contactEmail      String
+  contactPhone      String
+  internalPartNo    String
+  customerPartNo    String
+  partName          String
+  productCategoryId String
+  productCategory   ProductCategory      @relation(fields: [productCategoryId], references: [id])
+  originPlantType   OriginPlantType
+  /// Wajib bila originPlantType = PASSTHROUGH atau VENDOR_SUBCON.
+  originPlantDetail String?
+  occurrence        OccurrenceCount
+  ncDetailId        String
+  ncDetail          NonConformanceDetail @relation(fields: [ncDetailId], references: [id])
+  customerId        String?
+  customer          Customer?            @relation(fields: [customerId], references: [id])
+
+  // B. Abnormal Description
+  abnormalSource       String
+  qualityProblem       String
+  lotNo                String
+  kanbanNo             String
+  injectionDate        DateTime?
+  assemblyDate         DateTime?
+  deliveryDate         DateTime?
+  suspectedProcessLine String
+
+  // Review QA Dept. Head
+  submittedAt   DateTime?
+  reviewedById  String?
+  reviewedBy    User?     @relation("ClaimReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt    DateTime?
+  /// Wajib saat Request revision.
+  reviewComment String?
+  publishedAt   DateTime?
+
+  // Jalur Ignore
+  ignorationReason String?
+  ignoredAt        DateTime?
+  ignoredById      String?
+  ignoredBy        User?     @relation("ClaimIgnoredBy", fields: [ignoredById], references: [id])
+
+  closedAt    DateTime?
+  createdById String
+  createdBy   User      @relation("ClaimCreatedBy", fields: [createdById], references: [id])
+
+  parts         ClaimPart[]
+  cpar          Cpar?
+  monitoring    MonitoringPeriod[]
+  reports       ImprovementReport[]
+  notifications Notification[]
+  documents     GeneratedDocument[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([status])
+  @@index([type])
+  @@index([createdById])
+  @@index([dateOfOccurrence])
+  @@index([internalPartNo])
+  @@index([deletedAt])
+}
+
+/// C. Part Comparison — tepat satu panel STANDARD dan satu panel ACTUAL (asumsi A-12).
+model ClaimPart {
+  id             String   @id @default(cuid())
+  claimId        String
+  claim          Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  side           PartSide
+  photoCaption   String?
+  partName       String
+  nidPartNo      String
+  qty            Decimal  @db.Decimal(12, 2)
+  qtyUnit        QtyUnit
+  dimensionItem  String?
+  appearanceItem String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([claimId, side])
+  @@index([claimId])
+}
+
+// ─────────────────────── CPAR (§6 Modul 2–3) ───────────────────────
+
+model Cpar {
+  id      String @id @default(cuid())
+  claimId String @unique
+  claim   Claim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  cparNo  String @unique
+
+  responsibilityType ResponsibilityType
+  /// Pada tipe CFT, departemen ini berperan sebagai lead dept (asumsi A-04).
+  responsibleDeptId  String
+  responsibleDept    Department            @relation("CparResponsibleDept", fields: [responsibleDeptId], references: [id])
+  cftMembers         CparCftMember[]
+  initialDocuments   CparInitialDocument[]
+
+  dueDate  DateTime
+  issuedAt DateTime @default(now())
+  /// Naik 1 setiap keputusan REVISE atau periode monitoring NOT_EFFECTIVE.
+  cycle    Int      @default(1)
+
+  submittedAt DateTime?
+  approvedAt  DateTime?
+
+  sections      CparSection[]
+  verifications Verification[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([responsibleDeptId])
+  @@index([dueDate])
+}
+
+model CparCftMember {
+  cparId       String
+  departmentId String
+  cpar         Cpar       @relation(fields: [cparId], references: [id], onDelete: Cascade)
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  @@id([cparId, departmentId])
+  @@index([departmentId])
+}
+
+model CparInitialDocument {
+  cparId            String
+  initialDocumentId String
+  /// Terisi saat dokumen yang diminta benar-benar dilampirkan.
+  fulfilledAt       DateTime?
+  cpar              Cpar            @relation(fields: [cparId], references: [id], onDelete: Cascade)
+  initialDocument   InitialDocument @relation(fields: [initialDocumentId], references: [id])
+
+  @@id([cparId, initialDocumentId])
+  @@index([initialDocumentId])
+}
+
+model CparSection {
+  id         String         @id @default(cuid())
+  cparId     String
+  cpar       Cpar           @relation(fields: [cparId], references: [id], onDelete: Cascade)
+  key        CparSectionKey
+  content    String?
+  /// Data terstruktur opsional (5-why, tabel 4M) tanpa migrasi baru.
+  data       Json?
+  isRequired Boolean        @default(true)
+  filledById String?
+  filledBy   User?          @relation(fields: [filledById], references: [id])
+  filledAt   DateTime?
+  /// Dikunci saat submit final; dibuka kembali saat CPAR_REVISION.
+  lockedAt   DateTime?
+  /// Ditandai verifier sebagai bagian yang perlu diperbaiki pada siklus terakhir.
+  revisionNote String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([cparId, key])
+  @@index([cparId])
+}
+
+model Verification {
+  id     String @id @default(cuid())
+  cparId String
+  cpar   Cpar   @relation(fields: [cparId], references: [id], onDelete: Cascade)
+  /// Kapasitas saat memverifikasi, bukan seluruh role yang dimiliki user.
+  role   RoleCode
+
+  verifierId     String
+  verifier       User                 @relation(fields: [verifierId], references: [id])
+  decision       VerificationDecision
+  /// Wajib bila decision = REVISE.
+  comment        String?
+  targetSections CparSectionKey[]
+  cycle          Int
+  decidedAt      DateTime             @default(now())
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([cparId, role, cycle])
+  @@index([cparId, cycle])
+  @@index([verifierId])
+}
+
+// ─────────────────────── MONITORING (§6 Modul 4) ───────────────────────
+
+model MonitoringPeriod {
+  id      String @id @default(cuid())
+  claimId String
+  claim   Claim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  /// Siklus CPAR saat periode dibuat — periode siklus lama tetap terbaca setelah revisi.
+  cycle   Int    @default(1)
+
+  periodNo   Int
+  openedAt   DateTime?
+  dueDate    DateTime
+  status     MonitoringStatus @default(PENDING)
+  note       String?
+  filledById String?
+  filledBy   User?            @relation("MonitoringFilledBy", fields: [filledById], references: [id])
+  filledAt   DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([claimId, cycle, periodNo])
+  @@index([claimId, status])
+  @@index([dueDate])
+}
+
+model ImprovementReport {
+  id      String @id @default(cuid())
+  claimId String
+  claim   Claim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  cycle   Int    @default(1)
+
+  summary       String
+  lessonLearned String?
+  /// Blok A3: background, target, analysis, plan, result.
+  a3Content     Json?
+  submittedById String
+  submittedBy   User     @relation("ReportSubmittedBy", fields: [submittedById], references: [id])
+  submittedAt   DateTime @default(now())
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([claimId])
+  @@index([submittedById])
+}
+
+// ─────────────────────── SHARED ───────────────────────
+
+/// Polymorphic (PLAN D5): integritas dijaga helper aplikasi, bukan constraint DB.
+model Attachment {
+  id           String  @id @default(cuid())
+  entityType   String
+  entityId     String
+  originalName String
+  mimeType     String
+  size         Int
+  /// Relatif terhadap STORAGE_ROOT.
+  path         String
+  caption      String?
+  /// Denormalisasi agar pengecekan izin tidak perlu join berantai.
+  claimId      String?
+  uploadedById String
+  uploadedBy   User    @relation(fields: [uploadedById], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([entityType, entityId])
+  @@index([claimId])
+  @@index([uploadedById])
+}
+
+/// Snapshot PDF (PLAN D6) — PDF lama tetap merefleksikan isi saat dicetak.
+model GeneratedDocument {
+  id      String       @id @default(cuid())
+  claimId String
+  claim   Claim        @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  kind    DocumentKind
+  version Int          @default(1)
+  cycle   Int          @default(1)
+  path    String
+  snapshot Json
+  /// Watermark "DRAFT" bila dokumen dicetak sebelum disetujui.
+  isDraft  Boolean     @default(false)
+
+  generatedById String?
+  generatedAt   DateTime @default(now())
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([claimId, kind, cycle, version])
+  @@index([claimId])
+}
+
+model Notification {
+  id      String  @id @default(cuid())
+  claimId String?
+  claim   Claim?  @relation(fields: [claimId], references: [id])
+
+  type         NotificationType
+  recipients   String[]
+  ccRecipients String[]
+  subject      String
+  /// Idempotensi reminder (§8): satu jenis maksimal 1× per hari per klaim.
+  dedupeKey    String             @unique
+  status       NotificationStatus @default(QUEUED)
+  attempts     Int                @default(0)
+  sentAt       DateTime?
+  errorMessage String?
+  /// Props untuk template React Email.
+  payload      Json?
+  attachmentPaths String[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([claimId])
+  @@index([status])
+  @@index([type, createdAt])
+}
+
+model AuditLog {
+  id      String @id @default(cuid())
+  actorId String?
+  actor   User?  @relation(fields: [actorId], references: [id])
+
+  entityType String
+  entityId   String
+  /// Agar timeline halaman detail klaim cukup satu query.
+  claimId    String?
+  action     String
+  fromStatus ClaimStatus?
+  toStatus   ClaimStatus?
+  payloadDiff Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime     @default(now())
+
+  @@index([claimId, createdAt])
+  @@index([entityType, entityId])
+  @@index([actorId])
+}
+
+/// Generator nomor aman race-condition — lihat lib/numbering.ts.
+model Counter {
+  id    String       @id @default(cuid())
+  scope CounterScope
+  /// CLAIM → "26-08" (per bulan); CPAR → "26" (per tahun).
+  bucket String
+  value  Int         @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([scope, bucket])
+}

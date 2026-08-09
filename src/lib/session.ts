@@ -1,37 +1,55 @@
-import type { RoleCode } from "@/config/navigation";
+import { redirect } from "next/navigation";
+
+import { auth } from "@/lib/auth";
+import { UnauthorizedError } from "@/lib/errors";
+import type { Actor } from "@/lib/permissions";
+import type { RoleCode } from "@/generated/prisma/enums";
 
 export interface PortalUser {
   readonly id: string;
   readonly name: string;
   readonly email: string;
   readonly jobTitle: string;
+  readonly departmentId: string | null;
   readonly departmentCode: string | null;
   readonly roles: readonly RoleCode[];
 }
 
-/**
- * Pengguna aktif untuk shell portal.
- *
- * FASE 0: mengembalikan pengguna contoh agar layout dapat ditinjau secara visual.
- * FASE 1 mengganti isi fungsi ini dengan `auth()` dari Auth.js (session JWT) dan
- * mengarahkan ke /login bila tidak ada sesi — pemanggilnya tidak perlu berubah.
- */
-export async function getPortalUser(): Promise<PortalUser> {
+async function readSessionUser(): Promise<PortalUser | null> {
+  const session = await auth();
+  const user = session?.user;
+
+  if (!user?.id) return null;
+
   return {
-    id: "preview-user",
-    name: "Rina Kusuma",
-    email: "rina.kusuma@nifco.co.id",
-    jobTitle: "QA Dept. Head",
-    departmentCode: "QA",
-    roles: ["QA_HEAD", "QA"],
+    id: user.id,
+    name: user.name ?? "",
+    email: user.email ?? "",
+    jobTitle: user.jobTitle,
+    departmentId: user.departmentId,
+    departmentCode: user.departmentCode,
+    roles: user.roles,
   };
 }
 
-export function initialsOf(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
+/**
+ * Pengguna aktif untuk halaman portal. Mengarahkan ke /login bila tidak ada sesi —
+ * middleware sudah menjaga hal yang sama, ini pengaman kedua untuk render langsung.
+ */
+export async function getPortalUser(): Promise<PortalUser> {
+  const user = await readSessionUser();
+  if (!user) redirect("/login");
+
+  return user;
+}
+
+/**
+ * Pengguna aktif untuk server action. Melempar 401 alih-alih redirect, karena pemanggilnya
+ * mengharapkan galat terstruktur, bukan navigasi.
+ */
+export async function requireActor(): Promise<Actor & PortalUser> {
+  const user = await readSessionUser();
+  if (!user) throw new UnauthorizedError();
+
+  return user;
 }

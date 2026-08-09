@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation";
 import { Bell, ChevronRight, LogOut, Menu, Search, UserCog } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { initialsOf, type PortalUser } from "@/lib/session";
+import { initialsOf } from "@/lib/format";
+import type { PortalUser } from "@/lib/session";
+import { logoutAction } from "@/server/actions/auth";
 import { isNavItemActive, navItemsFor, ROLE_LABEL } from "@/config/navigation";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -150,10 +152,12 @@ export function Topbar({
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <Link href="/login">
-              <LogOut aria-hidden />
-              Sign out
-            </Link>
+            <form action={logoutAction}>
+              <button type="submit" className="flex w-full items-center gap-2">
+                <LogOut aria-hidden />
+                Sign out
+              </button>
+            </form>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

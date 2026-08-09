@@ -42,6 +42,7 @@ yarn-error.log*
 next-env.d.ts
 
 # NCC Portal
+/src/generated
 /storage
 /prisma/*.db
 /test-results

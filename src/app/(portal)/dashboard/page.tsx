@@ -1,29 +1,94 @@
 import type { Metadata } from "next";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { StatusRail } from "@/components/shared/status-rail";
-import { CLAIM_STATUSES } from "@/config/claim-status";
+import { CLAIM_STATUSES, type ClaimStatus } from "@/config/claim-status";
+import { ROLE_LABEL } from "@/config/navigation";
+import { db } from "@/lib/db";
+import { visibleClaimsWhere } from "@/lib/permissions";
+import { getPortalUser } from "@/lib/session";
+import { draftLabel } from "@/lib/numbering";
 
 export const metadata: Metadata = {
   title: "Dashboard",
 };
 
 /**
- * Fase 0 — halaman ini masih pratinjau bahasa desain, bukan dashboard sungguhan.
- * Kartu ringkas, grafik klaim per bulan, pareto Non-Conformance Detail, dan tabel
- * "Butuh tindakan saya" dibangun pada Fase 7 di atas data asli.
+ * Fase 1 — dashboard baru menampilkan klaim yang boleh dilihat pengguna, untuk
+ * membuktikan cakupan RBAC bekerja dari database sampai layar. Kartu ringkas, grafik
+ * klaim per bulan, pareto Non-Conformance Detail, dan tabel "Butuh tindakan saya"
+ * dibangun pada Fase 7.
  */
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const user = await getPortalUser();
+  const where = visibleClaimsWhere(user);
+
+  const [claims, totalClaims] = await Promise.all([
+    db.claim.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        claimNo: true,
+        status: true,
+        partName: true,
+        internalPartNo: true,
+        createdAt: true,
+        cpar: { select: { cparNo: true, cycle: true, responsibleDept: { select: { code: true } } } },
+      },
+    }),
+    db.claim.count(),
+  ]);
+
+  const hiddenCount = totalClaims - claims.length;
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="space-y-1">
         <h1 className="font-display text-2xl font-bold text-nid-orange-700">Dashboard</h1>
         <p className="text-sm text-muted-foreground">
-          Kerangka portal sudah berdiri. Data, alur status, dan notifikasi menyusul per fase.
+          Masuk sebagai {user.name} — {user.roles.map((role) => ROLE_LABEL[role]).join(", ")}
+          {user.departmentCode ? ` · Dept ${user.departmentCode}` : ""}.
         </p>
       </header>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Klaim yang terlihat oleh Anda</CardTitle>
+          <CardDescription>
+            Difilter lewat <code className="text-xs">visibleClaimsWhere()</code> di{" "}
+            <code className="text-xs">lib/permissions.ts</code>. Pengguna departemen hanya melihat klaim yang
+            departemennya ditunjuk, ditambah klaim yang sudah terbit atau ditutup.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {claims.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Belum ada klaim yang dapat Anda lihat.</p>
+          ) : (
+            <ul className="divide-y divide-nid-border">
+              {claims.map((claim) => (
+                <li key={claim.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3">
+                  <span className="font-medium tabular">{claim.claimNo ?? draftLabel(claim.id)}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                    {claim.partName} · {claim.internalPartNo}
+                    {claim.cpar
+                      ? ` · ${claim.cpar.cparNo} (${claim.cpar.responsibleDept.code}, siklus ${claim.cpar.cycle})`
+                      : ""}
+                  </span>
+                  <StatusBadge status={claim.status} showHint />
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            {claims.length} dari {totalClaims} klaim di database
+            {hiddenCount > 0 ? ` — ${hiddenCount} disembunyikan oleh aturan visibilitas.` : "."}
+          </p>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -55,27 +120,6 @@ export default function DashboardPage() {
           ))}
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Fase berikutnya</CardTitle>
-          <CardDescription>Urutan pengerjaan sesuai PLAN.md §7.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          {[
-            ["Fase 1", "Prisma schema, migrasi, seed, Auth.js + RBAC"],
-            ["Fase 2", "State machine + unit test, form klaim & review QA Head"],
-            ["Fase 3", "PDF Bad News & Quick Info, mailer, template email"],
-          ].map(([phase, detail]) => (
-            <div key={phase} className="flex items-start gap-3">
-              <Badge variant="count" className="mt-0.5 shrink-0">
-                {phase}
-              </Badge>
-              <span className="text-muted-foreground">{detail}</span>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -86,7 +130,7 @@ function RailSample({
   cycle,
 }: {
   caption: string;
-  status: (typeof CLAIM_STATUSES)[number];
+  status: ClaimStatus;
   cycle?: number;
 }) {
   return (

@@ -1,27 +1,16 @@
+import { ClaimStatus } from "@/generated/prisma/enums";
+
 /**
- * Definisi status klaim untuk kebutuhan tampilan.
+ * Lapisan presentasi untuk status klaim: label, warna, dan posisi di status rail.
  *
- * Fase 1 akan memindahkan sumber kebenaran status ke enum Prisma `ClaimStatus`;
- * file ini tetap ada sebagai lapisan presentasi (label, warna, posisi di status rail),
- * dan `tests/unit/claim-status.test.ts` menjaga keduanya tidak pernah berbeda.
+ * Sumber kebenaran statusnya adalah enum Prisma `ClaimStatus`, bukan daftar terpisah —
+ * `CLAIM_STATUS_META` bertipe `Record<ClaimStatus, …>` sehingga menambah status baru di
+ * schema.prisma langsung menggagalkan `pnpm typecheck` sampai metanya ikut dilengkapi.
  */
 
-export const CLAIM_STATUSES = [
-  "DRAFT",
-  "PENDING_QA_HEAD_REVIEW",
-  "REVISION_REQUESTED",
-  "PUBLISHED",
-  "IGNORED",
-  "CPAR_ISSUED",
-  "CPAR_IN_PROGRESS",
-  "CPAR_UNDER_VERIFICATION",
-  "CPAR_REVISION",
-  "CPAR_APPROVED",
-  "CAPA_MONITORING",
-  "VERIFIED_CLOSED",
-] as const;
+export const CLAIM_STATUSES = Object.values(ClaimStatus);
 
-export type ClaimStatus = (typeof CLAIM_STATUSES)[number];
+export type { ClaimStatus };
 
 /** Keluarga warna status (§10). Dipakai konsisten di badge, timeline, dan grafik. */
 export type StatusTone = "draft" | "pending" | "published" | "monitoring" | "closed" | "ignored" | "danger";

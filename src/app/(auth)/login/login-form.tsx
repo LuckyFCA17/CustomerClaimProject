@@ -9,10 +9,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { loginAction } from "@/server/actions/auth";
 import { loginSchema, type LoginInput } from "@/schemas/auth";
 
-export function LoginForm() {
+export function LoginForm({ callbackUrl }: { callbackUrl?: string }) {
   const [showPassword, setShowPassword] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const {
     register,
@@ -23,15 +25,25 @@ export function LoginForm() {
     defaultValues: { email: "", password: "" },
   });
 
-  // FASE 1 mengganti handler ini dengan server action `signIn("credentials", ...)` dari Auth.js.
-  async function onSubmit() {
-    toast.info("Autentikasi belum aktif", {
-      description: "Login dihubungkan ke Auth.js pada Fase 1, bersama seed akun demo.",
-    });
+  async function onSubmit(values: LoginInput) {
+    setFormError(null);
+
+    const result = await loginAction(values, callbackUrl);
+
+    if (!result.ok) {
+      setFormError(result.message ?? "Tidak dapat masuk.");
+      toast.error("Sign in gagal", { description: result.message });
+    }
   }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+      {formError ? (
+        <p role="alert" className="rounded-md bg-[var(--status-danger-bg)] px-3 py-2 text-sm text-destructive">
+          {formError}
+        </p>
+      ) : null}
+
       <div className="space-y-1.5">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -80,7 +92,7 @@ export function LoginForm() {
 
       <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
         <LogIn aria-hidden />
-        Sign in to portal
+        {isSubmitting ? "Memproses…" : "Sign in to portal"}
       </Button>
 
       <p className="text-center text-xs text-muted-foreground">
