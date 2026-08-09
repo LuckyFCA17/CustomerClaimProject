@@ -1,0 +1,181 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * NCC Portal design tokens (§10).
+ * Portal ini sengaja light-only — sistem AIM yang jadi acuan visual tidak punya mode gelap,
+ * dan dokumen cetak (PDF) harus selalu di atas kertas putih.
+ */
+:root {
+  /* Brand */
+  --nid-orange-500: #e8873a; /* sidebar, header aksi */
+  --nid-orange-600: #d97428; /* item aktif, tombol primer */
+  --nid-orange-700: #b45a15; /* hover, teks aksen di judul */
+  --nid-badge: #f7d272; /* badge angka */
+  --nid-badge-ink: #7a4b00;
+
+  /* Netral */
+  --nid-ink: #1f2933;
+  --nid-muted: #6b7280;
+  --nid-surface: #f4f5f7;
+  --nid-card: #ffffff;
+  --nid-border: #e4e7eb;
+
+  /* Warna status klaim (§10) — dipakai konsisten di badge, timeline, dan grafik */
+  --status-draft: #6b7280; /* abu */
+  --status-draft-bg: #f3f4f6;
+  --status-pending: #b45309; /* kuning */
+  --status-pending-bg: #fef3c7;
+  --status-published: #1d4ed8; /* biru */
+  --status-published-bg: #dbeafe;
+  --status-monitoring: #6d28d9; /* ungu */
+  --status-monitoring-bg: #ede9fe;
+  --status-closed: #15803d; /* hijau */
+  --status-closed-bg: #dcfce7;
+  --status-ignored: #475569; /* slate */
+  --status-ignored-bg: #e2e8f0;
+  --status-danger: #b91c1c; /* merah — Not Effective */
+  --status-danger-bg: #fee2e2;
+
+  /* Pemetaan ke variabel shadcn/ui */
+  --radius: 0.75rem; /* 12px (§10) */
+  --background: var(--nid-surface);
+  --foreground: var(--nid-ink);
+  --card: var(--nid-card);
+  --card-foreground: var(--nid-ink);
+  --popover: var(--nid-card);
+  --popover-foreground: var(--nid-ink);
+  --primary: var(--nid-orange-600);
+  --primary-foreground: #ffffff;
+  --secondary: #eef0f3;
+  --secondary-foreground: var(--nid-ink);
+  --muted: #eef0f3;
+  --muted-foreground: var(--nid-muted);
+  --accent: #fdf1e6;
+  --accent-foreground: var(--nid-orange-700);
+  --destructive: var(--status-danger);
+  --destructive-foreground: #ffffff;
+  --border: var(--nid-border);
+  --input: var(--nid-border);
+  --ring: var(--nid-orange-600);
+
+  /* Sidebar */
+  --sidebar: var(--nid-orange-500);
+  --sidebar-foreground: #ffffff;
+  --sidebar-active: var(--nid-orange-700);
+  --sidebar-hover: var(--nid-orange-600);
+  --sidebar-border: rgb(255 255 255 / 0.18);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-nid-orange-500: var(--nid-orange-500);
+  --color-nid-orange-600: var(--nid-orange-600);
+  --color-nid-orange-700: var(--nid-orange-700);
+  --color-nid-badge: var(--nid-badge);
+  --color-nid-badge-ink: var(--nid-badge-ink);
+  --color-nid-ink: var(--nid-ink);
+  --color-nid-muted: var(--nid-muted);
+  --color-nid-surface: var(--nid-surface);
+  --color-nid-card: var(--nid-card);
+  --color-nid-border: var(--nid-border);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-border: var(--sidebar-border);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-poppins), var(--font-inter), ui-sans-serif, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display;
+  }
+
+  /* Fokus keyboard harus selalu terlihat (§10 standar mutu). */
+  :focus-visible {
+    @apply outline-ring outline-2 outline-offset-2;
+  }
+
+  /* Angka pada tabel & data sejajar kolomnya. */
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  /* Denyut halus untuk tahap aktif di status rail — satu-satunya animasi di portal (§10). */
+  @keyframes nid-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--nid-orange-600) 55%, transparent);
+    }
+    50% {
+      box-shadow: 0 0 0 6px color-mix(in srgb, var(--nid-orange-600) 0%, transparent);
+    }
+  }
+
+  .nid-pulse {
+    animation: nid-pulse 2.4s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Halaman /print/* dirender headless oleh Puppeteer — lihat lib/pdf.ts (Fase 3). */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff;
+  }
+}

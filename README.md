@@ -4,9 +4,10 @@ Customer Complaint Handling Portal untuk **PT Nifco Indonesia (NID)**. Mengganti
 (Excel log + email + PDF manual) dengan satu record klaim hidup yang bergerak lewat *action button*
 dari input sampai `Verified Closed`.
 
-> **Status: perencanaan.** Belum ada kode aplikasi. Baca [`PLAN.md`](./PLAN.md) (skema Prisma final,
-> matriks permission, diagram state) dan [`ASSUMPTIONS.md`](./ASSUMPTIONS.md) (aturan bisnis yang
-> diasumsikan) — keduanya menunggu persetujuan sebelum Fase 0 dimulai.
+> **Status: Fase 0 selesai** — scaffold, shell portal, token desain, halaman login, dan lingkungan
+> pengembangan sudah berdiri. Belum ada database, autentikasi, maupun alur klaim.
+> Rujukan rancangan: [`PLAN.md`](./PLAN.md) (skema Prisma final, matriks permission, diagram state)
+> dan [`ASSUMPTIONS.md`](./ASSUMPTIONS.md) (aturan bisnis yang diasumsikan).
 
 ## Empat proses inti
 
@@ -44,7 +45,57 @@ dari input sampai `Verified Closed`.
 
 ## Setup
 
-_Akan diisi pada Fase 0 (scaffold + `docker-compose.yml` untuk Postgres & MailHog)._
+Prasyarat: Node.js ≥ 20.11, pnpm 10, Docker (untuk Postgres & MailHog).
+
+```bash
+pnpm install
+cp .env.example .env          # lalu isi AUTH_SECRET: openssl rand -base64 32
+pnpm db:up                    # Postgres :5432 + MailHog :8025
+pnpm dev                      # http://localhost:3000
+```
+
+| Layanan | Alamat | Kredensial |
+|---|---|---|
+| Portal | http://localhost:3000 | — (autentikasi aktif pada Fase 1) |
+| Postgres | `localhost:5432` | `ncc` / `ncc`, database `ncc_portal` |
+| MailHog (SMTP) | `localhost:1025` | — |
+| MailHog (web) | http://localhost:8025 | — |
+
+Seluruh email portal mendarat di MailHog selama pengembangan dan tidak pernah keluar ke penerima sungguhan.
+
+<details>
+<summary>Tanpa Docker (mis. container CI tanpa daemon)</summary>
+
+Jalankan PostgreSQL 16 langsung di host dengan kredensial yang sama, sehingga `DATABASE_URL`
+di `.env.example` tetap berlaku apa adanya:
+
+```bash
+service postgresql start
+su postgres -c "psql -c \"CREATE ROLE ncc LOGIN PASSWORD 'ncc' CREATEDB;\""
+su postgres -c "createdb -O ncc ncc_portal"
+```
+
+Untuk SMTP, arahkan `SMTP_HOST`/`SMTP_PORT` ke penangkap email lain, atau biarkan kosong sampai Fase 3.
+</details>
+
+### Perintah
+
+| Perintah | Kegunaan |
+|---|---|
+| `pnpm dev` | Server pengembangan |
+| `pnpm build` | Build produksi |
+| `pnpm typecheck` | `tsc --noEmit` (TypeScript strict, tanpa `any`) |
+| `pnpm lint` | ESLint |
+| `pnpm test` | Unit test Vitest |
+| `pnpm db:up` / `pnpm db:down` | Menyalakan/mematikan Postgres + MailHog |
+
+### Catatan komponen UI
+
+`ui.shadcn.com` diblokir oleh network policy lingkungan pengembangan ini, sehingga CLI `shadcn add`
+tidak bisa mengambil komponen. Karena shadcn/ui memang berupa komponen *copy-paste* ke dalam repo,
+komponennya ditulis langsung di `src/components/ui/` di atas primitif Radix dari npm — bentuknya sama
+dengan keluaran CLI. `components.json` tetap disediakan agar `pnpm dlx shadcn@latest add <komponen>`
+langsung bisa dipakai di jaringan yang tidak memblokir host tersebut.
 
 ## Akun demo
 
@@ -64,7 +115,7 @@ DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
 
 ## Progres fase
 
-- [ ] **Fase 0** — Scaffold, shell UI, login, docker-compose
+- [x] **Fase 0** — Scaffold, shell UI, login, docker-compose
 - [ ] **Fase 1** — Prisma schema, migrasi, seed, Auth.js + RBAC
 - [ ] **Fase 2** — State machine + unit test, Modul 1
 - [ ] **Fase 3** — PDF Bad News & Quick Info, mailer, template email

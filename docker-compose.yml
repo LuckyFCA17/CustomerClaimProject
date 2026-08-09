@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ncc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ncc
+      POSTGRES_PASSWORD: ncc
+      POSTGRES_DB: ncc_portal
+    ports:
+      - "5432:5432"
+    volumes:
+      - ncc-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ncc -d ncc_portal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # SMTP tangkapan untuk pengembangan — seluruh email portal (§8) mendarat di sini,
+  # tidak pernah keluar ke penerima sungguhan. UI web: http://localhost:8025
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: ncc-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
+    logging:
+      driver: none
+
+volumes:
+  ncc-postgres-data:
