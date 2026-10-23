@@ -27,6 +27,13 @@ export interface ClaimEmailPayload {
   readonly comment?: string | null;
   readonly portalUrl: string;
   readonly attachmentNames?: readonly string[];
+
+  /** Terisi pada notifikasi yang menyangkut CPAR (§8 #4). */
+  readonly cparNo?: string | null;
+  readonly responsibleDept?: string | null;
+  readonly cftMembers?: readonly string[];
+  readonly initialDocuments?: readonly string[];
+  readonly dueDate?: string | null;
 }
 
 export interface RenderedEmail {

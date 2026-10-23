@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { forbidden, notFound } from "next/navigation";
-import { ClipboardCheck, PencilLine } from "lucide-react";
+import { ClipboardCheck, ClipboardList, PencilLine, SquareArrowOutUpRight, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,6 +60,7 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
       customer: true,
       createdBy: { select: { name: true, jobTitle: true } },
       reviewedBy: { select: { name: true, jobTitle: true } },
+      ignoredBy: { select: { name: true, jobTitle: true } },
       cpar: {
         select: {
           cparNo: true,
@@ -122,8 +123,21 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
     }),
   ]);
 
+  const ignorationEvidence =
+    claim.status === "IGNORED"
+      ? await db.attachment.findMany({
+          where: { entityType: "ClaimIgnoration", entityId: id },
+          orderBy: { createdAt: "asc" },
+        })
+      : [];
+
   const canEdit = can(user, "claim.update", context);
   const canReview = can(user, "claim.review.approve", context);
+  // Action Button A (§6 Modul 2) muncul hanya pada klaim yang sudah terbit, dan
+  // Action Button B begitu CPAR ada — keduanya mengikuti matriks izin, bukan ditebak.
+  const canFollowUp = can(user, "claim.followUp", context);
+  const canIgnore = can(user, "claim.ignore", context);
+  const canOpenCpar = can(user, "cpar.view", context) && claim.cpar !== null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -156,6 +170,33 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
                 <Link href={`/claims/${claim.id}/review`}>
                   <ClipboardCheck aria-hidden />
                   Review claim information
+                </Link>
+              </Button>
+            ) : null}
+
+            {canIgnore ? (
+              <Button asChild variant="outline">
+                <Link href={`/claims/${claim.id}/ignore`}>
+                  <XCircle aria-hidden />
+                  Ignore claim
+                </Link>
+              </Button>
+            ) : null}
+
+            {canFollowUp ? (
+              <Button asChild>
+                <Link href={`/claims/${claim.id}/follow-up`}>
+                  <SquareArrowOutUpRight aria-hidden />
+                  Claim follow up
+                </Link>
+              </Button>
+            ) : null}
+
+            {canOpenCpar ? (
+              <Button asChild>
+                <Link href={`/cpar/${claim.id}`}>
+                  <ClipboardList aria-hidden />
+                  CPAR form
                 </Link>
               </Button>
             ) : null}
@@ -277,6 +318,56 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
           })}
         </CardContent>
       </Card>
+
+      {claim.cpar ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>CPAR</CardTitle>
+            <CardDescription>Penetapan penanggung jawab penanganan klaim ini.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+            <Row label="CPAR no." value={claim.cpar.cparNo} />
+            <Row label="Siklus" value={String(claim.cpar.cycle)} />
+            <Row
+              label="Penanggung jawab"
+              value={`${claim.cpar.responsibleDept.code} — ${claim.cpar.responsibleDept.name}`}
+            />
+            <Row label="Tenggat pengisian" value={formatDate(claim.cpar.dueDate)} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {claim.status === "IGNORED" && claim.ignorationReason ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Alasan penutupan</CardTitle>
+            <CardDescription>
+              Klaim ditutup tanpa CPAR oleh {claim.ignoredBy?.name ?? "QA"} pada{" "}
+              {formatDateTime(claim.ignoredAt)}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="whitespace-pre-line text-sm">{claim.ignorationReason}</p>
+
+            {ignorationEvidence.length > 0 ? (
+              <ul className="space-y-1.5 text-sm">
+                {ignorationEvidence.map((file) => (
+                  <li key={file.id}>
+                    <a
+                      href={`/api/files/${file.path}`}
+                      target="_blank"
+                      rel="noopener"
+                      className="text-nid-orange-700 hover:underline"
+                    >
+                      {file.originalName}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

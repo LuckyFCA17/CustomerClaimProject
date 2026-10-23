@@ -86,10 +86,78 @@ function NewCustomerClaim({ payload }: { payload: ClaimEmailPayload }) {
   );
 }
 
+function CparRequest({ payload }: { payload: ClaimEmailPayload }) {
+  return (
+    <EmailShell
+      preview={`${payload.cparNo} — countermeasure diminta untuk ${payload.partName}`}
+      heading="Problem Countermeasure Request"
+    >
+      <Paragraph>
+        Departemen Anda ditetapkan sebagai penanggung jawab penanganan klaim berikut oleh{" "}
+        {payload.actorName} ({payload.actorJobTitle}). Mohon isi CPAR melalui portal sebelum
+        tenggat di bawah.
+      </Paragraph>
+
+      <SummaryTable
+        rows={[
+          ["CPAR No.", payload.cparNo ?? null],
+          ["Claim No.", payload.claimNo],
+          ["Penanggung jawab", payload.responsibleDept ?? null],
+          ["Anggota CFT", payload.cftMembers?.length ? payload.cftMembers.join(", ") : null],
+          ["Tenggat pengisian", payload.dueDate ?? null],
+          ["Part", `${payload.partName} · ${payload.internalPartNo}`],
+          ["Non-conformance detail", payload.ncDetail],
+          ["Quality problem", payload.qualityProblem],
+        ]}
+      />
+
+      {payload.initialDocuments?.length ? (
+        <>
+          <Paragraph>Dokumen yang diminta dilampirkan bersama CPAR:</Paragraph>
+          <ul style={{ margin: "0 0 18px", paddingLeft: "20px", fontSize: "13px", lineHeight: 1.7 }}>
+            {payload.initialDocuments.map((document) => (
+              <li key={document}>{document}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+
+      {payload.comment ? <Note>{payload.comment}</Note> : null}
+
+      <ActionButton href={`${payload.portalUrl}`} label="Open in portal" />
+      <AttachmentNote names={payload.attachmentNames ?? []} />
+    </EmailShell>
+  );
+}
+
+function ClaimIgnoration({ payload }: { payload: ClaimEmailPayload }) {
+  return (
+    <EmailShell
+      preview={`${payload.claimNo} ditutup tanpa CPAR`}
+      heading="Klaim ditutup tanpa countermeasure"
+    >
+      <Paragraph>
+        {payload.actorName} ({payload.actorJobTitle}) menutup klaim berikut sebagai{" "}
+        <strong>Ignored</strong>. Tidak ada CPAR yang diterbitkan; alasan dan evidence-nya
+        tercatat di portal.
+      </Paragraph>
+
+      {payload.comment ? <Note>{payload.comment}</Note> : null}
+
+      <SummaryTable rows={summaryRows(payload)} />
+
+      <ActionButton href={payload.portalUrl} label="Open in portal" />
+      <AttachmentNote names={payload.attachmentNames ?? []} />
+    </EmailShell>
+  );
+}
+
 const SUBJECTS: Partial<Record<NotificationType, (payload: ClaimEmailPayload) => string>> = {
   CLAIM_REVIEW_REQUEST: (p) => `[NCC] Review request — ${p.claimNo} (${p.partName})`,
   CLAIM_REVISION_REQUEST: (p) => `[NCC] Revisi diminta — ${p.claimNo} (${p.partName})`,
   NEW_CUSTOMER_CLAIM: (p) => `[NCC] Klaim pelanggan baru — ${p.claimNo} (${p.partName})`,
+  CPAR_REQUEST: (p) => `[NCC] CPAR request — ${p.cparNo ?? p.claimNo} (${p.partName})`,
+  CLAIM_IGNORATION: (p) => `[NCC] Klaim ditutup tanpa CPAR — ${p.claimNo} (${p.partName})`,
 };
 
 const TEMPLATES: Partial<
@@ -98,6 +166,8 @@ const TEMPLATES: Partial<
   CLAIM_REVIEW_REQUEST: ClaimReviewRequest,
   CLAIM_REVISION_REQUEST: ClaimRevisionRequest,
   NEW_CUSTOMER_CLAIM: NewCustomerClaim,
+  CPAR_REQUEST: CparRequest,
+  CLAIM_IGNORATION: ClaimIgnoration,
 };
 
 export function hasTemplate(type: NotificationType): boolean {

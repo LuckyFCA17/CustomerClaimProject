@@ -4,9 +4,9 @@ Customer Complaint Handling Portal untuk **PT Nifco Indonesia (NID)**. Mengganti
 (Excel log + email + PDF manual) dengan satu record klaim hidup yang bergerak lewat *action button*
 dari input sampai `Verified Closed`.
 
-> **Status: Fase 3 selesai** — klaim berjalan dari `DRAFT` sampai `PUBLISHED` lewat UI, mencetak
-> Bad News Information Form dan Quick Information for Abnormal Part, lalu mengirimkannya lewat
-> email. Modul CPAR menyusul pada Fase 4.
+> **Status: Fase 4 selesai** — klaim berjalan dari `DRAFT` sampai `CPAR_ISSUED` atau `IGNORED`
+> lewat UI, mencetak kedua PDF, dan mengirim lima dari empat belas notifikasi §8. Pengisian CPAR
+> menyusul pada Fase 5.
 > Rujukan rancangan: [`PLAN.md`](./PLAN.md) (skema Prisma final, matriks permission, diagram state)
 > dan [`ASSUMPTIONS.md`](./ASSUMPTIONS.md) (aturan bisnis yang diasumsikan).
 
@@ -136,6 +136,26 @@ transaksi perpindahan status commit — SMTP yang mati tidak membatalkan perubah
 transaksi yang gagal tidak menyisakan email yang terlanjur keluar. Log pengirimannya ada di
 `/notifications` untuk QA Dept. Head dan Administrator.
 
+## Action button
+
+Alur berpindah tahap lewat tombol yang muncul kondisional menurut status × role, bukan menu tetap.
+Tombol yang terlihat selalu merupakan turunan `availableTransitions()` dan matriks izin — bukan
+daftar yang ditulis ulang di tiap halaman.
+
+| Tombol | Muncul saat | Untuk |
+|---|---|---|
+| Submit claim information | `DRAFT`, `REVISION_REQUESTED` | QA pembuat klaim |
+| Review claim information | `PENDING_QA_HEAD_REVIEW` | QA Dept. Head |
+| **Action Button A** — Claim follow up / Ignore claim | `PUBLISHED` | QA, QA Dept. Head |
+| **Action Button B** — CPAR form | `CPAR_ISSUED` dan sesudahnya | semua yang boleh melihat klaim |
+
+Kedua jalur Action Button A saling menutup: begitu CPAR terbit klaim tidak bisa lagi di-ignore, dan
+sebaliknya. Yang menjamin itu state machine di server, bukan tombol yang disembunyikan.
+
+Tenggat pengisian CPAR bawaannya tiga hari kerja dan selalu dinormalkan ke pukul 17:00 WIB —
+`<input type="date">` hanya mengirim tanggal, sehingga tanpa normalisasi tenggat akan terhitung
+lewat sejak pukul 07:00 pagi hari H.
+
 ## Akun demo
 
 Semua akun hasil seed memakai kata sandi **`Nifco#2026`**.
@@ -216,7 +236,7 @@ DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
 - [x] **Fase 1** — Prisma schema, migrasi, seed, Auth.js + RBAC
 - [x] **Fase 2** — State machine + unit test, Modul 1
 - [x] **Fase 3** — PDF Bad News & Quick Info, mailer, template email
-- [ ] **Fase 4** — Modul 2 (Follow Up / Ignore, CPAR ID)
+- [x] **Fase 4** — Modul 2 (Follow Up / Ignore, CPAR ID)
 - [ ] **Fase 5** — Modul 3 (CPAR form, verifikasi, siklus revisi)
 - [ ] **Fase 6** — Modul 4 (monitoring, Not Effective, Verified Closed)
 - [ ] **Fase 7** — Worker cron, dashboard, claim list, master data

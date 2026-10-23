@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/format";
 import { draftLabel } from "@/lib/numbering";
 import {
   dispatchNotification,
+  emailsForDepartment,
   emailsForGroup,
   emailsForRoles,
   enqueueNotification,
@@ -38,10 +39,17 @@ function portalUrl(claimId: string): string {
   return `${base}/claims/${claimId}`;
 }
 
+type PayloadExtras = Partial<
+  Pick<
+    ClaimEmailPayload,
+    "comment" | "attachmentNames" | "cparNo" | "responsibleDept" | "cftMembers" | "initialDocuments" | "dueDate"
+  >
+>;
+
 async function buildPayload(
   claimId: string,
   actor: { name: string; jobTitle: string },
-  extra: { comment?: string | null; attachmentNames?: readonly string[] } = {},
+  extra: PayloadExtras = {},
 ): Promise<ClaimEmailPayload> {
   const claim = await db.claim.findUniqueOrThrow({
     where: { id: claimId },
@@ -71,6 +79,11 @@ async function buildPayload(
     comment: extra.comment ?? null,
     portalUrl: portalUrl(claim.id),
     attachmentNames: extra.attachmentNames,
+    cparNo: extra.cparNo ?? null,
+    responsibleDept: extra.responsibleDept ?? null,
+    cftMembers: extra.cftMembers,
+    initialDocuments: extra.initialDocuments,
+    dueDate: extra.dueDate ?? null,
   };
 }
 
@@ -178,5 +191,75 @@ export async function notifyClaimPublished(
     to: await emailsForGroup("ALL_PORTAL_USERS"),
     payload,
     attachmentPaths: documents.map((document) => document.path),
+  });
+}
+
+/** §8 #4 — CPAR terbit; departemen penanggung jawab dan anggota CFT diminta mengisinya. */
+export async function notifyCparIssued(
+  claimId: string,
+  actor: { id: string; name: string; jobTitle: string },
+): Promise<void> {
+  const cpar = await db.cpar.findUniqueOrThrow({
+    where: { claimId },
+    include: {
+      responsibleDept: { select: { id: true, name: true, email: true } },
+      cftMembers: { include: { department: { select: { id: true, name: true, email: true } } } },
+      initialDocuments: { include: { initialDocument: { select: { name: true } } } },
+    },
+  });
+
+  const departmentIds = [cpar.responsibleDeptId, ...cpar.cftMembers.map((m) => m.departmentId)];
+
+  // Penerima adalah orang, bukan hanya milis departemen: milis bisa saja belum diisi,
+  // dan CPAR yang tidak terbaca siapa pun adalah kegagalan yang paling mahal di sini.
+  const people = (
+    await Promise.all(departmentIds.map((id) => emailsForDepartment(id)))
+  ).flat();
+
+  const mailboxes = [cpar.responsibleDept.email, ...cpar.cftMembers.map((m) => m.department.email)]
+    .filter((email): email is string => Boolean(email));
+
+  const payload = await buildPayload(claimId, actor, {
+    cparNo: cpar.cparNo,
+    responsibleDept: cpar.responsibleDept.name,
+    cftMembers: cpar.cftMembers.map((member) => member.department.name),
+    initialDocuments: cpar.initialDocuments.map((entry) => entry.initialDocument.name),
+    dueDate: formatDate(cpar.dueDate),
+  });
+
+  await queueAndSend({
+    type: "CPAR_REQUEST",
+    claimId,
+    dedupeKey: `CPAR_REQUEST:${cpar.id}:${cpar.cycle}`,
+    to: unique([...people, ...mailboxes]),
+    cc: await emailsForRoles(["QA_HEAD"]),
+    payload,
+  });
+}
+
+/** §8 #5 — klaim ditutup tanpa CPAR; seluruh user portal perlu tahu agar tidak menunggu. */
+export async function notifyClaimIgnored(
+  claimId: string,
+  actor: { id: string; name: string; jobTitle: string },
+  reason: string,
+): Promise<void> {
+  const evidence = await db.attachment.findMany({
+    where: { entityType: "ClaimIgnoration", entityId: claimId },
+    select: { path: true, originalName: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const payload = await buildPayload(claimId, actor, {
+    comment: reason,
+    attachmentNames: evidence.map((item) => item.originalName),
+  });
+
+  await queueAndSend({
+    type: "CLAIM_IGNORATION",
+    claimId,
+    dedupeKey: `CLAIM_IGNORATION:${claimId}`,
+    to: await emailsForGroup("ALL_PORTAL_USERS"),
+    payload,
+    attachmentPaths: evidence.map((item) => item.path),
   });
 }

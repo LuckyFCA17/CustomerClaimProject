@@ -25,12 +25,14 @@ const payload: ClaimEmailPayload = {
   attachmentNames: ["NID-CC-26-10-0005_bad-news_v1.pdf"],
 };
 
-/** Tiga jenis yang dipicu Modul 1; sebelas sisanya menyusul bersama modulnya. */
+/** Jenis yang modulnya sudah dibangun; sisanya menyusul bersama modulnya. */
 const FASE_3_TYPES = [
   "CLAIM_REVIEW_REQUEST",
   "CLAIM_REVISION_REQUEST",
   "NEW_CUSTOMER_CLAIM",
 ] as const;
+
+const MODUL_2_TYPES = ["CPAR_REQUEST", "CLAIM_IGNORATION"] as const;
 
 describe("kelengkapan template", () => {
   it("memberi label untuk keempat belas jenis notifikasi §8", () => {
@@ -43,15 +45,15 @@ describe("kelengkapan template", () => {
   });
 
   it("baru menyediakan template untuk jenis yang modulnya sudah dibangun", () => {
-    for (const type of FASE_3_TYPES) {
+    for (const type of [...FASE_3_TYPES, ...MODUL_2_TYPES]) {
       expect(hasTemplate(type), type).toBe(true);
     }
 
-    expect(hasTemplate("CPAR_REQUEST")).toBe(false);
+    expect(hasTemplate("CPAR_REVIEW_REQUEST")).toBe(false);
   });
 
   it("menolak merender jenis yang templatenya belum ada, alih-alih mengirim email kosong", async () => {
-    await expect(renderClaimEmail("CPAR_REQUEST", payload)).rejects.toThrow(/belum dibuat/);
+    await expect(renderClaimEmail("CPAR_REVIEW_REQUEST", payload)).rejects.toThrow(/belum dibuat/);
   });
 });
 
@@ -70,6 +72,51 @@ describe("subject", () => {
     const subjects = FASE_3_TYPES.map((type) => renderSubject(type, payload));
 
     expect(new Set(subjects).size).toBe(3);
+  });
+});
+
+describe("notifikasi Modul 2", () => {
+  const cparPayload = {
+    ...payload,
+    cparNo: "NID/CPAR/26/0002",
+    responsibleDept: "Production",
+    cftMembers: ["Engineering", "PPIC & Warehouse"],
+    initialDocuments: ["4M Change Sheet", "Inspection Standard"],
+    dueDate: "28 Okt 2026",
+  };
+
+  it("menyebut CPAR No., penanggung jawab, dan tenggat pada CPAR request", async () => {
+    const { html } = await renderClaimEmail("CPAR_REQUEST", cparPayload);
+
+    expect(html).toContain("NID/CPAR/26/0002");
+    expect(html).toContain("Production");
+    expect(html).toContain("28 Okt 2026");
+  });
+
+  it("mendaftar dokumen yang diminta dan anggota CFT", async () => {
+    const { html } = await renderClaimEmail("CPAR_REQUEST", cparPayload);
+
+    expect(html).toContain("4M Change Sheet");
+    expect(html).toContain("Inspection Standard");
+    expect(html).toContain("Engineering");
+  });
+
+  it("memakai CPAR No. pada subject, bukan nomor klaim", async () => {
+    expect(renderSubject("CPAR_REQUEST", cparPayload)).toContain("NID/CPAR/26/0002");
+  });
+
+  it("menampilkan alasan penutupan pada notifikasi ignoration", async () => {
+    const reason = "Part yang diklaim bukan produksi NID; nomor lot milik pemasok lain.";
+    const { html, text } = await renderClaimEmail("CLAIM_IGNORATION", { ...payload, comment: reason });
+
+    expect(html).toContain(reason);
+    expect(text).toContain("bukan produksi NID");
+  });
+
+  it("menyatakan bahwa tidak ada CPAR yang diterbitkan", async () => {
+    const { text } = await renderClaimEmail("CLAIM_IGNORATION", { ...payload, comment: "x".repeat(40) });
+
+    expect(text.toLowerCase()).toContain("ignored");
   });
 });
 
