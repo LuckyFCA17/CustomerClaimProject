@@ -291,9 +291,29 @@ export function can(actor: Actor, action: Action, claim: ClaimContext | null = n
 }
 
 export function assertCan(actor: Actor, action: Action, claim: ClaimContext | null = null): void {
-  if (!can(actor, action, claim)) {
-    throw new ForbiddenError(`Anda tidak berhak melakukan "${action}" pada klaim ini.`, action);
+  if (can(actor, action, claim)) return;
+
+  const rule = PERMISSION_MATRIX[action];
+  const roleWouldAllow = actor.roles.some((role) => rule.roles[role] !== undefined);
+
+  // Membedakan "role Anda memang tidak berwenang" dari "klaim sudah berpindah status".
+  // Keduanya sama-sama 403, tapi yang kedua biasanya terjadi karena halaman sudah basi,
+  // dan pengguna perlu tahu bahwa memuat ulang akan menyelesaikannya.
+  if (
+    roleWouldAllow &&
+    claim &&
+    rule.statuses !== null &&
+    rule.statuses !== "ANY" &&
+    !rule.statuses.includes(claim.status)
+  ) {
+    throw new ForbiddenError(
+      `Tindakan ini tidak tersedia saat klaim berstatus ${claim.status}. ` +
+        "Halaman Anda mungkin sudah tidak mutakhir — muat ulang untuk melihat keadaan terkini.",
+      action,
+    );
   }
+
+  throw new ForbiddenError(`Anda tidak berhak melakukan "${action}" pada klaim ini.`, action);
 }
 
 /** Apakah aktor boleh mengisi satu section CPAR tertentu (§6 Modul 3, PLAN §2.3). */

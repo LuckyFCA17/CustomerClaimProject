@@ -88,6 +88,16 @@ function createPrismaClient() {
 
 type ExtendedPrismaClient = ReturnType<typeof createPrismaClient>;
 
+/**
+ * Klien di dalam `db.$transaction(...)`. Tipe bawaan `Prisma.TransactionClient` tidak
+ * cocok di sini karena klien kita sudah diperluas extension soft delete, jadi tipenya
+ * diturunkan dari klien yang benar-benar dipakai.
+ */
+export type DbTransaction = Omit<
+  ExtendedPrismaClient,
+  "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends"
+>;
+
 const globalForPrisma = globalThis as unknown as { prisma?: ExtendedPrismaClient };
 
 export const db: ExtendedPrismaClient = globalForPrisma.prisma ?? createPrismaClient();

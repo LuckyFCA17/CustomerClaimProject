@@ -318,41 +318,47 @@ model Claim {
   id      String      @id @default(cuid())
   claimNo String?     @unique
   status  ClaimStatus @default(DRAFT)
-  type    ClaimType
+  type    ClaimType?
 
   // A. Claim Information
-  dateOfOccurrence  DateTime
-  shiftOfOccurrence Shift
-  dateOfReceived    DateTime
-  shiftOfReceived   Shift
-  failurePlace      String
-  failurePlaceType  FailurePlaceType
-  contactPerson     String
-  contactEmail      String
-  contactPhone      String
-  internalPartNo    String
-  customerPartNo    String
-  partName          String
-  productCategoryId String
-  productCategory   ProductCategory      @relation(fields: [productCategoryId], references: [id])
-  originPlantType   OriginPlantType
+  //
+  // Field bertanda "?" boleh kosong selama klaim masih DRAFT atau REVISION_REQUESTED —
+  // draft memang belum memilihnya. Kelengkapannya dijaga claimSubmitSchema beserta
+  // guard transisi, sehingga klaim yang sudah terbit tidak pernah setengah terisi.
+  dateOfOccurrence  DateTime?
+  shiftOfOccurrence Shift?
+  dateOfReceived    DateTime?
+  shiftOfReceived   Shift?
+  failurePlace      String                @default("")
+  failurePlaceType  FailurePlaceType?
+  contactPerson     String                @default("")
+  contactEmail      String                @default("")
+  contactPhone      String                @default("")
+  internalPartNo    String                @default("")
+  customerPartNo    String                @default("")
+  partName          String                @default("")
+  productCategoryId String?
+  productCategory   ProductCategory?      @relation(fields: [productCategoryId], references: [id])
+  originPlantType   OriginPlantType?
   /// Wajib bila originPlantType = PASSTHROUGH atau VENDOR_SUBCON.
   originPlantDetail String?
-  occurrence        OccurrenceCount
-  ncDetailId        String
-  ncDetail          NonConformanceDetail @relation(fields: [ncDetailId], references: [id])
+  occurrence        OccurrenceCount?
+  ncDetailId        String?
+  ncDetail          NonConformanceDetail? @relation(fields: [ncDetailId], references: [id])
   customerId        String?
-  customer          Customer?            @relation(fields: [customerId], references: [id])
+  customer          Customer?             @relation(fields: [customerId], references: [id])
 
   // B. Abnormal Description
-  abnormalSource       String
-  qualityProblem       String
-  lotNo                String
-  kanbanNo             String
+  abnormalSource       String    @default("")
+  qualityProblem       String    @default("")
+  lotNo                String    @default("")
+  kanbanNo             String    @default("")
   injectionDate        DateTime?
   assemblyDate         DateTime?
   deliveryDate         DateTime?
-  suspectedProcessLine String
+  suspectedProcessLine String    @default("")
+  /// Terakhir kali auto-save draft menyimpan perubahan (§6 Modul 1).
+  draftSavedAt         DateTime?
 
   // Review QA Dept. Head
   submittedAt   DateTime?
@@ -399,10 +405,10 @@ model ClaimPart {
   claim          Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
   side           PartSide
   photoCaption   String?
-  partName       String
-  nidPartNo      String
-  qty            Decimal  @db.Decimal(12, 2)
-  qtyUnit        QtyUnit
+  partName       String   @default("")
+  nidPartNo      String   @default("")
+  qty            Decimal  @default(0) @db.Decimal(12, 2)
+  qtyUnit        QtyUnit  @default(PCS)
   dimensionItem  String?
   appearanceItem String?
 

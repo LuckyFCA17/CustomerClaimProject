@@ -15,6 +15,11 @@ export interface PortalUser {
   readonly roles: readonly RoleCode[];
 }
 
+/** Pengguna aktif, atau null bila tidak ada sesi. Dipakai route handler yang memilih sendiri responsnya. */
+export async function readSessionActor(): Promise<PortalUser | null> {
+  return readSessionUser();
+}
+
 async function readSessionUser(): Promise<PortalUser | null> {
   const session = await auth();
   const user = session?.user;

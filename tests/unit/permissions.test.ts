@@ -267,3 +267,27 @@ describe("penjaga route (lapis pertama)", () => {
     expect(routeAllowed("/master-data-export", ["QA"])).toBe(true);
   });
 });
+
+describe("pesan penolakan", () => {
+  it("membedakan status yang sudah berpindah dari role yang memang tidak berwenang", () => {
+    // Halaman review yang sudah basi: QA Head menekan Approve pada klaim yang
+    // sementara itu sudah terbit.
+    expect(() => assertCan(qaHead, "claim.review.approve", claim("PUBLISHED"))).toThrow(
+      /berstatus PUBLISHED/,
+    );
+
+    expect(() => assertCan(qa, "claim.review.approve", claim("PENDING_QA_HEAD_REVIEW"))).toThrow(
+      /tidak berhak/,
+    );
+  });
+
+  it("menyarankan muat ulang hanya ketika itu memang menolong", () => {
+    expect(() => assertCan(qaHead, "claim.review.approve", claim("PUBLISHED"))).toThrow(
+      /muat ulang/i,
+    );
+
+    expect(() => assertCan(prodStaff, "claim.review.approve", claim("PENDING_QA_HEAD_REVIEW"))).toThrow(
+      /tidak berhak/,
+    );
+  });
+});

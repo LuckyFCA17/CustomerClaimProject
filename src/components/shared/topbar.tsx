@@ -32,12 +32,17 @@ const SEGMENT_LABEL: Record<string, string> = {
   verify: "Verification",
 };
 
+/** cuid dan id serupa tidak layak dibaca manusia; di breadcrumb diganti kata biasa. */
+function isIdSegment(segment: string): boolean {
+  return segment.length > 12 && /^[a-z0-9]+$/i.test(segment) && /\d/.test(segment);
+}
+
 function breadcrumbFrom(pathname: string) {
   const segments = pathname.split("/").filter(Boolean);
 
   return segments.map((segment, index) => ({
     href: `/${segments.slice(0, index + 1).join("/")}`,
-    label: SEGMENT_LABEL[segment] ?? segment.toUpperCase(),
+    label: SEGMENT_LABEL[segment] ?? (isIdSegment(segment) ? "Detail" : segment.toUpperCase()),
     isLast: index === segments.length - 1,
   }));
 }

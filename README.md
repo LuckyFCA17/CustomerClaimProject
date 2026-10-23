@@ -4,8 +4,8 @@ Customer Complaint Handling Portal untuk **PT Nifco Indonesia (NID)**. Mengganti
 (Excel log + email + PDF manual) dengan satu record klaim hidup yang bergerak lewat *action button*
 dari input sampai `Verified Closed`.
 
-> **Status: Fase 1 selesai** — database, autentikasi, dan RBAC sudah berjalan di atas shell portal.
-> Alur klaim (state machine, form, PDF, email) menyusul mulai Fase 2.
+> **Status: Fase 2 selesai** — satu klaim dapat berjalan dari `DRAFT` sampai `PUBLISHED` lewat UI,
+> lengkap dengan jalur revisi dan audit trail. PDF dan notifikasi email menyusul pada Fase 3.
 > Rujukan rancangan: [`PLAN.md`](./PLAN.md) (skema Prisma final, matriks permission, diagram state)
 > dan [`ASSUMPTIONS.md`](./ASSUMPTIONS.md) (aturan bisnis yang diasumsikan).
 
@@ -141,6 +141,23 @@ RBAC ditegakkan di tiga lapis, dengan `src/lib/permissions.ts` sebagai sumber ke
 
 Matriks `ACTION × ROLE × STATUS` selengkapnya ada di [`PLAN.md` §2](./PLAN.md#2-matriks-permission-action--role--status).
 
+## State machine klaim
+
+`src/lib/claim-state.ts` memuat satu-satunya daftar perpindahan status yang sah. Perpindahan
+yang tidak ada di tabel itu ditolak dengan `IllegalTransitionError` (HTTP 409), termasuk ketika
+server action dipanggil langsung tanpa lewat UI.
+
+Pemeriksaan role sengaja dilakukan dua kali, oleh dua tabel berbeda:
+
+| Lapis | Pertanyaan yang dijawab | Berkas |
+|---|---|---|
+| `assertCan` | Boleh melakukan aksi ini, pada klaim ini, pada status ini? | `lib/permissions.ts` |
+| `assertTransition` | Perpindahan status ini sah bagi kapasitas tersebut? | `lib/claim-state.ts` |
+
+Keduanya harus lolos, sehingga satu kekeliruan di salah satu tabel tidak cukup untuk melompati
+tahap. `tests/unit/claim-state.test.ts` memeriksa seluruh 144 pasangan status: 14 yang sah harus
+diterima, 130 sisanya harus ditolak.
+
 ## Diagram alur status
 
 Lihat [`PLAN.md` §3](./PLAN.md#3-diagram-state-klaim). Ringkasnya:
@@ -157,7 +174,7 @@ DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
 
 - [x] **Fase 0** — Scaffold, shell UI, login, docker-compose
 - [x] **Fase 1** — Prisma schema, migrasi, seed, Auth.js + RBAC
-- [ ] **Fase 2** — State machine + unit test, Modul 1
+- [x] **Fase 2** — State machine + unit test, Modul 1
 - [ ] **Fase 3** — PDF Bad News & Quick Info, mailer, template email
 - [ ] **Fase 4** — Modul 2 (Follow Up / Ignore, CPAR ID)
 - [ ] **Fase 5** — Modul 3 (CPAR form, verifikasi, siklus revisi)
