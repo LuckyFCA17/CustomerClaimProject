@@ -1,0 +1,117 @@
+import "server-only";
+
+import type { Prisma } from "@/generated/prisma/client";
+import type { DocumentKind } from "@/generated/prisma/enums";
+import { db } from "@/lib/db";
+import { DOCUMENT_TITLE, renderPdf, storePdf } from "@/lib/pdf";
+import { claimFolder } from "@/lib/storage";
+
+/**
+ * Pencetakan dan penyimpanan dokumen klaim (§9, PLAN D6).
+ *
+ * Setiap PDF disimpan bersama snapshot data klaim saat itu. PDF yang dibuat bulan lalu
+ * karena itu tetap menggambarkan keadaan bulan lalu, walau klaimnya sudah berubah —
+ * dokumen yang pernah dikirim ke pelanggan tidak boleh berubah diam-diam.
+ */
+
+export interface GeneratedDoc {
+  readonly kind: DocumentKind;
+  readonly path: string;
+  readonly filename: string;
+}
+
+async function snapshotFor(claimId: string) {
+  const claim = await db.claim.findUniqueOrThrow({
+    where: { id: claimId },
+    include: {
+      parts: { orderBy: { side: "asc" } },
+      productCategory: { select: { code: true, name: true } },
+      ncDetail: { select: { code: true, name: true } },
+      customer: { select: { code: true, name: true } },
+      createdBy: { select: { name: true, jobTitle: true } },
+      reviewedBy: { select: { name: true, jobTitle: true } },
+    },
+  });
+
+  // Melewati JSON sekali membuang tipe yang tidak dikenal Postgres JSONB —
+  // Date menjadi ISO string dan Decimal menjadi string, keduanya stabil untuk arsip.
+  return JSON.parse(
+    JSON.stringify(claim, (_key, value: unknown) =>
+      typeof value === "bigint" ? value.toString() : value,
+    ),
+  ) as Prisma.InputJsonValue;
+}
+
+/**
+ * Mencetak satu dokumen dan mencatatnya.
+ *
+ * Versi dinaikkan tiap pencetakan ulang, bukan menimpa yang lama: kriteria penerimaan #6
+ * menuntut PDF lama tetap dapat ditelusuri, dan nomor versi itulah jejaknya.
+ */
+export async function generateDocument(
+  claimId: string,
+  kind: DocumentKind,
+  options: { actorId?: string | null; draft?: boolean } = {},
+): Promise<GeneratedDoc> {
+  const claim = await db.claim.findUniqueOrThrow({
+    where: { id: claimId },
+    select: { claimNo: true, status: true },
+  });
+
+  const claimNo = claim.claimNo ?? `DRAFT-${claimId.slice(-6).toUpperCase()}`;
+
+  const latest = await db.generatedDocument.findFirst({
+    where: { claimId, kind, cycle: 1 },
+    orderBy: { version: "desc" },
+    select: { version: true },
+  });
+
+  const version = (latest?.version ?? 0) + 1;
+  const isDraft = options.draft ?? claim.status === "DRAFT";
+
+  const pdf = await renderPdf({ kind, claimId, draft: isDraft });
+  const stored = await storePdf(kind, claimFolder(claim.claimNo, claimId), claimNo, pdf, version);
+
+  await db.generatedDocument.create({
+    data: {
+      claimId,
+      kind,
+      version,
+      cycle: 1,
+      path: stored.path,
+      snapshot: await snapshotFor(claimId),
+      isDraft,
+      generatedById: options.actorId ?? null,
+    },
+  });
+
+  return { kind, path: stored.path, filename: stored.filename };
+}
+
+/**
+ * Dua dokumen yang menyertai setiap klaim (§6 Modul 1 butir 3).
+ *
+ * Kegagalan pencetakan tidak dilempar ke pemanggil: klaim sudah berpindah status dan
+ * tidak boleh dibatalkan hanya karena Chromium gagal start. Dokumen yang gagal dapat
+ * dicetak ulang dari halaman detail.
+ */
+export async function generateClaimDocuments(
+  claimId: string,
+  actorId: string | null,
+): Promise<GeneratedDoc[]> {
+  const kinds: DocumentKind[] = ["BAD_NEWS", "QUICK_INFO"];
+  const results: GeneratedDoc[] = [];
+
+  for (const kind of kinds) {
+    try {
+      results.push(await generateDocument(claimId, kind, { actorId }));
+    } catch (error) {
+      console.error(
+        `Gagal mencetak ${DOCUMENT_TITLE[kind]} untuk klaim ${claimId}:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  return results;
+}

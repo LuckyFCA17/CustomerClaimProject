@@ -14,11 +14,22 @@ const { auth } = NextAuth(authConfig);
 
 const PUBLIC_PATHS = ["/login"];
 
+/**
+ * Halaman cetak memeriksa izinnya sendiri: Puppeteer membukanya dengan token
+ * bertanda tangan dan tanpa cookie sesi, sehingga penjaga berbasis sesi di sini justru
+ * akan menolak pencetakan yang sah. Lihat server/print-data.ts.
+ */
+function isPrintPath(pathname: string): boolean {
+  return pathname.startsWith("/print/");
+}
+
 export default auth((req) => {
   const { nextUrl } = req;
   const pathname = nextUrl.pathname;
   const session = req.auth;
   const isPublic = PUBLIC_PATHS.includes(pathname);
+
+  if (isPrintPath(pathname)) return NextResponse.next();
 
   if (!session?.user) {
     if (isPublic) return NextResponse.next();

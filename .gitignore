@@ -47,3 +47,6 @@ next-env.d.ts
 /prisma/*.db
 /test-results
 /playwright-report
+
+# Penangkap SMTP pengembangan
+/.mail

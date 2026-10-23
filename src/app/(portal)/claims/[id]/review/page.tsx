@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { FileText } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ReviewDecision } from "@/components/claim/review-decision";
+import { ClaimDocuments } from "@/components/claim/claim-documents";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -48,10 +48,16 @@ export default async function ReviewClaimPage({ params }: { params: Promise<{ id
   }
 
   const partIds = claim.parts.map((part) => part.id);
-  const attachments = await db.attachment.findMany({
-    where: { entityType: "ClaimPart", entityId: { in: partIds } },
-    orderBy: { createdAt: "asc" },
-  });
+  const [attachments, documents] = await Promise.all([
+    db.attachment.findMany({
+      where: { entityType: "ClaimPart", entityId: { in: partIds } },
+      orderBy: { createdAt: "asc" },
+    }),
+    db.generatedDocument.findMany({
+      where: { claimId: id },
+      orderBy: [{ kind: "asc" }, { version: "desc" }],
+    }),
+  ]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -134,18 +140,12 @@ export default async function ReviewClaimPage({ params }: { params: Promise<{ id
         <CardHeader>
           <CardTitle>Dokumen</CardTitle>
           <CardDescription>
-            Bad News Information Form dan Quick Information for Abnormal Part di-render pada Fase 3.
+            Periksa kedua PDF ini sebelum memutuskan — isinya persis yang akan diterima seluruh user
+            portal bila klaim Anda setujui.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-3 text-sm text-muted-foreground">
-          <span className="inline-flex items-center gap-2 rounded-lg border border-dashed border-nid-border px-3 py-2">
-            <FileText aria-hidden className="size-4" />
-            Bad News Information Form — belum tersedia
-          </span>
-          <span className="inline-flex items-center gap-2 rounded-lg border border-dashed border-nid-border px-3 py-2">
-            <FileText aria-hidden className="size-4" />
-            Quick Information for Abnormal Part — belum tersedia
-          </span>
+        <CardContent>
+          <ClaimDocuments documents={documents} />
         </CardContent>
       </Card>
 

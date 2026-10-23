@@ -22,16 +22,31 @@ export async function GET(
   const { path } = await params;
   const relativePath = path.join("/");
 
+  // Dua sumber berkas: lampiran unggahan pengguna, dan PDF yang dicetak portal.
+  // Keduanya dijaga aturan visibilitas klaim yang sama.
   const attachment = await db.attachment.findFirst({
     where: { path: relativePath },
-    select: { id: true, mimeType: true, originalName: true, claimId: true },
+    select: { mimeType: true, originalName: true, claimId: true },
   });
 
-  if (!attachment) return new NextResponse("Not found", { status: 404 });
+  const document = attachment
+    ? null
+    : await db.generatedDocument.findFirst({
+        where: { path: relativePath },
+        select: { claimId: true, kind: true, version: true },
+      });
 
-  if (attachment.claimId) {
+  if (!attachment && !document) return new NextResponse("Not found", { status: 404 });
+
+  const resource = attachment ?? {
+    mimeType: "application/pdf",
+    originalName: relativePath.split("/").pop() ?? "dokumen.pdf",
+    claimId: document?.claimId ?? null,
+  };
+
+  if (resource.claimId) {
     const claim = await db.claim.findUnique({
-      where: { id: attachment.claimId },
+      where: { id: resource.claimId },
       select: {
         status: true,
         createdById: true,
@@ -60,8 +75,8 @@ export async function GET(
 
     return new NextResponse(new Uint8Array(data), {
       headers: {
-        "content-type": attachment.mimeType,
-        "content-disposition": `inline; filename="${encodeURIComponent(attachment.originalName)}"`,
+        "content-type": resource.mimeType,
+        "content-disposition": `inline; filename="${encodeURIComponent(resource.originalName)}"`,
         // Berkas unggahan tidak pernah berubah isinya; yang berubah adalah barisnya.
         "cache-control": "private, max-age=3600",
       },

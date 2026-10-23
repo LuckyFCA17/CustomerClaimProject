@@ -29,6 +29,8 @@ A-06 (ADMIN murni administratif: tidak approve klaim, tidak verifikasi CPAR).
 | A-15 | **Bahasa & zona waktu**: UI label Inggris, pesan bantuan/konfirmasi Indonesia (§10). Semua timestamp disimpan UTC, ditampilkan `Asia/Jakarta`. | — | — | ⏳ |
 | A-16 | **Klaim tidak bisa dibatalkan setelah `PUBLISHED`** selain lewat jalur `IGNORED`. Tidak ada status `CANCELLED` karena tidak disebut di §5. | Butuh jalur pembatalan darurat. | Sedang — status baru + transisi | ⏳ |
 | A-17 | **Auto-save draft tiap 30 detik** (§6 Modul 1) hanya menyimpan ke server bila form berubah (dirty), untuk menghindari update kosong beruntun di `AuditLog`. Auto-save tidak menulis `AuditLog`. | Jejak perubahan draft tidak lengkap. | Murah | ⏳ |
+| A-19 | **Dokumen dicetak dua kali**: saat klaim dikirim (blok tanda tangan QA Head masih kosong) dan saat disetujui (lengkap). Versi lama disimpan, tidak ditimpa. | Pelanggan menerima lembar yang blok persetujuannya kosong bila dikirim dari versi pertama. | Murah — satu pemanggilan di claim-notifications.ts | ⏳ |
+| A-20 | **Token halaman cetak berlaku dua menit** dan terikat satu dokumen + satu klaim. Cukup untuk Puppeteer, terlalu singkat untuk disebar ulang. | Pencetakan pada server yang sangat lambat bisa gagal. | Murah — satu konstanta di print-token.ts | ⏳ |
 | A-18 | **File upload**: maks 10 MB/file, tipe `image/jpeg|png|webp`, `application/pdf`, Office (docx/xlsx). Disimpan `/storage/uploads/{claimNo}/{entityType}/{uuid}.{ext}`; draft pakai `_DRAFT-{claimId}` lalu di-rename saat Claim No terbit. | Format lain ditolak. | Murah | ⏳ |
 
 ## Cara mengubah asumsi

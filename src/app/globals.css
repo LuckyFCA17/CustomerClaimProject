@@ -179,3 +179,82 @@
     background: #ffffff;
   }
 }
+
+/* ───────────────────────── Halaman cetak (§9) ─────────────────────────
+ * Dirender Puppeteer menjadi PDF lewat lib/pdf.ts, dan dapat dibuka langsung di
+ * peramban dengan ?preview=1 untuk memeriksa tata letaknya.
+ */
+@page {
+  size: A4;
+  margin: 0;
+}
+
+.print-root {
+  background: #e9eaec;
+}
+
+.sheet {
+  /* A4 persis; tinggi minimum, bukan tetap, supaya isi yang meluap pindah ke halaman
+     berikutnya alih-alih terpotong. */
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 12mm 14mm;
+  background: #ffffff;
+  color: #1f2933;
+  box-sizing: border-box;
+  position: relative;
+  font-size: 9.5pt;
+  line-height: 1.45;
+}
+
+.sheet + .sheet {
+  margin-top: 8mm;
+}
+
+/* Watermark DRAFT untuk dokumen yang belum disetujui. */
+.sheet[data-draft="true"]::before {
+  content: "DRAFT";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-poppins), sans-serif;
+  font-size: 120pt;
+  font-weight: 700;
+  color: rgb(217 116 40 / 0.1);
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.sheet > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media print {
+  .print-root {
+    background: #ffffff;
+  }
+
+  .sheet {
+    margin: 0;
+    box-shadow: none;
+    page-break-after: always;
+  }
+
+  .sheet:last-child {
+    page-break-after: auto;
+  }
+}
+
+@media screen {
+  .print-root {
+    padding: 16px 0;
+  }
+
+  .sheet {
+    box-shadow: 0 2px 18px rgb(31 41 51 / 0.18);
+  }
+}

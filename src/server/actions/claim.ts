@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 
 import type { Claim, Prisma } from "@/generated/prisma/client";
 import type { ClaimStatus, PartSide, QtyUnit } from "@/generated/prisma/enums";
@@ -13,6 +14,11 @@ import { nextClaimNo } from "@/lib/numbering";
 import { assertCan, type ClaimContext } from "@/lib/permissions";
 import { requireActor } from "@/lib/session";
 import { claimFolder, saveUpload, storage } from "@/lib/storage";
+import {
+  notifyClaimPublished,
+  notifyClaimRevisionRequested,
+  notifyClaimSubmitted,
+} from "@/server/claim-notifications";
 import {
   claimDraftSchema,
   claimReviewSchema,
@@ -203,6 +209,7 @@ export async function submitClaim(claimId: string, input: unknown): Promise<Acti
     const { standard, actual, ...fields } = parsed.data;
     const requestContext = await readRequestContext();
     const wasRevision = claim.status === "REVISION_REQUESTED";
+    const submittedAt = new Date();
 
     await db.$transaction(async (tx) => {
       // Claim No terbit sekali saja; pengiriman ulang setelah revisi memakai nomor yang sama.
@@ -214,7 +221,7 @@ export async function submitClaim(claimId: string, input: unknown): Promise<Acti
           ...toClaimColumns(fields),
           claimNo,
           status: "PENDING_QA_HEAD_REVIEW",
-          submittedAt: new Date(),
+          submittedAt,
           draftSavedAt: null,
           // Komentar revisi sebelumnya dibersihkan supaya tidak terbaca sebagai permintaan aktif.
           reviewComment: null,
@@ -246,7 +253,16 @@ export async function submitClaim(claimId: string, input: unknown): Promise<Acti
       );
     });
 
-    // TODO Fase 3: enqueue CLAIM_REVIEW_REQUEST ke QA_HEAD, lampirkan Bad News + Quick Info PDF.
+    // Pencetakan PDF menyalakan Chromium dan memakan waktu sekitar dua detik. Dijalankan
+    // setelah respons terkirim supaya QA tidak menunggui layar yang membeku; klaimnya
+    // sendiri sudah berpindah status di dalam transaksi di atas.
+    after(async () => {
+      await notifyClaimSubmitted(
+        claimId,
+        { id: actor.id, name: actor.name, jobTitle: actor.jobTitle },
+        submittedAt,
+      );
+    });
 
     revalidatePath("/claims");
     revalidatePath(`/claims/${claimId}`);
@@ -282,6 +298,7 @@ export async function reviewClaim(claimId: string, input: unknown): Promise<Acti
 
     const requestContext = await readRequestContext();
     const comment = parsed.data.comment?.trim() || null;
+    const decidedAt = new Date();
 
     await db.$transaction(async (tx) => {
       await tx.claim.update({
@@ -289,9 +306,9 @@ export async function reviewClaim(claimId: string, input: unknown): Promise<Acti
         data: {
           status: target,
           reviewedById: actor.id,
-          reviewedAt: new Date(),
+          reviewedAt: decidedAt,
           reviewComment: comment,
-          publishedAt: approving ? new Date() : null,
+          publishedAt: approving ? decidedAt : null,
         },
       });
 
@@ -311,8 +328,15 @@ export async function reviewClaim(claimId: string, input: unknown): Promise<Acti
       );
     });
 
-    // TODO Fase 3: approve → NEW_CUSTOMER_CLAIM ke seluruh user portal dengan kedua PDF;
-    //              revise  → CLAIM_REVISION_REQUEST ke QA pembuat klaim.
+    after(async () => {
+      const sender = { id: actor.id, name: actor.name, jobTitle: actor.jobTitle };
+
+      if (approving) {
+        await notifyClaimPublished(claimId, sender);
+      } else {
+        await notifyClaimRevisionRequested(claimId, sender, decidedAt, comment);
+      }
+    });
 
     revalidatePath("/claims");
     revalidatePath(`/claims/${claimId}`);

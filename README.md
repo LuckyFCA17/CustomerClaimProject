@@ -4,8 +4,9 @@ Customer Complaint Handling Portal untuk **PT Nifco Indonesia (NID)**. Mengganti
 (Excel log + email + PDF manual) dengan satu record klaim hidup yang bergerak lewat *action button*
 dari input sampai `Verified Closed`.
 
-> **Status: Fase 2 selesai** — satu klaim dapat berjalan dari `DRAFT` sampai `PUBLISHED` lewat UI,
-> lengkap dengan jalur revisi dan audit trail. PDF dan notifikasi email menyusul pada Fase 3.
+> **Status: Fase 3 selesai** — klaim berjalan dari `DRAFT` sampai `PUBLISHED` lewat UI, mencetak
+> Bad News Information Form dan Quick Information for Abnormal Part, lalu mengirimkannya lewat
+> email. Modul CPAR menyusul pada Fase 4.
 > Rujukan rancangan: [`PLAN.md`](./PLAN.md) (skema Prisma final, matriks permission, diagram state)
 > dan [`ASSUMPTIONS.md`](./ASSUMPTIONS.md) (aturan bisnis yang diasumsikan).
 
@@ -77,7 +78,14 @@ su postgres -c "psql -c \"CREATE ROLE ncc LOGIN PASSWORD 'ncc' CREATEDB;\""
 su postgres -c "createdb -O ncc ncc_portal"
 ```
 
-Untuk SMTP, arahkan `SMTP_HOST`/`SMTP_PORT` ke penangkap email lain, atau biarkan kosong sampai Fase 3.
+Untuk SMTP, jalankan penangkap bawaan repo di terminal terpisah:
+
+```bash
+pnpm mail:sink        # mendengarkan 127.0.0.1:1025, menyimpan .eml ke ./.mail
+```
+
+Email tidak pernah diteruskan ke mana pun; berkas `.eml`-nya dapat dibuka langsung beserta
+lampiran PDF-nya.
 </details>
 
 ### Perintah
@@ -94,6 +102,7 @@ Untuk SMTP, arahkan `SMTP_HOST`/`SMTP_PORT` ke penangkap email lain, atau biarka
 | `pnpm db:seed` | Mengisi data awal (idempotent) |
 | `pnpm db:studio` | Prisma Studio |
 | `pnpm db:reset` | Menghapus database dan menjalankan ulang migrasi + seed |
+| `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 bila MailHog tidak tersedia |
 
 ### Catatan komponen UI
 
@@ -102,6 +111,30 @@ tidak bisa mengambil komponen. Karena shadcn/ui memang berupa komponen *copy-pas
 komponennya ditulis langsung di `src/components/ui/` di atas primitif Radix dari npm — bentuknya sama
 dengan keluaran CLI. `components.json` tetap disediakan agar `pnpm dlx shadcn@latest add <komponen>`
 langsung bisa dipakai di jaringan yang tidak memblokir host tersebut.
+
+## Dokumen dan email
+
+Setiap klaim yang dikirim mencetak dua PDF A4 lewat Puppeteer, yang merender route
+`/print/[doc]/[id]` — halaman React biasa, bukan penyusun PDF terpisah. Satu sumber tata letak
+untuk layar dan kertas, sehingga `?preview=1` di peramban memang menggambarkan hasil cetaknya.
+
+| Dokumen | Isi |
+|---|---|
+| Bad News Information Form | Seluruh §7 bagian A, B, dan C dalam satu lembar |
+| Quick Information for Abnormal Part | Foto besar berdampingan untuk ditempel di line produksi |
+
+Dokumen dicetak ulang setelah klaim disetujui supaya blok tanda tangan memuat nama dan waktu
+persetujuan QA Dept. Head. Versi lama tidak ditimpa — nomor versinya naik, dan setiap PDF
+menyimpan snapshot data klaim saat dicetak.
+
+Halaman cetak dibuka Puppeteer memakai token bertanda tangan berumur dua menit yang terikat satu
+dokumen dan satu klaim, karena Puppeteer tidak membawa cookie sesi. Manusia membukanya dengan
+sesi biasa lewat `?preview=1`.
+
+Email keluar hanya lewat `lib/mailer.ts`, tercatat di tabel `Notification`, dan dikirim **setelah**
+transaksi perpindahan status commit — SMTP yang mati tidak membatalkan perubahan status, dan
+transaksi yang gagal tidak menyisakan email yang terlanjur keluar. Log pengirimannya ada di
+`/notifications` untuk QA Dept. Head dan Administrator.
 
 ## Akun demo
 
@@ -128,6 +161,13 @@ Seed juga membuat 3 klaim contoh pada status berbeda — `DRAFT`, `PENDING_QA_HE
 `CPAR_IN_PROGRESS` (CPAR bertipe CFT: Production sebagai lead dept, Engineering sebagai anggota).
 Masuk sebagai Yusuf (PRD) dan Agus (MTC) menghasilkan daftar klaim yang berbeda — itulah aturan
 visibilitas §3 yang bekerja.
+
+### Catatan paket email
+
+`@react-email/components` ditandai npm sebagai *no longer supported* pada seluruh versinya, jadi
+yang dipakai hanya `@react-email/render` — perender React Email yang masih didukung. Primitif
+email (shell, tabel ringkasan, tombol) ditulis sendiri di `src/emails/primitives.tsx` memakai
+tabel dan atribut lawas, karena klien email korporat tidak dapat diandalkan untuk flexbox.
 
 ## Kontrol akses
 
@@ -175,7 +215,7 @@ DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
 - [x] **Fase 0** — Scaffold, shell UI, login, docker-compose
 - [x] **Fase 1** — Prisma schema, migrasi, seed, Auth.js + RBAC
 - [x] **Fase 2** — State machine + unit test, Modul 1
-- [ ] **Fase 3** — PDF Bad News & Quick Info, mailer, template email
+- [x] **Fase 3** — PDF Bad News & Quick Info, mailer, template email
 - [ ] **Fase 4** — Modul 2 (Follow Up / Ignore, CPAR ID)
 - [ ] **Fase 5** — Modul 3 (CPAR form, verifikasi, siklus revisi)
 - [ ] **Fase 6** — Modul 4 (monitoring, Not Effective, Verified Closed)

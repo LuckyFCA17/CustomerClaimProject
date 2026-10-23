@@ -12,6 +12,15 @@ const compat = new FlatCompat({
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
+    // Template email adalah dokumen HTML utuh, bukan halaman Next: <head> dan <html>
+    // di sana memang harus ditulis sendiri.
+    files: ["src/emails/**/*.tsx"],
+    rules: {
+      "@next/next/no-head-element": "off",
+      "@next/next/no-html-link-for-pages": "off",
+    },
+  },
+  {
     ignores: [
       "node_modules/**",
       ".next/**",

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { forbidden, notFound } from "next/navigation";
 import { ClipboardCheck, PencilLine } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { StatusBadge } from "@/components/shared/status-badge";
 import { StatusRail } from "@/components/shared/status-rail";
 import { ClaimTimeline, type TimelineEntry } from "@/components/claim/claim-timeline";
+import { ClaimDocuments } from "@/components/claim/claim-documents";
 import { db } from "@/lib/db";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { draftLabel } from "@/lib/numbering";
-import { ForbiddenError } from "@/lib/errors";
 import { can, canViewClaim } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
 
@@ -86,9 +86,7 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
       : null,
   };
 
-  if (!canViewClaim(user, context)) {
-    throw new ForbiddenError("Klaim ini bukan tanggung jawab departemen Anda.");
-  }
+  if (!canViewClaim(user, context)) forbidden();
 
   // Urut maju, searah dengan status rail di atas halaman — klaim dibaca dari awal
   // perjalanannya, bukan dari peristiwa terakhir.
@@ -113,10 +111,16 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
   }));
 
   const partIds = claim.parts.map((part) => part.id);
-  const attachments = await db.attachment.findMany({
-    where: { entityType: "ClaimPart", entityId: { in: partIds } },
-    orderBy: { createdAt: "asc" },
-  });
+  const [attachments, documents] = await Promise.all([
+    db.attachment.findMany({
+      where: { entityType: "ClaimPart", entityId: { in: partIds } },
+      orderBy: { createdAt: "asc" },
+    }),
+    db.generatedDocument.findMany({
+      where: { claimId: id },
+      orderBy: [{ kind: "asc" }, { version: "desc" }],
+    }),
+  ]);
 
   const canEdit = can(user, "claim.update", context);
   const canReview = can(user, "claim.review.approve", context);
@@ -276,6 +280,19 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
 
       <Card>
         <CardHeader>
+          <CardTitle>Documents</CardTitle>
+          <CardDescription>
+            Bad News Information Form dan Quick Information for Abnormal Part, dicetak portal dari
+            data klaim ini.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ClaimDocuments documents={documents} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Activity</CardTitle>
           <CardDescription>Seluruh perpindahan status, diambil dari audit trail.</CardDescription>
         </CardHeader>
@@ -285,7 +302,7 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
       </Card>
 
       <p className="text-xs text-muted-foreground">
-        Tab CPAR, Monitoring, dan Documents menyusul pada Fase 4 sampai 6.
+        Tab CPAR dan Monitoring menyusul pada Fase 4 sampai 6.
       </p>
     </div>
   );
