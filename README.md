@@ -118,10 +118,24 @@ Setiap klaim yang dikirim mencetak dua PDF A4 lewat Puppeteer, yang merender rou
 `/print/[doc]/[id]` — halaman React biasa, bukan penyusun PDF terpisah. Satu sumber tata letak
 untuk layar dan kertas, sehingga `?preview=1` di peramban memang menggambarkan hasil cetaknya.
 
-| Dokumen | Isi |
-|---|---|
-| Bad News Information Form | Seluruh §7 bagian A, B, dan C dalam satu lembar |
-| Quick Information for Abnormal Part | Foto besar berdampingan untuk ditempel di line produksi |
+| Dokumen | Format | Isi |
+|---|---|---|
+| Bad News Information | A4 **mendatar** | Form 5 (R3) PR-QA-ISO-07 — Quality Alert, lengkap dengan grid sosialisasi operator |
+| Quick Information for Abnormal Part | A4 tegak | Foto besar berdampingan untuk ditempel di line produksi |
+
+Lembar Bad News meniru formulir terkendali NID apa adanya: urutan baris Section A, pembagian
+Section B standard–actual, pita peringatan berbahasa Indonesia yang sudah tercetak di sana, sampai
+ejaan "PROBLEM HYSTORY" — itu teks pada dokumen terkendali, dan memperbaikinya justru membuat
+lembar portal berbeda dari master yang dipegang auditor.
+
+**Section C — Socialization** adalah grid paraf: tiga grup kerja (A, B, C) masing-masing berkolom
+GROUP / DEPT / OPERATOR / PARAF, ditambah blok OTHERS untuk *Related Section Process Control*.
+Barisnya sengaja dicetak kosong — lembar ini diedarkan ke lantai produksi dan diparaf operator
+dengan tangan, persis seperti formulir aslinya.
+
+Kolom PREPARED dan APPROVED diisi portal beserta waktu persetujuan digitalnya. CHECKED,
+ACKNOWLEDGED (QC / PPIC / PRODUCTION), dan RESPONSIBLE dibiarkan kosong: portal tidak mengetahui
+siapa yang memaraf di lapangan, dan mengisinya dengan tebakan akan membuat lembar itu berbohong.
 
 Dokumen dicetak ulang setelah klaim disetujui supaya blok tanda tangan memuat nama dan waktu
 persetujuan QA Dept. Head. Versi lama tidak ditimpa — nomor versinya naik, dan setiap PDF

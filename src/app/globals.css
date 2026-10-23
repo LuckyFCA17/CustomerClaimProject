@@ -212,6 +212,26 @@
   margin-top: 8mm;
 }
 
+/* Form 5 (R3) PR-QA-ISO-07 dicetak mendatar; ukuran kertasnya diatur halamannya sendiri. */
+.sheet-landscape {
+  width: 297mm;
+  min-height: 210mm;
+  padding: 5mm 6mm;
+  font-size: 7.5pt;
+  line-height: 1.25;
+}
+
+/* Garis tabel form: satu kelas supaya ketebalannya seragam di seluruh lembar. */
+.form-cell {
+  border: 0.3mm solid #1f2933;
+  padding: 0.6mm 1.2mm;
+}
+
+.form-label {
+  text-align: right;
+  font-weight: 600;
+}
+
 /* Watermark DRAFT untuk dokumen yang belum disetujui. */
 .sheet[data-draft="true"]::before {
   content: "DRAFT";

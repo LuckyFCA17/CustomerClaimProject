@@ -1,13 +1,18 @@
 import { statusMeta } from "@/config/claim-status";
-import { FieldGrid, FormHeader, PhotoRow, SectionTitle, Sheet, SignatureBlock } from "@/components/print/sheet";
+import {
+  Cell,
+  FormMasthead,
+  RevisionMark,
+  SectionBar,
+  SignatureStrip,
+  SocializationGrid,
+} from "@/components/print/quality-alert";
 import { formatDate } from "@/lib/format";
+import { periodLabel, splitQty } from "@/lib/quality-alert";
 import { draftLabel } from "@/lib/numbering";
 import {
   FAILURE_PLACE_LABEL,
-  OCCURRENCE_LABEL,
-  ORIGIN_LABEL,
   SHIFT_LABEL,
-  TYPE_LABEL,
   authorizePrint,
   loadClaimForPrint,
   photosForParts,
@@ -16,10 +21,11 @@ import {
 export const dynamic = "force-dynamic";
 
 /**
- * Bad News Information Form (§9).
+ * Bad News Information — Form 5 (R3) PR-QA-ISO-07.
  *
- * Lembar lengkap: seluruh isi §7 bagian A, B, dan C dalam satu A4, ditutup blok
- * tanda tangan QA Staff dan QA Dept. Head.
+ * Mengikuti formulir terkendali NID: A4 mendatar, Section A riwayat masalah, Section B
+ * perbandingan standard dan actual, pita peringatan, lalu Section C sosialisasi yang
+ * diparaf operator per grup kerja.
  */
 export default async function BadNewsPrintPage({
   params,
@@ -41,131 +47,292 @@ export default async function BadNewsPrintPage({
   const actual = claim.parts.find((part) => part.side === "ACTUAL");
 
   const isDraft = query.draft === "1" || claim.status === "DRAFT";
+  const issueDate = claim.publishedAt ?? claim.submittedAt;
+  const periodSource = claim.dateOfOccurrence ?? issueDate ?? new Date();
+
+  const { pcs: qtyPcs, box: qtyBox } = splitQty(
+    actual ? Number(actual.qty) : null,
+    actual?.qtyUnit,
+  );
+
+  const describe = (part: typeof standard) =>
+    part?.appearanceItem?.trim() || part?.dimensionItem?.trim() || null;
 
   return (
-    <Sheet draft={isDraft}>
-      <FormHeader
-        formTitle="Bad News Information"
-        formCode="FM-QA-01 Rev.00"
-        documentNo={claim.claimNo ?? draftLabel(claim.id)}
-        status={statusMeta(claim.status).label}
-        printedAt={new Date()}
-      />
+    <>
+      {/* Lembar ini mendatar; aturan @page di globals.css dibuat untuk dokumen tegak. */}
+      <style>{`@page { size: A4 landscape; margin: 0; }`}</style>
 
-      <SectionTitle>A. Claim Information</SectionTitle>
-      <FieldGrid
-        rows={[
-          ["Type of claim", claim.type ? TYPE_LABEL[claim.type] : null],
-          [
-            "Date of occurrence",
-            claim.dateOfOccurrence
-              ? `${formatDate(claim.dateOfOccurrence)}${claim.shiftOfOccurrence ? ` · ${SHIFT_LABEL[claim.shiftOfOccurrence]}` : ""}`
-              : null,
-          ],
-          [
-            "Date of received",
-            claim.dateOfReceived
-              ? `${formatDate(claim.dateOfReceived)}${claim.shiftOfReceived ? ` · ${SHIFT_LABEL[claim.shiftOfReceived]}` : ""}`
-              : null,
-          ],
-          [
-            "Failure place",
-            claim.failurePlace
-              ? `${claim.failurePlace}${claim.failurePlaceType ? ` · ${FAILURE_PLACE_LABEL[claim.failurePlaceType]}` : ""}`
-              : null,
-          ],
-          ["Customer", claim.customer?.name],
-          ["Contact person", claim.contactPerson],
-          ["Contact email", claim.contactEmail],
-          ["Contact phone", claim.contactPhone],
-          ["Part name", claim.partName],
-          ["Internal part no.", claim.internalPartNo],
-          ["Customer part no.", claim.customerPartNo],
-          ["Product category", claim.productCategory?.name],
-          ["Occurrence", claim.occurrence ? OCCURRENCE_LABEL[claim.occurrence] : null],
-          [
-            "Production place",
-            claim.originPlantType
-              ? `${ORIGIN_LABEL[claim.originPlantType]}${claim.originPlantDetail ? ` — ${claim.originPlantDetail}` : ""}`
-              : null,
-          ],
-          ["Non-conformance detail", claim.ncDetail?.name],
-        ]}
-      />
+      <section className="sheet sheet-landscape" data-draft={isDraft ? "true" : undefined}>
+        <FormMasthead documentNo={claim.claimNo ?? draftLabel(claim.id)} issueDate={issueDate} />
 
-      <SectionTitle>B. Abnormal Description</SectionTitle>
-      <FieldGrid
-        rows={[
-          ["Abnormal information source", claim.abnormalSource],
-          ["Suspected process line", claim.suspectedProcessLine],
-          ["Lot no.", claim.lotNo],
-          ["Kanban no.", claim.kanbanNo],
-          ["Injection date", claim.injectionDate ? formatDate(claim.injectionDate) : null],
-          ["Assembly date", claim.assemblyDate ? formatDate(claim.assemblyDate) : null],
-          ["Delivery date", claim.deliveryDate ? formatDate(claim.deliveryDate) : null],
-        ]}
-      />
-      <div className="mt-[2mm]">
-        <FieldGrid rows={[["Quality problem", claim.qualityProblem]]} columns={1} />
-      </div>
+        <SignatureStrip
+          prepared={{ name: claim.createdBy.name, at: claim.submittedAt }}
+          approved={{ name: claim.reviewedBy?.name ?? null, at: claim.publishedAt }}
+          period={periodLabel(periodSource)}
+          // RESPONSIBLE, QC, PPIC, dan PRODUCTION diparaf di lantai produksi; portal
+          // tidak mengetahuinya, jadi dibiarkan kosong alih-alih ditebak.
+          responsible={null}
+        />
 
-      <SectionTitle>C. Part Comparison</SectionTitle>
-      <div className="grid grid-cols-2 gap-[3mm]">
-        {[
-          { label: "Standard Part", part: standard },
-          { label: "Actual", part: actual },
-        ].map(({ label, part }) => (
-          <div key={label} className="border border-[#e4e7eb] p-[2.5mm]">
-            <div className="mb-[2mm] font-display text-[8.5pt] font-semibold uppercase tracking-wide">
-              {label}
-            </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+          <SectionBar letter="A" title="PROBLEM HYSTORY" />
+          <SectionBar letter="B" title="PROBLEM DESCRIPTION" />
+        </div>
 
-            <PhotoRow photos={part ? (photos.get(part.id) ?? []) : []} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", alignItems: "stretch" }}>
+          {/* ── Section A ───────────────────────────────────────────── */}
+          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+            {/*
+              Lebar kolom mengikuti proporsi formulir aslinya: 30/20/10/10/9/10/11.
+              Area kosong di kanan bukan ruang sisa — pada Form 5 memang dibiarkan
+              terbuka, dan baris Kanban No. satu-satunya yang menembusnya.
+            */}
+            <colgroup>
+              <col style={{ width: "30%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "11%" }} />
+            </colgroup>
+            <tbody>
+              <tr>
+                <Cell align="right" bold fontSize="9pt">
+                  Problem
+                </Cell>
+                <Cell align="center" color="#d00">
+                  {claim.ncDetail?.name ?? null}
+                </Cell>
+                <Cell align="center" bold>
+                  QTY
+                </Cell>
+                <Cell align="right">{qtyPcs}</Cell>
+                <Cell>pcs</Cell>
+                <Cell align="right">{qtyBox}</Cell>
+                <Cell>box</Cell>
+              </tr>
 
-            <div className="mt-[2mm] space-y-[1mm] text-[8.5pt]">
-              <PrintRow label="Part name" value={part?.partName} />
-              <PrintRow label="NID part no." value={part?.nidPartNo} />
-              <PrintRow
-                label="Qty"
-                value={
-                  part && Number(part.qty) > 0
-                    ? `${Number(part.qty)} ${part.qtyUnit === "BOX" ? "Box" : "Pcs"}`
-                    : undefined
-                }
-              />
-              <PrintRow label="Dimension item" value={part?.dimensionItem ?? undefined} />
-              <PrintRow label="Appearance item" value={part?.appearanceItem ?? undefined} />
-              <PrintRow label="Photo description" value={part?.photoCaption ?? undefined} />
-            </div>
-          </div>
-        ))}
-      </div>
+              <tr>
+                <Cell align="right" bold fontSize="9pt">
+                  Date of Occurance
+                </Cell>
+                <Cell align="center">
+                  {claim.dateOfOccurrence ? formatDate(claim.dateOfOccurrence) : null}
+                </Cell>
+                <Cell colSpan={2} align="center">
+                  {claim.shiftOfOccurrence
+                    ? `${SHIFT_LABEL[claim.shiftOfOccurrence].toUpperCase()} SHIFT`
+                    : null}
+                </Cell>
+                <Cell colSpan={3} rowSpan={5} />
+              </tr>
 
-      <SignatureBlock
-        signatories={[
-          {
-            role: "Prepared by — QA Staff",
-            name: claim.createdBy.name,
-            jobTitle: claim.createdBy.jobTitle,
-            approvedAt: claim.submittedAt,
-          },
-          {
-            role: "Approved by — QA Dept. Head",
-            name: claim.reviewedBy?.name ?? null,
-            jobTitle: claim.reviewedBy?.jobTitle ?? null,
-            approvedAt: claim.publishedAt,
-          },
-        ]}
-      />
-    </Sheet>
+              <tr>
+                <Cell align="right" bold fontSize="9pt">
+                  Failure Place
+                </Cell>
+                <Cell align="center">{claim.failurePlace || null}</Cell>
+                <Cell colSpan={2} align="center">
+                  {claim.failurePlaceType ? FAILURE_PLACE_LABEL[claim.failurePlaceType].toUpperCase() : null}
+                </Cell>
+              </tr>
+
+              <tr>
+                <Cell align="right" bold fontSize="9pt">
+                  Customer Part No.
+                </Cell>
+                <Cell colSpan={3} align="center">
+                  {claim.customerPartNo || null}
+                </Cell>
+              </tr>
+
+              <tr>
+                <Cell align="right" bold fontSize="9pt">
+                  NID Part No.
+                </Cell>
+                <Cell colSpan={3} align="center">
+                  {claim.internalPartNo || null}
+                </Cell>
+              </tr>
+
+              <tr>
+                <Cell align="right" bold fontSize="9pt">
+                  Part Name
+                </Cell>
+                <Cell colSpan={3} align="center">
+                  {claim.partName || null}
+                </Cell>
+              </tr>
+
+              <tr>
+                <Cell align="right" bold fontSize="9pt">
+                  Lot No.
+                </Cell>
+                <Cell align="center">{claim.lotNo || null}</Cell>
+                <Cell colSpan={3} align="right" bold fontSize="9pt">
+                  Kanban No.
+                </Cell>
+                <Cell colSpan={2} align="center">
+                  {claim.kanbanNo || null}
+                </Cell>
+              </tr>
+
+              <tr>
+                <Cell rowSpan={2} align="right" bold fontSize="9pt">
+                  Production Date
+                </Cell>
+                <Cell align="center" bold fontSize="8pt">
+                  Injection
+                </Cell>
+                <Cell colSpan={2} align="center" bold fontSize="8pt">
+                  Assembly
+                </Cell>
+                <Cell colSpan={3} rowSpan={4} />
+              </tr>
+              <tr>
+                <Cell align="center">
+                  {claim.injectionDate ? formatDate(claim.injectionDate) : null}
+                </Cell>
+                <Cell colSpan={2} align="center">
+                  {claim.assemblyDate ? formatDate(claim.assemblyDate) : null}
+                </Cell>
+              </tr>
+
+              <tr>
+                <Cell align="right" bold fontSize="9pt">
+                  Delivery Date
+                </Cell>
+                <Cell colSpan={3} align="center">
+                  {claim.deliveryDate ? formatDate(claim.deliveryDate) : null}
+                </Cell>
+              </tr>
+
+              <tr>
+                <Cell align="right" bold fontSize="9pt">
+                  Line Process
+                </Cell>
+                <Cell colSpan={3} align="center">
+                  {claim.suspectedProcessLine || null}
+                </Cell>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* ── Section B ───────────────────────────────────────────── */}
+          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+            <tbody>
+              <tr>
+                <Cell width="50%" align="center" bold color="#15803d">
+                  STANDARD
+                </Cell>
+                <Cell width="50%" align="center" bold color="#d00">
+                  ACTUAL
+                </Cell>
+              </tr>
+              <tr>
+                <Cell align="center">{describe(standard)}</Cell>
+                <Cell align="center">{describe(actual)}</Cell>
+              </tr>
+              <tr>
+                <Cell colSpan={2} align="center" bold>
+                  PICTURE
+                </Cell>
+              </tr>
+              <tr style={{ height: "52mm" }}>
+                <PhotoCell photos={photos.get(standard?.id ?? "") ?? []} />
+                <PhotoCell photos={photos.get(actual?.id ?? "") ?? []} />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* ── Pita peringatan (teks tercetak pada formulir aslinya) ── */}
+        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+          <tbody>
+            <tr>
+              <Cell align="center" bold color="#d00" fontSize="10pt">
+                PROBLEM TELAH LOLOS KE CUSTOMER
+              </Cell>
+            </tr>
+            <tr>
+              <Cell align="center" color="#1d4ed8" bold>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "2mm" }}>
+                  <RevisionMark />
+                  JANGAN SAMPAI PROBLEM YANG SAMA TERKIRIM KEMBALI (TERULANG) KE CUSTOMER
+                </span>
+                <div>1. PENGECEKAN OPERATOR PROSES DI PERKETAT (BIQ)</div>
+                <div>2. INSPEKTOR INSPEKSI DI PERKETAT (SAMPLING)</div>
+              </Cell>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* ── Section C — Socialization ──────────────────────────── */}
+        <SectionBar letter="C" title="SOCIALIZATION" />
+        <SocializationGrid />
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: "4mm",
+            marginTop: "1mm",
+            fontSize: "5.5pt",
+            color: "#6b7280",
+          }}
+        >
+          <span>FORM 5 (R3) PR-QA-ISO-07</span>
+          <span style={{ fontStyle: "italic" }}>
+            Status {statusMeta(claim.status).label} · disiapkan dan disetujui secara elektronik
+            melalui NCC Portal
+          </span>
+        </div>
+      </section>
+    </>
   );
 }
 
-function PrintRow({ label, value }: { label: string; value?: string | null }) {
+function PhotoCell({
+  photos,
+}: {
+  photos: readonly { id: string; src: string; caption: string | null }[];
+}) {
   return (
-    <div className="flex gap-[2mm]">
-      <span className="w-[28mm] shrink-0 text-[#6b7280]">{label}</span>
-      <span className="min-w-0 flex-1 break-words">{value || "—"}</span>
-    </div>
+    <Cell align="center">
+      {photos.length === 0 ? (
+        " "
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: photos.length > 1 ? "1fr 1fr" : "1fr",
+            gap: "1.5mm",
+          }}
+        >
+          {photos.slice(0, 2).map((photo) => (
+            <figure key={photo.id} style={{ margin: 0 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element -- halaman cetak
+                  statis; pengoptimal gambar Next tidak berjalan di Puppeteer. */}
+              <img
+                src={photo.src}
+                alt={photo.caption ?? ""}
+                style={{
+                  width: "100%",
+                  height: photos.length > 1 ? "44mm" : "48mm",
+                  objectFit: "contain",
+                }}
+              />
+              {photo.caption ? (
+                <figcaption style={{ fontSize: "5.5pt", color: "#6b7280" }}>
+                  {photo.caption}
+                </figcaption>
+              ) : null}
+            </figure>
+          ))}
+        </div>
+      )}
+    </Cell>
   );
 }
