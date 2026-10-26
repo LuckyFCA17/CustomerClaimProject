@@ -2,8 +2,6 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import sharp from "sharp";
-
 import { ValidationError } from "@/lib/errors";
 
 /**
@@ -52,6 +50,33 @@ export function isAllowedType(mimeType: string): boolean {
 
 export function isImage(mimeType: string): boolean {
   return (UPLOAD_LIMITS.imageTypes as readonly string[]).includes(mimeType);
+}
+
+/**
+ * sharp dimuat saat dibutuhkan, bukan saat modul diimpor.
+ *
+ * Binary prebuilt-nya ditautkan ke glibc, sehingga gagal dimuat di lingkungan berbasis
+ * bionic seperti Termux. Kompresi foto adalah penghematan, bukan syarat — unggahan
+ * tetap harus berhasil tanpanya, dengan berkas asli yang disimpan apa adanya.
+ */
+type SharpFactory = (typeof import("sharp"))["default"];
+
+let sharpModule: SharpFactory | null | undefined;
+
+async function loadSharp(): Promise<SharpFactory | null> {
+  if (sharpModule !== undefined) return sharpModule;
+
+  try {
+    sharpModule = (await import("sharp")).default;
+  } catch (error) {
+    console.warn(
+      "sharp tidak dapat dimuat; foto disimpan tanpa kompresi.",
+      error instanceof Error ? error.message : error,
+    );
+    sharpModule = null;
+  }
+
+  return sharpModule;
 }
 
 function storageRoot(): string {
@@ -151,19 +176,23 @@ export async function saveUpload({ file, folder, entityType }: SaveUploadInput):
   let extension = extensionFor(file.type, file.name);
 
   if (isImage(file.type)) {
-    data = await sharp(original)
-      .rotate() // hormati orientasi EXIF sebelum metadatanya dibuang
-      .resize({
-        width: UPLOAD_LIMITS.maxImageEdge,
-        height: UPLOAD_LIMITS.maxImageEdge,
-        fit: "inside",
-        withoutEnlargement: true,
-      })
-      .jpeg({ quality: 82, progressive: true })
-      .toBuffer();
+    const sharp = await loadSharp();
 
-    mimeType = "image/jpeg";
-    extension = ".jpg";
+    if (sharp) {
+      data = await sharp(original)
+        .rotate() // hormati orientasi EXIF sebelum metadatanya dibuang
+        .resize({
+          width: UPLOAD_LIMITS.maxImageEdge,
+          height: UPLOAD_LIMITS.maxImageEdge,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .jpeg({ quality: 82, progressive: true })
+        .toBuffer();
+
+      mimeType = "image/jpeg";
+      extension = ".jpg";
+    }
   }
 
   const key = path.posix.join(folder, entityType, `${randomUUID()}${extension}`);

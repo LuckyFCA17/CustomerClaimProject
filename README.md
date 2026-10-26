@@ -88,6 +88,78 @@ Email tidak pernah diteruskan ke mana pun; berkas `.eml`-nya dapat dibuka langsu
 lampiran PDF-nya.
 </details>
 
+<details>
+<summary>Menjalankan di Android lewat Termux</summary>
+
+Portal berjalan di Termux, tetapi **tiga komponen butuh binary native yang tidak tersedia di
+Android**, jadi ada bagian yang tidak berfungsi. Ketahui ini dulu sebelum memasang:
+
+| Komponen | Di Termux | Sebabnya |
+|---|---|---|
+| Next.js, Prisma Client, Auth.js | **jalan** | Prisma 7 memakai query compiler WASM, bukan engine Rust |
+| PostgreSQL | **jalan** | tersedia sebagai paket Termux |
+| Penangkap SMTP + template email | **jalan** | JavaScript murni |
+| `prisma migrate` | **tidak** | schema-engine hanya ada untuk Linux glibc → pakai `pnpm db:apply-sql` |
+| Kompresi foto (`sharp`) | **opsional** | prebuilt-nya glibc; tanpa sharp foto tersimpan tanpa kompresi |
+| **Cetak PDF (Puppeteer)** | **tidak** | Chromium headless tidak tersedia di Android tanpa proot/X11 |
+
+Artinya: pencatatan klaim, review, CPAR, RBAC, dan email berfungsi penuh; **Bad News Information
+dan Quick Information tidak akan tercetak**. Portal sudah menangani itu dengan baik — kegagalan
+pencetakan dicatat di log dan tidak membatalkan perpindahan status klaim.
+
+```bash
+# 1. Paket dasar
+pkg update && pkg upgrade
+pkg install nodejs-lts postgresql git
+npm install -g pnpm
+
+# 2. Nyalakan PostgreSQL (Termux tidak punya root, jadi datadir ada di $PREFIX)
+initdb $PREFIX/var/lib/postgresql
+pg_ctl -D $PREFIX/var/lib/postgresql start
+createdb ncc_portal
+psql -d ncc_portal -c "CREATE ROLE ncc LOGIN PASSWORD 'ncc' CREATEDB;"
+psql -d ncc_portal -c "GRANT ALL ON SCHEMA public TO ncc;"
+
+# 3. Ambil kode
+git clone https://github.com/LuckyFCA17/CustomerClaimProject.git
+cd CustomerClaimProject
+git checkout claude/nid-customer-claim-portal-tcippa
+
+# 4. Pasang dependensi. Lewati build script supaya sharp tidak menggagalkan install.
+pnpm install --ignore-scripts
+pnpm exec prisma generate
+
+# 5. Siapkan .env
+cp .env.example .env
+# isi AUTH_SECRET, misalnya:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+
+# 6. Terapkan migrasi tanpa schema-engine, lalu isi data awal
+pnpm db:apply-sql
+pnpm db:seed
+
+# 7. Jalankan
+pnpm dev
+```
+
+Buka `http://localhost:3000` di peramban ponsel yang sama. Masuk dengan akun demo di bawah.
+
+`pnpm db:apply-sql` menjalankan berkas `prisma/migrations/*/migration.sql` yang sama persis dengan
+yang dipakai `prisma migrate`, satu migrasi satu transaksi, lalu mencatatnya di `_prisma_migrations`
+dengan checksum yang sama. Basis data hasilnya tetap dianggap mutakhir oleh `prisma migrate status`
+di mesin biasa — bukan jalur bercabang yang nanti bentrok. Perintah ini idempotent dan punya
+`--dry-run`.
+
+Bila ingin kompresi foto aktif, pasang `libvips` lebih dulu lalu bangun sharp dari sumber:
+
+```bash
+pkg install libvips build-essential python
+pnpm rebuild sharp
+```
+
+Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil ke 1600px.
+</details>
+
 ### Perintah
 
 | Perintah | Kegunaan |
@@ -102,6 +174,7 @@ lampiran PDF-nya.
 | `pnpm db:seed` | Mengisi data awal (idempotent) |
 | `pnpm db:studio` | Prisma Studio |
 | `pnpm db:reset` | Menghapus database dan menjalankan ulang migrasi + seed |
+| `pnpm db:apply-sql` | Menerapkan migrasi tanpa schema-engine (untuk Termux) |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 bila MailHog tidak tersedia |
 
 ### Catatan komponen UI

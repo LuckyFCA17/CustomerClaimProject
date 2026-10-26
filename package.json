@@ -18,7 +18,8 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
-    "mail:sink": "node scripts/mail-sink.mjs"
+    "mail:sink": "node scripts/mail-sink.mjs",
+    "db:apply-sql": "node scripts/apply-migrations.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",
@@ -40,6 +41,7 @@
     "next": "15.5.23",
     "next-auth": "5.0.0-beta.32",
     "nodemailer": "^10.2.1",
+    "pg": "^8.23.1",
     "puppeteer-core": "^25.16.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -56,6 +58,7 @@
     "@types/bcryptjs": "^3.0.0",
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/smtp-server": "^3.5.13",
