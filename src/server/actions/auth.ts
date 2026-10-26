@@ -1,6 +1,6 @@
 "use server";
 
-import { AuthError } from "next-auth";
+import { AuthError, CredentialsSignin } from "next-auth";
 
 import { signIn, signOut } from "@/lib/auth";
 import { loginSchema } from "@/schemas/auth";
@@ -36,6 +36,29 @@ function safeCallbackUrl(value: FormDataEntryValue | null): string {
 }
 
 /**
+ * Memeriksa konfigurasi yang wajib ada sebelum login dicoba.
+ *
+ * Tanpa ini, AUTH_SECRET yang kosong membuat Auth.js menjawab "There was a problem with
+ * the server configuration" — benar, tapi tidak memberi tahu apa yang harus diperbaiki,
+ * dan sebabnya hanya terlihat di log server yang biasanya tidak sedang dibuka.
+ */
+function configurationProblem(): string | null {
+  if (!process.env.AUTH_SECRET?.trim()) {
+    return (
+      "AUTH_SECRET belum diisi pada berkas .env. Buat nilainya dengan " +
+      '`node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64\'))"`, ' +
+      "isikan ke AUTH_SECRET, lalu jalankan ulang server."
+    );
+  }
+
+  if (!process.env.DATABASE_URL?.trim()) {
+    return "DATABASE_URL belum diisi pada berkas .env.";
+  }
+
+  return null;
+}
+
+/**
  * Action untuk atribut `action` pada form login, dipakai lewat `useActionState`.
  *
  * Sengaja berupa server action dan bukan handler `onSubmit`: form yang belum sempat
@@ -60,6 +83,12 @@ export async function loginFormAction(prevState: LoginState, formData: FormData)
     return { ...echo, message: "Masukkan email yang valid beserta kata sandinya." };
   }
 
+  const misconfiguration = configurationProblem();
+
+  if (misconfiguration) {
+    return { ...echo, message: misconfiguration };
+  }
+
   try {
     await signIn("credentials", {
       email: parsed.data.email,
@@ -71,10 +100,25 @@ export async function loginFormAction(prevState: LoginState, formData: FormData)
   } catch (error) {
     if (isRedirect(error)) throw error;
 
-    if (error instanceof AuthError) {
+    if (error instanceof CredentialsSignin) {
       // Pesan sengaja seragam untuk email tidak terdaftar, kata sandi salah, dan akun
       // nonaktif — supaya halaman login tidak bisa dipakai menebak email yang terdaftar.
       return { ...echo, message: "Email atau kata sandi salah, atau akun Anda dinonaktifkan." };
+    }
+
+    if (error instanceof AuthError) {
+      // Konfigurasi yang salah dan basis data yang tidak terjangkau sebelumnya ikut
+      // terbaca sebagai "kata sandi salah", sehingga pengguna mencari masalah di tempat
+      // yang keliru. Keduanya dipisahkan: isinya tetap tidak membocorkan apa pun tentang
+      // akun, tapi menunjuk ke log server tempat sebabnya tercatat.
+      console.error(`[login] kegagalan non-kredensial (${error.type}):`, error);
+
+      return {
+        ...echo,
+        message:
+          "Login gagal karena masalah konfigurasi server, bukan karena kata sandi Anda. " +
+          "Periksa log server untuk rinciannya.",
+      };
     }
 
     throw error;

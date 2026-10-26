@@ -18,6 +18,7 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
+    "env:init": "node scripts/init-env.mjs",
     "mail:sink": "node scripts/mail-sink.mjs",
     "db:apply-sql": "node scripts/apply-migrations.mjs"
   },

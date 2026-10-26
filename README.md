@@ -50,7 +50,7 @@ Prasyarat: Node.js ≥ 20.11, pnpm 10, Docker (untuk Postgres & MailHog).
 
 ```bash
 pnpm install                  # postinstall menjalankan prisma generate
-cp .env.example .env          # lalu isi AUTH_SECRET: openssl rand -base64 32
+pnpm env:init                 # membuat .env dan mengisi AUTH_SECRET
 pnpm db:up                    # Postgres :5432 + MailHog :8025
 pnpm db:migrate               # terapkan migrasi
 pnpm db:seed                  # role, departemen, pengguna, master data, 3 klaim contoh
@@ -65,6 +65,13 @@ pnpm dev                      # http://localhost:3000
 | MailHog (web) | http://localhost:8025 | — |
 
 Seluruh email portal mendarat di MailHog selama pengembangan dan tidak pernah keluar ke penerima sungguhan.
+
+`pnpm env:init` tidak menimpa `.env` yang sudah ada; ia hanya mengisi `AUTH_SECRET` bila masih
+kosong, jadi aman dijalankan ulang. Tambahkan `--force` untuk memutar nilainya — seluruh sesi
+yang sedang berjalan akan ikut berakhir karena cookie lama tidak lagi dapat diverifikasi.
+Bila `AUTH_SECRET` kosong, **setiap** login gagal dengan pesan yang menyebut variabel itu;
+kegagalan non-kredensial lain (mis. basis data tidak terjangkau) dibedakan dari kata sandi
+salah, dan rinciannya tercatat di log server.
 
 <details>
 <summary>Tanpa Docker (mis. container CI tanpa daemon)</summary>
@@ -129,10 +136,8 @@ git checkout claude/nid-customer-claim-portal-tcippa
 pnpm install --ignore-scripts
 pnpm exec prisma generate
 
-# 5. Siapkan .env
-cp .env.example .env
-# isi AUTH_SECRET, misalnya:
-#   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# 5. Siapkan .env (AUTH_SECRET dibuatkan otomatis)
+pnpm env:init
 
 # 6. Terapkan migrasi tanpa schema-engine, lalu isi data awal
 pnpm db:apply-sql
@@ -175,6 +180,7 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm db:studio` | Prisma Studio |
 | `pnpm db:reset` | Menghapus database dan menjalankan ulang migrasi + seed |
 | `pnpm db:apply-sql` | Menerapkan migrasi tanpa schema-engine (untuk Termux) |
+| `pnpm env:init` | Membuat `.env` dari `.env.example` dan mengisi `AUTH_SECRET` |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 bila MailHog tidak tersedia |
 
 ### Catatan komponen UI
