@@ -143,11 +143,24 @@ pnpm env:init
 pnpm db:apply-sql
 pnpm db:seed
 
-# 7. Jalankan
-pnpm dev
+# 7. Jalankan — dua proses, masing-masing di sesi Termux sendiri
+#    (geser dari tepi kiri → NEW SESSION untuk membuka sesi kedua)
+pnpm mail:sink                # sesi 1 · penangkap SMTP :1025, pengganti MailHog
+pnpm dev                      # sesi 2 · http://localhost:3000
 ```
 
 Buka `http://localhost:3000` di peramban ponsel yang sama. Masuk dengan akun demo di bawah.
+
+Jalankan `termux-wake-lock` lebih dulu bila layar akan dimatikan: tanpa itu Android
+menghentikan proses latar belakang dan server ikut mati.
+
+Setiap kali Termux dibuka ulang, PostgreSQL perlu dinyalakan lagi — langkah 1–6 cukup
+sekali seumur pemasangan:
+
+```bash
+pg_ctl -D $PREFIX/var/lib/postgresql start
+cd CustomerClaimProject && pnpm dev
+```
 
 `pnpm db:apply-sql` menjalankan berkas `prisma/migrations/*/migration.sql` yang sama persis dengan
 yang dipakai `prisma migrate`, satu migrasi satu transaksi, lalu mencatatnya di `_prisma_migrations`
