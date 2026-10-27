@@ -64,6 +64,32 @@ function portOpen(host, port, timeout = 1500) {
   });
 }
 
+/**
+ * Memastikan perintah dijalankan dari akar proyek.
+ *
+ * Salinan repositori yang bersarang membuat orang menjalankan `pnpm db:apply-sql` dari
+ * folder pembungkus, tempat pnpm gagal karena tidak ada package.json — sementara portal
+ * berjalan dari folder di dalamnya. Tanpa pemeriksaan ini, pesan "«.env» tidak ada" akan
+ * menyarankan `pnpm env:init`, padahal yang salah adalah posisinya, bukan berkasnya.
+ */
+async function checkProjectRoot() {
+  console.log("\nFolder proyek");
+
+  const hasMigrations = await exists(MIGRATIONS_DIR);
+  const hasPackage = await exists(path.resolve("package.json"));
+
+  if (!hasMigrations || !hasPackage) {
+    fail(
+      "ini bukan akar proyek NCC Portal",
+      "pindah ke folder yang berisi package.json dan prisma/, lalu ulangi",
+    );
+    return false;
+  }
+
+  ok("package.json dan prisma/migrations ditemukan");
+  return true;
+}
+
 async function checkEnv() {
   console.log("\nBerkas .env");
 
@@ -225,11 +251,13 @@ async function main() {
   // memeriksa satu folder sambil menjalankan portal dari folder lain.
   console.log(`  folder: ${process.cwd()}`);
 
-  if (await checkEnv()) {
-    await checkDatabase();
-  }
+  if (await checkProjectRoot()) {
+    if (await checkEnv()) {
+      await checkDatabase();
+    }
 
-  await checkOptional();
+    await checkOptional();
+  }
 
   console.log("");
 

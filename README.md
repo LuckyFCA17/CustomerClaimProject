@@ -122,15 +122,19 @@ npm install -g pnpm
 
 # 2. Nyalakan PostgreSQL (Termux tidak punya root, jadi datadir ada di $PREFIX)
 initdb $PREFIX/var/lib/postgresql
+pg_ctl -D $PREFIX/var/lib/postgresql status   # "server is running" = lewati baris berikut
 pg_ctl -D $PREFIX/var/lib/postgresql start
 createdb ncc_portal
 psql -d ncc_portal -c "CREATE ROLE ncc LOGIN PASSWORD 'ncc' CREATEDB;"
 psql -d ncc_portal -c "GRANT ALL ON SCHEMA public TO ncc;"
 
-# 3. Ambil kode
+# 3. Ambil kode — dari HOME, bukan dari dalam folder bernama sama,
+#    supaya tidak jadi CustomerClaimProject/CustomerClaimProject
+cd ~
 git clone https://github.com/LuckyFCA17/CustomerClaimProject.git
 cd CustomerClaimProject
 git checkout claude/nid-customer-claim-portal-tcippa
+pwd                           # catat jalur ini — seluruh perintah pnpm dijalankan di sini
 
 # 4. Pasang dependensi. Lewati build script supaya sharp tidak menggagalkan install.
 pnpm install --ignore-scripts
@@ -162,10 +166,22 @@ pg_ctl -D $PREFIX/var/lib/postgresql start
 cd CustomerClaimProject && pnpm dev
 ```
 
-**Tidak bisa login?** Jalankan `pnpm doctor`. Satu perintah itu memeriksa `.env`,
-koneksi basis data, migrasi, seed, dan SMTP sekaligus, lalu menyebut perintah
+**Tidak bisa login?** Jalankan `pnpm doctor`. Satu perintah itu memeriksa posisi folder,
+`.env`, koneksi basis data, migrasi, seed, dan SMTP sekaligus, lalu menyebut perintah
 perbaikannya. Penyebab tersering di Termux adalah PostgreSQL yang belum dinyalakan
 ulang setelah ponsel di-restart.
+
+Dua pesan yang tampak menakutkan padahal bukan kegagalan:
+
+| Pesan | Artinya |
+|---|---|
+| `pg_ctl: another server might be running` · `lock file "postmaster.pid" already exists` | PostgreSQL **sudah** jalan. Pastikan dengan `pg_ctl -D $PREFIX/var/lib/postgresql status`, lalu lanjutkan |
+| `pg_ctl: could not start server` setelah pesan di atas | Yang gagal adalah menyalakan server **kedua**, bukan yang pertama |
+
+Sebaliknya, pesan yang sering terlewat: `pnpm` apa pun yang dijalankan dari luar folder
+proyek berhenti dengan "No package.json found". Bila itu terjadi pada langkah 6, tabel
+tidak pernah terbentuk dan gejalanya baru muncul saat login. `pnpm doctor` mencetak folder
+kerjanya di baris pertama supaya hal ini kelihatan.
 
 Bila `doctor` melaporkan tabel inti tidak ada padahal migrasi tercatat sudah
 diterapkan, catatan migrasi tidak lagi sejalan dengan isi basis data:
