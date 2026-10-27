@@ -221,6 +221,9 @@ async function checkOptional() {
 
 async function main() {
   console.log("Pemeriksaan lingkungan NCC Portal");
+  // Disebutkan karena salinan repositori yang bersarang atau .env ganda membuat orang
+  // memeriksa satu folder sambil menjalankan portal dari folder lain.
+  console.log(`  folder: ${process.cwd()}`);
 
   if (await checkEnv()) {
     await checkDatabase();
