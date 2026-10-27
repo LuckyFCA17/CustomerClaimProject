@@ -162,6 +162,11 @@ pg_ctl -D $PREFIX/var/lib/postgresql start
 cd CustomerClaimProject && pnpm dev
 ```
 
+**Tidak bisa login?** Jalankan `pnpm doctor`. Satu perintah itu memeriksa `.env`,
+koneksi basis data, migrasi, seed, dan SMTP sekaligus, lalu menyebut perintah
+perbaikannya. Penyebab tersering di Termux adalah PostgreSQL yang belum dinyalakan
+ulang setelah ponsel di-restart.
+
 `pnpm db:apply-sql` menjalankan berkas `prisma/migrations/*/migration.sql` yang sama persis dengan
 yang dipakai `prisma migrate`, satu migrasi satu transaksi, lalu mencatatnya di `_prisma_migrations`
 dengan checksum yang sama. Basis data hasilnya tetap dianggap mutakhir oleh `prisma migrate status`
@@ -194,6 +199,7 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm db:reset` | Menghapus database dan menjalankan ulang migrasi + seed |
 | `pnpm db:apply-sql` | Menerapkan migrasi tanpa schema-engine (untuk Termux) |
 | `pnpm env:init` | Membuat `.env` dari `.env.example` dan mengisi `AUTH_SECRET` |
+| `pnpm doctor` | Memeriksa `.env`, basis data, migrasi, seed, dan SMTP sekaligus |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 bila MailHog tidak tersedia |
 
 ### Catatan komponen UI

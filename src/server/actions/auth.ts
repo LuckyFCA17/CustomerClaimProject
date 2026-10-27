@@ -36,6 +36,40 @@ function safeCallbackUrl(value: FormDataEntryValue | null): string {
 }
 
 /**
+ * Menelusuri rantai `cause` sebuah AuthError sampai galat aslinya.
+ *
+ * Auth.js membungkus galat yang dilempar `authorize()` ke dalam CallbackRouteError
+ * dengan `cause` berbentuk `{ err, provider }`. Node mencetaknya sebagai
+ * `[cause]: [Object]` — persis bagian yang dibutuhkan untuk tahu apa yang rusak.
+ * Rantainya dibuka di sini supaya sebab sebenarnya, misalnya koneksi basis data yang
+ * ditolak, terbaca utuh di log.
+ */
+function unwrapCause(error: AuthError): { readonly summary: string; readonly root: Error | null } {
+  const steps: string[] = [];
+  let current: unknown = error.cause;
+  let root: Error | null = null;
+
+  // Dibatasi agar `cause` yang melingkar tidak membuat penelusuran berputar selamanya.
+  for (let depth = 0; current && depth < 8; depth += 1) {
+    if (current instanceof Error) {
+      steps.push(`${current.name}: ${current.message}`);
+      root = current;
+      current = current.cause;
+      continue;
+    }
+
+    if (typeof current === "object" && "err" in current) {
+      current = (current as { err: unknown }).err;
+      continue;
+    }
+
+    break;
+  }
+
+  return { summary: steps.join(" ← ") || "(tanpa cause)", root };
+}
+
+/**
  * Memeriksa konfigurasi yang wajib ada sebelum login dicoba.
  *
  * Tanpa ini, AUTH_SECRET yang kosong membuat Auth.js menjawab "There was a problem with
@@ -111,13 +145,22 @@ export async function loginFormAction(prevState: LoginState, formData: FormData)
       // terbaca sebagai "kata sandi salah", sehingga pengguna mencari masalah di tempat
       // yang keliru. Keduanya dipisahkan: isinya tetap tidak membocorkan apa pun tentang
       // akun, tapi menunjuk ke log server tempat sebabnya tercatat.
-      console.error(`[login] kegagalan non-kredensial (${error.type}):`, error);
+      const { summary, root } = unwrapCause(error);
+
+      console.error(`[login] kegagalan non-kredensial (${error.type}): ${summary}`);
+      if (root?.stack) console.error(root.stack);
 
       return {
         ...echo,
         message:
-          "Login gagal karena masalah konfigurasi server, bukan karena kata sandi Anda. " +
-          "Periksa log server untuk rinciannya.",
+          "Login gagal karena masalah di sisi server, bukan karena kata sandi Anda. " +
+          // Di pengembangan sebabnya ditampilkan langsung: tanpa itu pemasang harus
+          // menebak-nebak dari jendela terminal yang mungkin tidak sedang terbuka.
+          // Di produksi tetap disembunyikan agar halaman login tidak membocorkan
+          // apa pun tentang basis data atau konfigurasi.
+          (process.env.NODE_ENV === "production"
+            ? "Periksa log server untuk rinciannya."
+            : `Sebabnya: ${summary}`),
       };
     }
 
