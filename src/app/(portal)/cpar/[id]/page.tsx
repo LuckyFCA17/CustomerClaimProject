@@ -4,6 +4,7 @@ import { forbidden, notFound } from "next/navigation";
 import { CalendarClock, CircleDashed, FileText } from "lucide-react";
 
 import { CparEvidence } from "@/components/cpar/cpar-evidence";
+import { ProblemDescriptionPanel } from "@/components/cpar/problem-description";
 import { SectionEditor, type SectionView } from "@/components/cpar/section-editor";
 import { SubmitFinal } from "@/components/cpar/submit-final";
 import {
@@ -27,6 +28,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { DOCUMENT_TITLE } from "@/lib/pdf";
 import { can, canFillSection, canViewClaim, type ClaimContext } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
+import { loadProblemDescription } from "@/server/cpar-problem";
 
 export const metadata: Metadata = {
   title: "CPAR",
@@ -83,7 +85,8 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
 
   if (!canViewClaim(user, context)) forbidden();
 
-  const [evidence, documents] = await Promise.all([
+  const [problem, evidence, documents] = await Promise.all([
+    loadProblemDescription(id),
     db.attachment.findMany({
       where: { entityType: "Cpar", entityId: cpar.id },
       include: { uploadedBy: { select: { name: true } } },
@@ -254,6 +257,9 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
             claimId={id}
             sections={sections}
             lockReason={underVerification ? "VERIFYING" : "APPROVED"}
+            derived={{
+              PROBLEM_DESCRIPTION: <ProblemDescriptionPanel problem={problem} />,
+            }}
           />
         </CardContent>
       </Card>

@@ -12,6 +12,7 @@ function validClaim(overrides: Record<string, unknown> = {}) {
     shiftOfReceived: "NIGHT",
     failurePlace: "Line Assy 5 — Customer Plant Karawang",
     failurePlaceType: "DOMESTIC",
+    problemOrigin: "EXTERNAL",
     contactPerson: "Andi Wijaya",
     contactEmail: "andi.wijaya@tmmin.co.id",
     contactPhone: "+62 812-1100-2200",

@@ -67,6 +67,12 @@ enum OccurrenceCount {
   THIRD_OR_MORE
 }
 
+/// Tempat masalah ditemukan: di dalam NID, atau sudah sampai pihak luar.
+enum ProblemOrigin {
+  INTERNAL
+  EXTERNAL
+}
+
 enum PartSide {
   STANDARD
   ACTUAL
@@ -331,6 +337,9 @@ model Claim {
   shiftOfReceived   Shift?
   failurePlace      String                @default("")
   failurePlaceType  FailurePlaceType?
+  /// Internal bila tertahan di NID, External bila sudah sampai pelanggan.
+  /// Nullable: klaim yang dibuat sebelum kolom ini ada tidak dapat dipastikan mana.
+  problemOrigin     ProblemOrigin?
   contactPerson     String                @default("")
   contactEmail      String                @default("")
   contactPhone      String                @default("")

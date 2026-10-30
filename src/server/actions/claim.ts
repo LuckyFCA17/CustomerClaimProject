@@ -474,6 +474,7 @@ function toClaimColumns(fields: ClaimFormFields): Prisma.ClaimUncheckedUpdateInp
     shiftOfReceived: fields.shiftOfReceived,
     failurePlace: fields.failurePlace,
     failurePlaceType: fields.failurePlaceType,
+    problemOrigin: fields.problemOrigin,
     contactPerson: fields.contactPerson,
     contactEmail: fields.contactEmail,
     contactPhone: fields.contactPhone,

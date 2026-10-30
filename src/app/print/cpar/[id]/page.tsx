@@ -6,9 +6,12 @@ import {
   SECTION_LABEL,
   SECTION_ORDER,
   VERIFIER_CAPACITY_LABEL,
+  isDerivedSection,
   requiredVerifiers,
 } from "@/lib/cpar";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { ProblemDescriptionSheet } from "@/components/print/problem-sheet";
+import { loadProblemDescription } from "@/server/cpar-problem";
 import { TYPE_LABEL, authorizePrint, loadCparForPrint } from "@/server/print-data";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +40,7 @@ export default async function CparPrintPage({
   await authorizePrint("CPAR", id, token);
 
   const cpar = await loadCparForPrint(id);
+  const problem = await loadProblemDescription(id, { embedPhotos: true });
   const claim = cpar.claim;
   const isDraft = query.draft === "1" || cpar.approvedAt === null;
 
@@ -110,11 +114,15 @@ export default async function CparPrintPage({
           </SectionTitle>
 
           <div className="border border-[#e4e7eb] px-[3mm] py-[2mm] text-[9pt]">
-            <p className="m-0 min-h-[12mm] whitespace-pre-line break-words">
-              {record?.content?.trim() || "—"}
-            </p>
+            {isDerivedSection(key) ? (
+              <ProblemDescriptionSheet problem={problem} />
+            ) : (
+              <p className="m-0 min-h-[12mm] whitespace-pre-line break-words">
+                {record?.content?.trim() || "—"}
+              </p>
+            )}
 
-            {record?.filledBy ? (
+            {record?.filledBy && !isDerivedSection(key) ? (
               <p className="m-0 mt-[1.5mm] border-t border-dashed border-[#e4e7eb] pt-[1mm] text-[7.5pt] text-[#6b7280]">
                 Diisi {record.filledBy.name}
                 {record.filledBy.jobTitle ? ` (${record.filledBy.jobTitle})` : ""}

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Loader2, Lock, Pencil, TriangleAlert } from "lucide-react";
+import { Check, Link2, Loader2, Lock, Pencil, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,16 +58,24 @@ export function SectionEditor({
   claimId,
   sections,
   lockReason,
+  derived,
 }: {
   claimId: string;
   sections: readonly SectionView[];
   lockReason: LockReason;
+  /** Isi siap-pakai untuk section yang diturunkan dari klaim, bukan diketik. */
+  derived?: Partial<Record<CparSectionKey, React.ReactNode>>;
 }) {
   return (
     <ol className="space-y-4">
       {sections.map((section) => (
         <li key={section.key}>
-          <SectionCard claimId={claimId} section={section} lockReason={lockReason} />
+          <SectionCard
+            claimId={claimId}
+            section={section}
+            lockReason={lockReason}
+            derivedContent={derived?.[section.key]}
+          />
         </li>
       ))}
     </ol>
@@ -78,10 +86,12 @@ function SectionCard({
   claimId,
   section,
   lockReason,
+  derivedContent,
 }: {
   claimId: string;
   section: SectionView;
   lockReason: LockReason;
+  derivedContent?: React.ReactNode;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -126,7 +136,7 @@ function SectionCard({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {locked ? (
+          {locked && !derivedContent ? (
             <span
               title={lockText.badge}
               className="flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground"
@@ -136,15 +146,22 @@ function SectionCard({
             </span>
           ) : null}
 
-          <span
-            className="rounded-full px-2 py-0.5 text-[11px] font-medium"
-            style={{
-              backgroundColor: filled ? "var(--status-closed-bg)" : "var(--status-draft-bg)",
-              color: filled ? "var(--status-closed)" : "var(--status-draft)",
-            }}
-          >
-            {filled ? "Terisi" : "Kosong"}
-          </span>
+          {derivedContent ? (
+            <span className="flex items-center gap-1 rounded-full bg-[var(--status-published-bg)] px-2 py-0.5 text-[11px] font-medium text-[var(--status-published)]">
+              <Link2 aria-hidden className="size-3" />
+              Dari data klaim
+            </span>
+          ) : (
+            <span
+              className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+              style={{
+                backgroundColor: filled ? "var(--status-closed-bg)" : "var(--status-draft-bg)",
+                color: filled ? "var(--status-closed)" : "var(--status-draft)",
+              }}
+            >
+              {filled ? "Terisi" : "Kosong"}
+            </span>
+          )}
         </div>
       </header>
 
@@ -159,7 +176,9 @@ function SectionCard({
       ) : null}
 
       <div className="px-4 py-3">
-        {editing ? (
+        {derivedContent ? (
+          derivedContent
+        ) : editing ? (
           <div className="space-y-2">
             <Textarea
               rows={6}

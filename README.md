@@ -176,12 +176,20 @@ Gunakan **mode produksi**, bukan `pnpm dev`:
 pnpm serve      # = pnpm build && pnpm start
 ```
 
-> **Setiap kali setelah `git pull`, build ulang.** `pnpm start` menyajikan isi `.next`
-> apa adanya, jadi route yang baru ditarik belum ada di sana sampai `pnpm build`
-> dijalankan lagi — gejalanya **menu yang 404 padahal kodenya sudah ada**. Tidak ada
-> yang memberi tahu; build basi tetap melayani permintaan seolah normal. `pnpm serve`
-> menggabungkan keduanya supaya langkahnya tidak bisa terlewat, dan `pnpm doctor`
-> memperingatkan bila kode lebih baru daripada hasil build.
+> **Setiap kali setelah `git pull`:**
+>
+> ```bash
+> pnpm install          # bila package.json berubah
+> pnpm db:apply-sql     # bila ada migrasi baru; idempotent, aman diulang
+> pnpm serve            # build + start
+> ```
+>
+> `pnpm start` menyajikan isi `.next` apa adanya, jadi route yang baru ditarik belum ada
+> di sana sampai `pnpm build` dijalankan lagi — gejalanya **menu yang 404 padahal kodenya
+> sudah ada**. Tidak ada yang memberi tahu; build basi tetap melayani permintaan seolah
+> normal. `pnpm serve` menggabungkan keduanya supaya langkahnya tidak bisa terlewat, dan
+> `pnpm doctor` memperingatkan bila kode lebih baru daripada hasil build atau bila ada
+> migrasi yang belum diterapkan.
 
 Alasannya memori. `next dev` membawa compiler dan menyimpan hasil kompilasi tiap route
 yang dibuka, sehingga pemakaiannya terus naik; mode produksi menyajikan berkas yang sudah

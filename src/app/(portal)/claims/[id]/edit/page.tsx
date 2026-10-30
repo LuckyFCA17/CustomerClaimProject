@@ -96,6 +96,7 @@ export default async function EditClaimPage({ params }: { params: Promise<{ id: 
     shiftOfReceived: claim.shiftOfReceived ?? "",
     failurePlace: claim.failurePlace,
     failurePlaceType: claim.failurePlaceType ?? "",
+    problemOrigin: claim.problemOrigin ?? "",
     contactPerson: claim.contactPerson,
     contactEmail: claim.contactEmail,
     contactPhone: claim.contactPhone,

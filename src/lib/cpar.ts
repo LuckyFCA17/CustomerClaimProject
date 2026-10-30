@@ -48,6 +48,21 @@ export const SECTION_INDEX: Record<CparSectionKey, number> = Object.fromEntries(
   SECTION_ORDER.map((key, index) => [key, index + 1]),
 ) as Record<CparSectionKey, number>;
 
+/**
+ * Section yang isinya diturunkan dari klaim, bukan diketik.
+ *
+ * Problem description sudah dimasukkan QA pada Issue Customer Claim Information, dan
+ * klaim tidak dapat diubah lagi setelah terbit. Memintanya diketik ulang di sini hanya
+ * menghasilkan salinan kedua yang bisa berbeda dari aslinya — dan menahan submit final
+ * karena salinan itu kosong adalah penolakan atas pekerjaan yang sebenarnya sudah
+ * selesai. Section seperti ini tidak pernah terhitung kurang.
+ */
+export const DERIVED_SECTIONS = ["PROBLEM_DESCRIPTION"] as const satisfies readonly CparSectionKey[];
+
+export function isDerivedSection(key: CparSectionKey): boolean {
+  return (DERIVED_SECTIONS as readonly CparSectionKey[]).includes(key);
+}
+
 export function sectionLabel(key: CparSectionKey): string {
   return SECTION_LABEL[key];
 }
@@ -81,7 +96,10 @@ export function missingRequiredSections(
   };
 
   return sections
-    .filter((section) => section.isRequired && !isSectionFilled(section))
+    .filter(
+      (section) =>
+        section.isRequired && !isDerivedSection(section.key) && !isSectionFilled(section),
+    )
     .map((section) => section.key)
     .sort((a, b) => order(a) - order(b));
 }

@@ -5,6 +5,7 @@ import {
   FailurePlaceType,
   OccurrenceCount,
   OriginPlantType,
+  ProblemOrigin,
   QtyUnit,
   Shift,
 } from "@/generated/prisma/enums";
@@ -68,6 +69,7 @@ export const claimFieldsSchema = z.object({
   shiftOfReceived: enumField(Shift, "Pilih shift penerimaan."),
   failurePlace: requiredText("Failure place"),
   failurePlaceType: enumField(FailurePlaceType, "Pilih jenis failure place."),
+  problemOrigin: enumField(ProblemOrigin, "Pilih problem internal atau external."),
   contactPerson: requiredText("Contact person"),
   contactEmail: z.string().trim().min(1, "Contact email wajib diisi.").email("Format email tidak valid."),
   contactPhone: requiredText("Contact phone", 40),
@@ -211,6 +213,7 @@ export interface ClaimFormValues {
   shiftOfReceived: string;
   failurePlace: string;
   failurePlaceType: string;
+  problemOrigin: string;
   contactPerson: string;
   contactEmail: string;
   contactPhone: string;
@@ -253,6 +256,7 @@ export const EMPTY_CLAIM_FORM: ClaimFormValues = {
   shiftOfReceived: "",
   failurePlace: "",
   failurePlaceType: "",
+  problemOrigin: "",
   contactPerson: "",
   contactEmail: "",
   contactPhone: "",

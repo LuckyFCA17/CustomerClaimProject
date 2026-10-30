@@ -233,6 +233,19 @@ export function ClaimForm({
             </div>
           </Field>
 
+          <Field
+            label="Problem"
+            error={errors.problemOrigin?.message}
+            required
+            hint="Internal bila tertahan di NID, External bila sudah sampai pelanggan."
+          >
+            <SelectNative {...register("problemOrigin")}>
+              <option value="">Pilih…</option>
+              <option value="INTERNAL">Internal</option>
+              <option value="EXTERNAL">External</option>
+            </SelectNative>
+          </Field>
+
           <Field label="Customer" error={errors.customerId?.message}>
             <SelectNative {...register("customerId")}>
               <option value="">Tidak ditentukan</option>
@@ -433,11 +446,14 @@ function Field({
   label,
   error,
   required,
+  hint,
   children,
 }: {
   label: string;
   error?: string;
   required?: boolean;
+  /** Keterangan singkat untuk pilihan yang istilahnya bisa ditafsirkan dua arah. */
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -447,6 +463,7 @@ function Field({
         {required ? <span className="ml-0.5 text-destructive">*</span> : null}
       </Label>
       {children}
+      {hint && !error ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

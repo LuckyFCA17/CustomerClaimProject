@@ -7,6 +7,7 @@ import {
   type CparForVerification,
   type SectionState,
   type VerificationRecord,
+  isDerivedSection,
   missingRequiredSections,
   missingSectionLabels,
   requiredVerifiers,
@@ -61,13 +62,28 @@ describe("missingRequiredSections", () => {
   });
 
   it("mengembalikan section dalam urutan form, bukan urutan masukan", () => {
-    const shuffled = [...sections({ PROBLEM_DESCRIPTION: null, PERMANENT_COUNTERMEASURE: null })]
+    const shuffled = [...sections({ TEMPORARY_ACTION: null, PERMANENT_COUNTERMEASURE: null })]
       .reverse();
 
     expect(missingRequiredSections(shuffled)).toEqual([
-      "PROBLEM_DESCRIPTION",
+      "TEMPORARY_ACTION",
       "PERMANENT_COUNTERMEASURE",
     ]);
+  });
+
+  it("tidak pernah menuntut section yang isinya diturunkan dari klaim", () => {
+    // Problem description dibaca langsung dari klaim, jadi kolom content-nya memang
+    // kosong. Menahan submit karenanya berarti menolak pekerjaan yang sudah selesai.
+    expect(isDerivedSection("PROBLEM_DESCRIPTION")).toBe(true);
+    expect(missingRequiredSections(sections({ PROBLEM_DESCRIPTION: null }))).toEqual([]);
+  });
+
+  it("tetap menuntut section lain walau yang diturunkan kosong", () => {
+    const result = missingRequiredSections(
+      sections({ PROBLEM_DESCRIPTION: null, ROOT_CAUSE_OUTFLOW: null }),
+    );
+
+    expect(result).toEqual(["ROOT_CAUSE_OUTFLOW"]);
   });
 
   it("melewati section yang tidak wajib", () => {
