@@ -7,10 +7,13 @@ import {
   SECTION_ORDER,
   VERIFIER_CAPACITY_LABEL,
   isDerivedSection,
+  isStructuredSection,
   requiredVerifiers,
 } from "@/lib/cpar";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { ProblemDescriptionSheet } from "@/components/print/problem-sheet";
+import { TemporaryActionSheet } from "@/components/print/temporary-action-sheet";
+import { readTemporaryAction } from "@/schemas/temporary-action";
 import { loadProblemDescription } from "@/server/cpar-problem";
 import { TYPE_LABEL, authorizePrint, loadCparForPrint } from "@/server/print-data";
 
@@ -116,6 +119,8 @@ export default async function CparPrintPage({
           <div className="border border-[#e4e7eb] px-[3mm] py-[2mm] text-[9pt]">
             {isDerivedSection(key) ? (
               <ProblemDescriptionSheet problem={problem} />
+            ) : isStructuredSection(key) ? (
+              <TemporaryActionSheet value={readTemporaryAction(record?.data)} />
             ) : (
               <p className="m-0 min-h-[12mm] whitespace-pre-line break-words">
                 {record?.content?.trim() || "—"}

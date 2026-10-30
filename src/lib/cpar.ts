@@ -1,5 +1,6 @@
 import type { CparSectionKey, ResponsibilityType, RoleCode } from "@/generated/prisma/enums";
 import { REQUIRED_VERIFIER_ROLES } from "@/lib/permissions";
+import { hasTemporaryAction } from "@/schemas/temporary-action";
 
 /**
  * Aturan isi CPAR (§6 Modul 3).
@@ -69,13 +70,33 @@ export function sectionLabel(key: CparSectionKey): string {
 
 // ─────────────────────── Kelengkapan pengisian ───────────────────────
 
+/**
+ * Section yang isinya tabel, bukan paragraf.
+ *
+ * Temporary action hampir selalu beberapa kegiatan sekaligus, masing-masing dengan
+ * angkanya sendiri. Angka yang terkubur di dalam paragraf tidak dapat dijumlahkan
+ * maupun diperiksa, jadi section ini terisi lewat `CparSection.data`.
+ */
+export const STRUCTURED_SECTIONS = [
+  "TEMPORARY_ACTION",
+] as const satisfies readonly CparSectionKey[];
+
+export function isStructuredSection(key: CparSectionKey): boolean {
+  return (STRUCTURED_SECTIONS as readonly CparSectionKey[]).includes(key);
+}
+
 export interface SectionState {
   readonly key: CparSectionKey;
   readonly content: string | null;
   readonly isRequired: boolean;
+  /** Isi terstruktur; section tabel terisi lewat sini, bukan lewat `content`. */
+  readonly data?: unknown;
 }
 
-export function isSectionFilled(section: Pick<SectionState, "content">): boolean {
+/** Sebuah section terisi bila ada paragrafnya, atau ada barisnya pada section tabel. */
+export function isSectionFilled(section: Pick<SectionState, "key" | "content" | "data">): boolean {
+  if (isStructuredSection(section.key) && hasTemporaryAction(section.data)) return true;
+
   return (section.content ?? "").trim().length > 0;
 }
 

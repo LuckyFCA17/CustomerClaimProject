@@ -8,7 +8,7 @@ import { Check, Link2, Loader2, Lock, Pencil, TriangleAlert } from "lucide-react
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { CparSectionKey } from "@/generated/prisma/enums";
-import { SECTION_HINT, SECTION_INDEX, SECTION_LABEL } from "@/lib/cpar";
+import { SECTION_HINT, SECTION_INDEX, SECTION_LABEL, isDerivedSection, isSectionFilled } from "@/lib/cpar";
 import { formatDateTime } from "@/lib/format";
 import { saveCparSection } from "@/server/actions/cpar-filling";
 
@@ -16,6 +16,8 @@ export interface SectionView {
   readonly key: CparSectionKey;
   readonly content: string | null;
   readonly isRequired: boolean;
+  /** Isi terstruktur untuk section tabel; menentukan terisi atau tidaknya. */
+  readonly data?: unknown;
   readonly revisionNote: string | null;
   readonly lockedAt: Date | null;
   readonly filledByName: string | null;
@@ -99,9 +101,14 @@ function SectionCard({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const filled = (section.content ?? "").trim().length > 0;
+  const filled = isSectionFilled(section);
   const locked = section.lockedAt !== null;
   const lockText = LOCK_TEXT[lockReason];
+
+  // Hanya section yang isinya benar-benar diturunkan dari klaim yang memakai lencana
+  // "Dari data klaim". Section tabel tetap memakai Terisi/Kosong, karena isinya
+  // memang diisi orang — hanya bentuknya yang bukan paragraf.
+  const derived = isDerivedSection(section.key);
 
   async function save() {
     setError(null);
@@ -136,7 +143,7 @@ function SectionCard({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {locked && !derivedContent ? (
+          {locked && !derived ? (
             <span
               title={lockText.badge}
               className="flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground"
@@ -146,7 +153,7 @@ function SectionCard({
             </span>
           ) : null}
 
-          {derivedContent ? (
+          {derived ? (
             <span className="flex items-center gap-1 rounded-full bg-[var(--status-published-bg)] px-2 py-0.5 text-[11px] font-medium text-[var(--status-published)]">
               <Link2 aria-hidden className="size-3" />
               Dari data klaim

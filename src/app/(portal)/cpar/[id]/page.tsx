@@ -5,6 +5,7 @@ import { CalendarClock, CircleDashed, FileText } from "lucide-react";
 
 import { CparEvidence } from "@/components/cpar/cpar-evidence";
 import { ProblemDescriptionPanel } from "@/components/cpar/problem-description";
+import { TemporaryActionEditor } from "@/components/cpar/temporary-action-editor";
 import { SectionEditor, type SectionView } from "@/components/cpar/section-editor";
 import { SubmitFinal } from "@/components/cpar/submit-final";
 import {
@@ -28,6 +29,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { DOCUMENT_TITLE } from "@/lib/pdf";
 import { can, canFillSection, canViewClaim, type ClaimContext } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
+import { readTemporaryAction } from "@/schemas/temporary-action";
 import { loadProblemDescription } from "@/server/cpar-problem";
 
 export const metadata: Metadata = {
@@ -105,6 +107,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
       key,
       content: record?.content ?? null,
       isRequired: record?.isRequired ?? true,
+      data: record?.data,
       revisionNote: record?.revisionNote ?? null,
       lockedAt: record?.lockedAt ?? null,
       filledByName: record?.filledBy?.name ?? null,
@@ -124,6 +127,10 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
     verifierName: entry.verifier.name,
     verifierJobTitle: entry.verifier.jobTitle,
   }));
+
+  const temporaryAction = readTemporaryAction(
+    cpar.sections.find((entry) => entry.key === "TEMPORARY_ACTION")?.data,
+  );
 
   const progress = verificationProgress(verifications, cpar.cycle);
   const missing = missingSectionLabels(sections);
@@ -259,6 +266,23 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
             lockReason={underVerification ? "VERIFYING" : "APPROVED"}
             derived={{
               PROBLEM_DESCRIPTION: <ProblemDescriptionPanel problem={problem} />,
+              TEMPORARY_ACTION: (
+                <TemporaryActionEditor
+                  claimId={id}
+                  value={temporaryAction}
+                  canFill={canFillSection(user, "TEMPORARY_ACTION", context)}
+                  locked={
+                    cpar.sections.find((entry) => entry.key === "TEMPORARY_ACTION")?.lockedAt !==
+                    null
+                  }
+                  legacyText={
+                    temporaryAction.entries.length === 0
+                      ? (cpar.sections.find((entry) => entry.key === "TEMPORARY_ACTION")?.content ??
+                        null)
+                      : null
+                  }
+                />
+              ),
             }}
           />
         </CardContent>

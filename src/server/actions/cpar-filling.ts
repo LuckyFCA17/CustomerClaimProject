@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 
+import type { CparSectionKey } from "@/generated/prisma/enums";
 import { readRequestContext, writeAuditLog } from "@/lib/audit";
 import { assertTransition } from "@/lib/claim-state";
 import {
@@ -22,6 +23,10 @@ import { assertCan, assertCanFillSection, type ClaimContext } from "@/lib/permis
 import { requireActor } from "@/lib/session";
 import { claimFolder, saveUpload, storage } from "@/lib/storage";
 import { cparSectionSchema, verifySchema } from "@/schemas/cpar";
+import {
+  type TemporaryActionEntry,
+  temporaryActionSchema,
+} from "@/schemas/temporary-action";
 import {
   notifyCparApproved,
   notifyCparRevisionRequested,
@@ -197,6 +202,121 @@ export async function saveCparSection(claimId: string, input: unknown): Promise<
   } catch (error) {
     return failure(error);
   }
+}
+
+/**
+ * Menyimpan section tabel (Temporary action).
+ *
+ * Terpisah dari `saveCparSection` karena yang disimpan adalah barisnya, bukan paragraf:
+ * section ini terisi ketika tabelnya punya baris, meski kolom `content`-nya kosong.
+ */
+export async function saveCparTemporaryAction(
+  claimId: string,
+  input: unknown,
+): Promise<ActionResult> {
+  const key: CparSectionKey = "TEMPORARY_ACTION";
+
+  try {
+    const actor = await requireActor();
+    const cpar = await loadCpar(claimId);
+    const context = toContext(cpar);
+
+    assertCan(actor, "cpar.section.fill", context);
+    assertCanFillSection(actor, key, context);
+
+    const parsed = temporaryActionSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        message: "Periksa kembali baris tindakan penahan.",
+        fieldErrors: flattenZodErrors(parsed.error),
+      };
+    }
+
+    const section = cpar.sections.find((entry) => entry.key === key);
+    if (!section) throw new NotFoundError(`Section ${SECTION_LABEL[key]} tidak ditemukan.`);
+
+    if (section.lockedAt) {
+      throw new ForbiddenError(
+        `Section ${SECTION_LABEL[key]} terkunci karena CPAR sedang diverifikasi.`,
+        "cpar.section.fill",
+      );
+    }
+
+    const entries = parsed.data.entries;
+    const note = (parsed.data.note ?? "").trim();
+
+    const requestContext = await readRequestContext();
+    const isFirstFill = cpar.claim.status === "CPAR_ISSUED";
+
+    if (isFirstFill) {
+      assertTransition(cpar.claim.status, "CPAR_IN_PROGRESS", actor.roles);
+    }
+
+    await db.$transaction(async (tx) => {
+      await tx.cparSection.update({
+        where: { id: section.id },
+        data: {
+          data: { entries, note },
+          // `content` tetap diisi ringkasan terbaca supaya lembar cetak lama, ekspor,
+          // dan pencarian teks tidak kehilangan isinya — tabelnya tetap sumber utama.
+          content: summarizeEntries(entries, note),
+          filledById: actor.id,
+          filledAt: new Date(),
+          revisionNote: null,
+        },
+      });
+
+      if (isFirstFill) {
+        await tx.claim.update({ where: { id: claimId }, data: { status: "CPAR_IN_PROGRESS" } });
+      }
+
+      await writeAuditLog(
+        tx,
+        {
+          actorId: actor.id,
+          entityType: "CparSection",
+          entityId: section.id,
+          claimId,
+          action: "cpar.section.fill",
+          fromStatus: isFirstFill ? cpar.claim.status : null,
+          toStatus: isFirstFill ? "CPAR_IN_PROGRESS" : null,
+          payloadDiff: { section: key, cycle: cpar.cycle, entries: entries.length },
+        },
+        requestContext,
+      );
+    });
+
+    revalidateCpar(claimId);
+
+    return {
+      ok: true,
+      message:
+        entries.length === 0
+          ? "Tabel tindakan penahan dikosongkan."
+          : `${entries.length} baris tindakan penahan tersimpan.`,
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Ringkasan satu baris per tindakan, untuk kolom `content`. */
+function summarizeEntries(entries: readonly TemporaryActionEntry[], note: string): string {
+  const lines = entries.map((entry) => {
+    const figures = [
+      entry.totalPcs !== undefined ? `${entry.totalPcs} pcs` : null,
+      entry.totalBags !== undefined ? `${entry.totalBags} bags` : null,
+      entry.okPcs !== undefined ? `OK ${entry.okPcs} pcs` : null,
+      entry.ngPcs !== undefined ? `NG ${entry.ngPcs} pcs` : null,
+    ].filter(Boolean);
+
+    const tail = [figures.join(", "), entry.note?.trim()].filter(Boolean).join(" — ");
+
+    return tail ? `${entry.label}: ${tail}` : entry.label;
+  });
+
+  return [...lines, note].filter(Boolean).join("\n");
 }
 
 // ─────────────────────── Evidence CPAR ───────────────────────
