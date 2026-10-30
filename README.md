@@ -195,6 +195,12 @@ dikompres. Pada `pnpm dev` yang sudah memakai 1,3 GB, lonjakan itu cukup untuk m
 Android menghentikan Termux — sesi tertutup tanpa pesan galat, karena memang bukan proses
 itu yang memutuskan berhenti.
 
+Khusus foto, lonjakan itu sudah dipangkas di sisi pengirim: peramban memperkecil gambar
+ke 1600px sebelum mengunggahnya (`lib/image-downscale.ts`), jadi yang melintas tinggal
+ratusan kilobyte alih-alih beberapa megabyte. Pada uji di sini, 8,53 MiB turun menjadi
+926 KB — sekitar sepersepuluh. Server tetap memperkecil dan memeriksa ulang, karena
+pemeriksaan di peramban bukan pengaman.
+
 Jalankan juga `termux-wake-lock` sebelum layar dimatikan.
 
 **Tidak bisa login?** Jalankan `pnpm doctor`. Satu perintah itu memeriksa posisi folder,

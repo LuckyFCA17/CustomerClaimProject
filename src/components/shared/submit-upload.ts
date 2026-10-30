@@ -2,6 +2,7 @@
 
 import { toast } from "sonner";
 
+import { downscaleImage } from "@/lib/image-downscale";
 import { validateUploadFile } from "@/lib/uploads";
 
 interface UploadOutcome {
@@ -33,8 +34,14 @@ export async function submitUpload(
     return false;
   }
 
+  // Foto diperkecil lebih dulu di peramban. Yang melintas lalu tinggal ratusan
+  // kilobyte, bukan beberapa megabyte — penting pada ponsel yang menjalankan
+  // portalnya sendiri, tempat lonjakan memori penerimaan berkas dapat membuat
+  // Android menghentikan server.
+  const payload = await downscaleImage(file);
+
   try {
-    const result = await send(build(file));
+    const result = await send(build(payload));
 
     if (!result.ok) {
       toast.error("Unggah gagal", { description: result.message });

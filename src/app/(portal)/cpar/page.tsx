@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarClock } from "lucide-react";
+import { CalendarClock, CircleCheckBig, ClipboardList, Clock3, TriangleAlert } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatRow, StatTile } from "@/components/shared/stat-tile";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { visibleClaimsWhere } from "@/lib/permissions";
@@ -14,16 +15,22 @@ export const metadata: Metadata = {
 };
 
 /**
- * Daftar CPAR yang terlihat oleh pengguna.
+ * Dasbor CPAR.
  *
- * Disaring dengan `visibleClaimsWhere` yang sama dengan daftar klaim, sehingga satu
- * aturan keterlihatan berlaku di kedua halaman. Filter dan ekspor dibangun pada Fase 7.
+ * Empat angka utama lalu daftarnya. Bukan diagram: beberapa angka kepala terbaca
+ * lebih cepat sebagai deretan kartu daripada sebagai batang yang panjangnya harus
+ * dibandingkan satu sama lain.
+ *
+ * Seluruhnya disaring `visibleClaimsWhere` yang sama dengan daftar klaim, sehingga
+ * satu aturan keterlihatan berlaku di semua halaman.
  */
-export default async function CparListPage() {
+export default async function CparDashboardPage() {
   const user = await getPortalUser();
+  const visible = visibleClaimsWhere(user);
+  const now = new Date();
 
   const cpars = await db.cpar.findMany({
-    where: { claim: visibleClaimsWhere(user) },
+    where: { claim: visible },
     orderBy: [{ issuedAt: "desc" }],
     take: 50,
     select: {
@@ -37,24 +44,80 @@ export default async function CparListPage() {
       claim: {
         select: { id: true, claimNo: true, status: true, partName: true, internalPartNo: true },
       },
+      _count: { select: { verifications: true } },
     },
   });
+
+  // Hitungan diambil dari basis data, bukan dari 50 baris yang ditampilkan — kartu
+  // yang menghitung isi halaman pertama saja akan berbohong begitu datanya bertambah.
+  const [sedangDiisi, menungguVerifikasi, disetujui, lewatTenggat] = await Promise.all([
+    db.cpar.count({
+      where: { claim: { AND: [visible, { status: { in: ["CPAR_ISSUED", "CPAR_IN_PROGRESS"] } }] } },
+    }),
+    db.cpar.count({ where: { claim: { AND: [visible, { status: "CPAR_UNDER_VERIFICATION" }] } } }),
+    db.cpar.count({
+      where: {
+        claim: {
+          AND: [visible, { status: { in: ["CPAR_APPROVED", "CAPA_MONITORING", "VERIFIED_CLOSED"] } }],
+        },
+      },
+    }),
+    db.cpar.count({
+      where: {
+        submittedAt: null,
+        dueDate: { lt: now },
+        claim: {
+          AND: [visible, { status: { in: ["CPAR_ISSUED", "CPAR_IN_PROGRESS", "CPAR_REVISION"] } }],
+        },
+      },
+    }),
+  ]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="space-y-1">
         <h1 className="font-display text-2xl font-bold text-nid-orange-700">CPAR</h1>
         <p className="text-sm text-muted-foreground">
-          Problem Countermeasure Request yang sudah diterbitkan, terbaru lebih dulu.
+          Problem Countermeasure Request yang terlihat oleh Anda.
         </p>
       </header>
 
+      <StatRow>
+        <StatTile
+          label="Sedang diisi"
+          value={sedangDiisi}
+          hint="Menunggu departemen penanggung jawab"
+          icon={ClipboardList}
+        />
+        <StatTile
+          label="Menunggu verifikasi"
+          value={menungguVerifikasi}
+          hint="Sudah dikirim, menanti empat kapasitas"
+          icon={Clock3}
+          tone={menungguVerifikasi > 0 ? "warning" : "neutral"}
+        />
+        <StatTile
+          label="Lewat tenggat"
+          value={lewatTenggat}
+          hint="Belum dikirim melewati tanggal jatuh tempo"
+          icon={TriangleAlert}
+          tone={lewatTenggat > 0 ? "critical" : "neutral"}
+        />
+        <StatTile
+          label="Sudah disetujui"
+          value={disetujui}
+          hint="Termasuk yang sedang dipantau dan sudah ditutup"
+          icon={CircleCheckBig}
+          tone={disetujui > 0 ? "good" : "neutral"}
+        />
+      </StatRow>
+
       <Card>
         <CardHeader>
-          <CardTitle>{cpars.length} CPAR</CardTitle>
+          <CardTitle>CPAR terbaru</CardTitle>
           <CardDescription>
-            Hanya CPAR dari klaim yang boleh Anda lihat. Pengguna departemen melihat CPAR
-            departemennya dan klaim yang disiarkan ke seluruh portal.
+            Lima puluh terakhir. Pengguna departemen melihat CPAR departemennya dan klaim yang
+            disiarkan ke seluruh portal.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -65,10 +128,13 @@ export default async function CparListPage() {
           ) : (
             <ul className="divide-y divide-nid-border">
               {cpars.map((cpar) => {
-                const overdue = cpar.dueDate < new Date() && !cpar.submittedAt;
+                const overdue = cpar.dueDate < now && !cpar.submittedAt;
 
                 return (
-                  <li key={cpar.id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-3 first:pt-0">
+                  <li
+                    key={cpar.id}
+                    className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-3 first:pt-0"
+                  >
                     <div className="min-w-0 flex-1">
                       <Link
                         href={`/cpar/${cpar.claim.id}`}
@@ -85,15 +151,18 @@ export default async function CparListPage() {
                       {cpar.responsibleDept.code}
                     </span>
 
-                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] tabular">
-                      siklus {cpar.cycle}
-                    </span>
+                    {cpar.cycle > 1 ? (
+                      <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] tabular">
+                        siklus {cpar.cycle}
+                      </span>
+                    ) : null}
 
                     <span className="flex items-center gap-1 text-xs tabular text-muted-foreground">
                       <CalendarClock aria-hidden className="size-3.5" />
                       {formatDate(cpar.dueDate)}
                       {overdue ? (
-                        <span className="rounded-full bg-[var(--status-danger-bg)] px-1.5 py-0.5 font-medium text-[var(--status-danger)]">
+                        <span className="flex items-center gap-1 rounded-full bg-[var(--status-danger-bg)] px-1.5 py-0.5 font-medium text-[var(--status-danger)]">
+                          <TriangleAlert aria-hidden className="size-3" />
                           lewat
                         </span>
                       ) : null}

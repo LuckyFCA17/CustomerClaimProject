@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Activity, CircleCheckBig, Clock3, TriangleAlert } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SegmentedBar, StatRow, StatTile } from "@/components/shared/stat-tile";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/db";
 import { monitoringProgress } from "@/lib/monitoring";
 import { visibleClaimsWhere } from "@/lib/permissions";
@@ -13,21 +15,21 @@ export const metadata: Metadata = {
 };
 
 /**
- * Daftar klaim yang sudah sampai tahap pemantauan.
+ * Dasbor pemantauan CAPA.
  *
- * Termasuk klaim yang sudah `VERIFIED_CLOSED`, karena pertanyaan yang paling sering
- * dibawa ke halaman ini bukan "apa yang sedang berjalan" melainkan "apa hasil
- * pemantauan klaim itu". Filter dan ekspor dibangun pada Fase 7.
+ * Klaim yang sudah ditutup ikut ditampilkan: pertanyaan yang paling sering dibawa ke
+ * halaman ini bukan "apa yang sedang berjalan" melainkan "apa hasil pemantauan klaim
+ * itu". Batang tipis pada tiap baris menggambarkan pembagian periodenya; angkanya
+ * sudah tertulis di sebelahnya, jadi batangnya tidak memuat teks.
  */
-export default async function MonitoringListPage() {
+export default async function MonitoringDashboardPage() {
   const user = await getPortalUser();
+  const visible = visibleClaimsWhere(user);
+  const now = new Date();
 
   const claims = await db.claim.findMany({
     where: {
-      AND: [
-        visibleClaimsWhere(user),
-        { status: { in: ["CPAR_APPROVED", "CAPA_MONITORING", "VERIFIED_CLOSED"] } },
-      ],
+      AND: [visible, { status: { in: ["CPAR_APPROVED", "CAPA_MONITORING", "VERIFIED_CLOSED"] } }],
     },
     orderBy: [{ closedAt: "desc" }, { updatedAt: "desc" }],
     take: 50,
@@ -42,6 +44,19 @@ export default async function MonitoringListPage() {
     },
   });
 
+  const [sedangDipantau, siapDipantau, ditutup, periodeLewatTenggat] = await Promise.all([
+    db.claim.count({ where: { AND: [visible, { status: "CAPA_MONITORING" }] } }),
+    db.claim.count({ where: { AND: [visible, { status: "CPAR_APPROVED" }] } }),
+    db.claim.count({ where: { AND: [visible, { status: "VERIFIED_CLOSED" }] } }),
+    db.monitoringPeriod.count({
+      where: {
+        status: "PENDING",
+        dueDate: { lt: now },
+        claim: { AND: [visible, { status: "CAPA_MONITORING" }] },
+      },
+    }),
+  ]);
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="space-y-1">
@@ -51,11 +66,42 @@ export default async function MonitoringListPage() {
         </p>
       </header>
 
+      <StatRow>
+        <StatTile
+          label="Sedang dipantau"
+          value={sedangDipantau}
+          hint="Periode efektivitas sedang berjalan"
+          icon={Activity}
+        />
+        <StatTile
+          label="Siap dipantau"
+          value={siapDipantau}
+          hint="CPAR disetujui, jadwal belum dibuka"
+          icon={Clock3}
+          tone={siapDipantau > 0 ? "warning" : "neutral"}
+        />
+        <StatTile
+          label="Periode lewat tenggat"
+          value={periodeLewatTenggat}
+          hint="Belum dinilai melewati tanggal jatuh tempo"
+          icon={TriangleAlert}
+          tone={periodeLewatTenggat > 0 ? "critical" : "neutral"}
+        />
+        <StatTile
+          label="Verified Closed"
+          value={ditutup}
+          hint="Klaim selesai beserta Improvement Report"
+          icon={CircleCheckBig}
+          tone={ditutup > 0 ? "good" : "neutral"}
+        />
+      </StatRow>
+
       <Card>
         <CardHeader>
-          <CardTitle>{claims.length} klaim</CardTitle>
+          <CardTitle>Klaim pada tahap pemantauan</CardTitle>
           <CardDescription>
-            Klaim yang CPAR-nya sudah disetujui, sedang dipantau, atau sudah ditutup.
+            Lima puluh terakhir, yang sudah ditutup lebih dulu. Batang menggambarkan periode
+            siklus berjalan.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -70,36 +116,55 @@ export default async function MonitoringListPage() {
                 const progress = monitoringProgress(claim.monitoring, cycle);
 
                 return (
-                  <li
-                    key={claim.id}
-                    className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-3 first:pt-0"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <Link
-                        href={`/monitoring/${claim.id}`}
-                        className="font-medium tabular text-nid-orange-700 hover:underline"
-                      >
-                        {claim.claimNo}
-                      </Link>
-                      <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                        {claim.cpar?.cparNo ? `${claim.cpar.cparNo} · ` : ""}
-                        {claim.partName} · {claim.internalPartNo}
-                      </p>
+                  <li key={claim.id} className="py-3 first:pt-0">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                      <div className="min-w-0 flex-1">
+                        <Link
+                          href={`/monitoring/${claim.id}`}
+                          className="font-medium tabular text-nid-orange-700 hover:underline"
+                        >
+                          {claim.claimNo}
+                        </Link>
+                        <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                          {claim.cpar?.cparNo ? `${claim.cpar.cparNo} · ` : ""}
+                          {claim.partName} · {claim.internalPartNo}
+                        </p>
+                      </div>
+
+                      {claim.cpar ? (
+                        <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium">
+                          {claim.cpar.responsibleDept.code}
+                        </span>
+                      ) : null}
+
+                      <span className="text-xs tabular text-muted-foreground">
+                        {progress.total === 0
+                          ? "belum dijadwalkan"
+                          : `${progress.effective}/${progress.total} efektif`}
+                      </span>
+
+                      <StatusBadge status={claim.status} />
                     </div>
 
-                    {claim.cpar ? (
-                      <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium">
-                        {claim.cpar.responsibleDept.code}
-                      </span>
+                    {progress.total > 0 ? (
+                      <div className="mt-2">
+                        <SegmentedBar
+                          segments={[
+                            { count: progress.effective, tone: "good", label: "efektif" },
+                            {
+                              count: progress.notEffective.length,
+                              tone: "critical",
+                              label: "tidak efektif",
+                            },
+                            {
+                              count: progress.pending.length,
+                              tone: "warning",
+                              label: "menunggu penilaian",
+                            },
+                          ]}
+                        />
+                      </div>
                     ) : null}
-
-                    <span className="text-xs tabular text-muted-foreground">
-                      {progress.total === 0
-                        ? "belum dijadwalkan"
-                        : `${progress.effective}/${progress.total} efektif`}
-                    </span>
-
-                    <StatusBadge status={claim.status} />
                   </li>
                 );
               })}
