@@ -14,9 +14,10 @@ import {
   unique,
   withoutDuplicates,
 } from "@/lib/notifications";
+import { SECTION_LABEL, VERIFIER_CAPACITY_LABEL, requiredVerifiers } from "@/lib/cpar";
 import { renderSubject } from "@/emails/templates";
 import type { ClaimEmailPayload } from "@/emails/types";
-import { generateClaimDocuments } from "@/server/claim-documents";
+import { generateClaimDocuments, generateCparDocument } from "@/server/claim-documents";
 
 /**
  * Notifikasi Modul 1 (§8 baris 1, 2, dan 3).
@@ -33,16 +34,32 @@ const TYPE_LABEL: Record<string, string> = {
   INFORMATION_ONLY: "Information Only",
 };
 
-function portalUrl(claimId: string): string {
-  const base = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+function appBase(): string {
+  return (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+}
 
-  return `${base}/claims/${claimId}`;
+function portalUrl(claimId: string): string {
+  return `${appBase()}/claims/${claimId}`;
+}
+
+function cparUrl(claimId: string): string {
+  return `${appBase()}/cpar/${claimId}`;
 }
 
 type PayloadExtras = Partial<
   Pick<
     ClaimEmailPayload,
-    "comment" | "attachmentNames" | "cparNo" | "responsibleDept" | "cftMembers" | "initialDocuments" | "dueDate"
+    | "comment"
+    | "attachmentNames"
+    | "cparNo"
+    | "responsibleDept"
+    | "cftMembers"
+    | "initialDocuments"
+    | "dueDate"
+    | "cycle"
+    | "cparUrl"
+    | "verifierCapacities"
+    | "targetSections"
   >
 >;
 
@@ -84,6 +101,10 @@ async function buildPayload(
     cftMembers: extra.cftMembers,
     initialDocuments: extra.initialDocuments,
     dueDate: extra.dueDate ?? null,
+    cycle: extra.cycle ?? null,
+    cparUrl: extra.cparUrl ?? null,
+    verifierCapacities: extra.verifierCapacities,
+    targetSections: extra.targetSections,
   };
 }
 
@@ -234,6 +255,151 @@ export async function notifyCparIssued(
     to: unique([...people, ...mailboxes]),
     cc: await emailsForRoles(["QA_HEAD"]),
     payload,
+  });
+}
+
+// ─────────────────────── Modul 3: rantai verifikasi ───────────────────────
+
+async function loadCparContext(claimId: string) {
+  return db.cpar.findUniqueOrThrow({
+    where: { claimId },
+    include: {
+      responsibleDept: { select: { id: true, name: true } },
+      sections: { select: { key: true, filledBy: { select: { email: true } } } },
+    },
+  });
+}
+
+/**
+ * Alamat seluruh kapasitas verifier wajib pada sebuah CPAR.
+ *
+ * USER_HEAD disaring ke departemen penanggung jawab saja — head dept lain tidak diminta
+ * memutuskan, sejalan dengan `verifierCapacity` yang menolak kapasitas itu dari mereka.
+ * Tanpa penyaringan ini, seluruh head dept akan menerima permintaan yang tidak dapat
+ * mereka penuhi.
+ */
+async function verifierEmails(responsibleDeptId: string): Promise<readonly string[]> {
+  const users = await db.user.findMany({
+    where: {
+      isActive: true,
+      OR: [
+        { roles: { some: { role: { code: { in: ["QA_HEAD", "FACTORY_MGR", "PRESDIR"] } } } } },
+        {
+          departmentId: responsibleDeptId,
+          roles: { some: { role: { code: "USER_HEAD" } } },
+        },
+      ],
+    },
+    select: { email: true },
+  });
+
+  return unique(users.map((user) => user.email));
+}
+
+function capacityLabels(): readonly string[] {
+  return requiredVerifiers().map((role) => VERIFIER_CAPACITY_LABEL[role] ?? role);
+}
+
+/** §8 #7 — CPAR dikirim final; kapasitas verifier wajib diminta memutuskan. */
+export async function notifyCparUnderVerification(
+  claimId: string,
+  actor: { id: string; name: string; jobTitle: string },
+): Promise<void> {
+  const cpar = await loadCparContext(claimId);
+
+  const payload = await buildPayload(claimId, actor, {
+    cparNo: cpar.cparNo,
+    responsibleDept: cpar.responsibleDept.name,
+    dueDate: formatDate(cpar.dueDate),
+    cycle: cpar.cycle,
+    cparUrl: cparUrl(claimId),
+    verifierCapacities: capacityLabels(),
+  });
+
+  await queueAndSend({
+    type: "CPAR_REVIEW_REQUEST",
+    claimId,
+    dedupeKey: `CPAR_REVIEW_REQUEST:${cpar.id}:${cpar.cycle}`,
+    to: await verifierEmails(cpar.responsibleDeptId),
+    cc: await emailsForRoles(["QA_HEAD"]),
+    payload,
+  });
+}
+
+/**
+ * §8 #9 — verifier meminta perbaikan; yang perlu tahu adalah para pengisi section.
+ *
+ * `cycle` yang diterima adalah siklus yang baru saja ditutup, bukan siklus baru: kunci
+ * dedupe harus menandai keputusan itu, dan satu REVISE per siklus hanya mungkin sekali.
+ */
+export async function notifyCparRevisionRequested(
+  claimId: string,
+  actor: { id: string; name: string; jobTitle: string },
+  cycle: number,
+  comment: string | null,
+): Promise<void> {
+  const cpar = await loadCparContext(claimId);
+
+  const targeted = await db.cparSection.findMany({
+    where: { cparId: cpar.id, revisionNote: { not: null } },
+    select: { key: true },
+  });
+
+  // Pengisi section adalah penerima utama. Bila belum ada yang mengisi sama sekali,
+  // permintaan jatuh ke departemen penanggung jawab supaya tidak hilang tanpa penerima.
+  const fillers = unique(
+    cpar.sections
+      .map((section) => section.filledBy?.email)
+      .filter((email): email is string => Boolean(email)),
+  );
+
+  const recipients =
+    fillers.length > 0 ? fillers : await emailsForDepartment(cpar.responsibleDeptId);
+
+  const payload = await buildPayload(claimId, actor, {
+    cparNo: cpar.cparNo,
+    responsibleDept: cpar.responsibleDept.name,
+    comment,
+    cycle: cpar.cycle,
+    cparUrl: cparUrl(claimId),
+    targetSections: targeted.map((section) => SECTION_LABEL[section.key]),
+  });
+
+  await queueAndSend({
+    type: "CPAR_REVISION_REQUEST",
+    claimId,
+    dedupeKey: `CPAR_REVISION_REQUEST:${cpar.id}:${cycle}`,
+    to: recipients,
+    cc: await emailsForRoles(["QA", "QA_HEAD"]),
+    payload,
+  });
+}
+
+/** §8 #10 — CPAR disetujui seluruh verifier; seluruh user portal diberi tahu. */
+export async function notifyCparApproved(
+  claimId: string,
+  actor: { id: string; name: string; jobTitle: string },
+  cycle: number,
+): Promise<void> {
+  const cpar = await loadCparContext(claimId);
+  const document = await generateCparDocument(claimId, actor.id);
+
+  const payload = await buildPayload(claimId, actor, {
+    cparNo: cpar.cparNo,
+    responsibleDept: cpar.responsibleDept.name,
+    cycle,
+    cparUrl: cparUrl(claimId),
+    verifierCapacities: capacityLabels(),
+    attachmentNames: document ? [document.filename] : undefined,
+  });
+
+  await queueAndSend({
+    type: "CPAR_APPROVED",
+    claimId,
+    dedupeKey: `CPAR_APPROVED:${cpar.id}:${cycle}`,
+    to: await emailsForGroup("ALL_PORTAL_USERS"),
+    payload,
+    attachmentPaths: document ? [document.path] : undefined,
   });
 }
 

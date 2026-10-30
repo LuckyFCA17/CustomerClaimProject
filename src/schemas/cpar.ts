@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ResponsibilityType } from "@/generated/prisma/enums";
+import { CparSectionKey, ResponsibilityType, VerificationDecision } from "@/generated/prisma/enums";
 
 /**
  * Skema Modul 2 (§6): dua jalur yang saling eksklusif dari klaim yang sudah terbit.
@@ -75,6 +75,57 @@ export const ignoreSchema = z.object({
 });
 
 export type IgnoreInput = z.infer<typeof ignoreSchema>;
+
+// ─────────────────────── Modul 3: pengisian & verifikasi ───────────────────────
+
+/**
+ * Satu section CPAR (§6 Modul 3).
+ *
+ * Isi kosong ditolak di sini, bukan dibiarkan tersimpan lalu ketahuan saat submit final:
+ * section yang "tersimpan tapi kosong" akan tampil Terisi di daftar dan menyesatkan
+ * orang berikutnya yang membuka CPAR.
+ */
+export const SECTION_CONTENT_MIN = 10;
+
+export const cparSectionSchema = z.object({
+  key: z.enum(CparSectionKey, { message: "Section tidak dikenal." }),
+  content: z
+    .string()
+    .trim()
+    .min(SECTION_CONTENT_MIN, `Tulis isinya, minimal ${SECTION_CONTENT_MIN} karakter.`)
+    .max(8000, "Maksimal 8000 karakter."),
+});
+
+export type CparSectionInput = z.infer<typeof cparSectionSchema>;
+
+/**
+ * Keputusan verifikasi (§5, §6 Modul 3).
+ *
+ * Komentar wajib pada REVISE: siklus berikutnya dibuka untuk orang lain, dan mereka
+ * hanya punya komentar ini untuk tahu apa yang harus diperbaiki.
+ */
+export const VERIFY_COMMENT_MIN = 15;
+
+export const verifySchema = z
+  .object({
+    decision: z.enum(VerificationDecision, { message: "Pilih keputusan verifikasi." }),
+    comment: z.string().trim().max(4000, "Maksimal 4000 karakter.").optional().or(z.literal("")),
+    /** Section yang ditandai bermasalah; opsional, tetapi sangat membantu pengisi. */
+    targetSections: z.array(z.enum(CparSectionKey)).default([]),
+  })
+  .superRefine((value, ctx) => {
+    if (value.decision !== "REVISE") return;
+
+    if ((value.comment ?? "").trim().length < VERIFY_COMMENT_MIN) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["comment"],
+        message: `Sebutkan apa yang harus diperbaiki, minimal ${VERIFY_COMMENT_MIN} karakter.`,
+      });
+    }
+  });
+
+export type VerifyInput = z.infer<typeof verifySchema>;
 
 /** Bentuk nilai form Follow Up; semuanya string atau array string seperti yang dikirim input. */
 export interface FollowUpFormValues {

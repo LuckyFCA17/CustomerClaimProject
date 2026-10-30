@@ -89,7 +89,7 @@ function NewCustomerClaim({ payload }: { payload: ClaimEmailPayload }) {
 function CparRequest({ payload }: { payload: ClaimEmailPayload }) {
   return (
     <EmailShell
-      preview={`${payload.cparNo} — countermeasure diminta untuk ${payload.partName}`}
+      preview={`${payload.cparNo ?? payload.claimNo} — countermeasure diminta untuk ${payload.partName}`}
       heading="Problem Countermeasure Request"
     >
       <Paragraph>
@@ -152,12 +152,121 @@ function ClaimIgnoration({ payload }: { payload: ClaimEmailPayload }) {
   );
 }
 
+function cparRows(payload: ClaimEmailPayload) {
+  return [
+    ["CPAR No.", payload.cparNo ?? null],
+    ["Claim No.", payload.claimNo],
+    ["Siklus", payload.cycle ? `#${payload.cycle}` : null],
+    ["Penanggung jawab", payload.responsibleDept ?? null],
+    ["Part", `${payload.partName} · ${payload.internalPartNo}`],
+    ["Non-conformance detail", payload.ncDetail],
+    ["Quality problem", payload.qualityProblem],
+  ] as const;
+}
+
+/** Daftar bernomor; dipakai untuk kapasitas verifier dan section yang ditandai. */
+function BulletList({ items }: { items: readonly string[] }) {
+  return (
+    <ul style={{ margin: "0 0 18px", paddingLeft: "20px", fontSize: "13px", lineHeight: 1.7 }}>
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+function CparReviewRequest({ payload }: { payload: ClaimEmailPayload }) {
+  return (
+    <EmailShell
+      preview={`${payload.cparNo ?? payload.claimNo} menunggu verifikasi Anda`}
+      heading="CPAR menunggu verifikasi Anda"
+    >
+      <Paragraph>
+        {payload.actorName} ({payload.actorJobTitle}) mengirim CPAR berikut untuk diverifikasi.
+        Setujui bila countermeasure-nya memadai, atau kembalikan dengan catatan perbaikan —
+        CPAR baru disetujui setelah seluruh kapasitas di bawah menyatakan Verified.
+      </Paragraph>
+
+      <SummaryTable rows={cparRows(payload)} />
+
+      {payload.verifierCapacities?.length ? (
+        <>
+          <Paragraph>Kapasitas yang harus memutuskan pada siklus ini:</Paragraph>
+          <BulletList items={payload.verifierCapacities} />
+        </>
+      ) : null}
+
+      <ActionButton href={payload.cparUrl ?? payload.portalUrl} label="Open in portal" />
+      <AttachmentNote names={payload.attachmentNames ?? []} />
+    </EmailShell>
+  );
+}
+
+function CparRevisionRequest({ payload }: { payload: ClaimEmailPayload }) {
+  return (
+    <EmailShell
+      preview={`${payload.cparNo ?? payload.claimNo} dikembalikan untuk diperbaiki`}
+      heading="CPAR dikembalikan untuk diperbaiki"
+    >
+      <Paragraph>
+        {payload.actorName} ({payload.actorJobTitle}) meminta perbaikan pada CPAR berikut.
+        Seluruh section dibuka kembali dan siklus naik; verifikasi diulang dari awal setelah
+        Anda mengirimnya kembali.
+      </Paragraph>
+
+      {payload.comment ? <Note>{payload.comment}</Note> : null}
+
+      {payload.targetSections?.length ? (
+        <>
+          <Paragraph>Section yang ditandai perlu diperbaiki:</Paragraph>
+          <BulletList items={payload.targetSections} />
+        </>
+      ) : null}
+
+      <SummaryTable rows={cparRows(payload)} />
+
+      <ActionButton href={payload.cparUrl ?? payload.portalUrl} label="Open in portal" />
+    </EmailShell>
+  );
+}
+
+function CparApproved({ payload }: { payload: ClaimEmailPayload }) {
+  return (
+    <EmailShell
+      preview={`${payload.cparNo ?? payload.claimNo} disetujui`}
+      heading="CPAR disetujui seluruh verifier"
+    >
+      <Paragraph>
+        CPAR berikut telah disetujui seluruh kapasitas verifier. Countermeasure-nya berlaku,
+        dan tahap berikutnya adalah pemantauan efektivitas (CAPA monitoring).
+      </Paragraph>
+
+      <SummaryTable rows={cparRows(payload)} />
+
+      {payload.verifierCapacities?.length ? (
+        <>
+          <Paragraph>Disetujui oleh:</Paragraph>
+          <BulletList items={payload.verifierCapacities} />
+        </>
+      ) : null}
+
+      <ActionButton href={payload.cparUrl ?? payload.portalUrl} label="Open in portal" />
+      <AttachmentNote names={payload.attachmentNames ?? []} />
+    </EmailShell>
+  );
+}
+
 const SUBJECTS: Partial<Record<NotificationType, (payload: ClaimEmailPayload) => string>> = {
   CLAIM_REVIEW_REQUEST: (p) => `[NCC] Review request — ${p.claimNo} (${p.partName})`,
   CLAIM_REVISION_REQUEST: (p) => `[NCC] Revisi diminta — ${p.claimNo} (${p.partName})`,
   NEW_CUSTOMER_CLAIM: (p) => `[NCC] Klaim pelanggan baru — ${p.claimNo} (${p.partName})`,
   CPAR_REQUEST: (p) => `[NCC] CPAR request — ${p.cparNo ?? p.claimNo} (${p.partName})`,
   CLAIM_IGNORATION: (p) => `[NCC] Klaim ditutup tanpa CPAR — ${p.claimNo} (${p.partName})`,
+  CPAR_REVIEW_REQUEST: (p) =>
+    `[NCC] Verifikasi CPAR — ${p.cparNo ?? p.claimNo} siklus ${p.cycle ?? 1} (${p.partName})`,
+  CPAR_REVISION_REQUEST: (p) =>
+    `[NCC] CPAR perlu perbaikan — ${p.cparNo ?? p.claimNo} (${p.partName})`,
+  CPAR_APPROVED: (p) => `[NCC] CPAR disetujui — ${p.cparNo ?? p.claimNo} (${p.partName})`,
 };
 
 const TEMPLATES: Partial<
@@ -168,6 +277,9 @@ const TEMPLATES: Partial<
   NEW_CUSTOMER_CLAIM: NewCustomerClaim,
   CPAR_REQUEST: CparRequest,
   CLAIM_IGNORATION: ClaimIgnoration,
+  CPAR_REVIEW_REQUEST: CparReviewRequest,
+  CPAR_REVISION_REQUEST: CparRevisionRequest,
+  CPAR_APPROVED: CparApproved,
 };
 
 export function hasTemplate(type: NotificationType): boolean {

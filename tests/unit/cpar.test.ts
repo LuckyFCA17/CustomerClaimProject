@@ -1,0 +1,187 @@
+import { describe, expect, it } from "vitest";
+
+import type { CparSectionKey, RoleCode } from "@/generated/prisma/enums";
+import {
+  SECTION_LABEL,
+  SECTION_ORDER,
+  type CparForVerification,
+  type SectionState,
+  type VerificationRecord,
+  missingRequiredSections,
+  missingSectionLabels,
+  requiredVerifiers,
+  verificationProgress,
+  verifierCapacity,
+} from "@/lib/cpar";
+
+/**
+ * Aturan Modul 3 (§6) yang paling mahal bila salah: kelengkapan section menentukan
+ * apakah CPAR boleh dikirim, dan rantai verifikasi menentukan kapan klaim boleh maju.
+ * Keduanya diuji tanpa basis data supaya setiap cabang benar-benar terlewati.
+ */
+
+const LEAD_DEPT = "dept-production";
+const OTHER_DEPT = "dept-engineering";
+
+const USER_DEPT_CPAR: CparForVerification = {
+  responsibilityType: "USER_DEPT",
+  responsibleDeptId: LEAD_DEPT,
+};
+
+const CFT_CPAR: CparForVerification = {
+  responsibilityType: "CFT",
+  responsibleDeptId: LEAD_DEPT,
+};
+
+function sections(overrides: Partial<Record<CparSectionKey, string | null>> = {}): SectionState[] {
+  return SECTION_ORDER.map((key) => ({
+    key,
+    content: key in overrides ? (overrides[key] ?? null) : "Isi yang memadai untuk section ini.",
+    isRequired: true,
+  }));
+}
+
+describe("missingRequiredSections", () => {
+  it("menganggap CPAR lengkap ketika seluruh section terisi", () => {
+    expect(missingRequiredSections(sections())).toEqual([]);
+  });
+
+  it("menyebut section yang kosong", () => {
+    const result = missingRequiredSections(
+      sections({ ROOT_CAUSE_OUTFLOW: null, EFFECTIVENESS_PLAN: null }),
+    );
+
+    expect(result).toEqual(["ROOT_CAUSE_OUTFLOW", "EFFECTIVENESS_PLAN"]);
+  });
+
+  it("memperlakukan isi yang hanya spasi sebagai kosong", () => {
+    expect(missingRequiredSections(sections({ TEMPORARY_ACTION: "   \n\t  " }))).toEqual([
+      "TEMPORARY_ACTION",
+    ]);
+  });
+
+  it("mengembalikan section dalam urutan form, bukan urutan masukan", () => {
+    const shuffled = [...sections({ PROBLEM_DESCRIPTION: null, PERMANENT_COUNTERMEASURE: null })]
+      .reverse();
+
+    expect(missingRequiredSections(shuffled)).toEqual([
+      "PROBLEM_DESCRIPTION",
+      "PERMANENT_COUNTERMEASURE",
+    ]);
+  });
+
+  it("melewati section yang tidak wajib", () => {
+    const list = sections({ TEMPORARY_ACTION: null }).map((section) =>
+      section.key === "TEMPORARY_ACTION" ? { ...section, isRequired: false } : section,
+    );
+
+    expect(missingRequiredSections(list)).toEqual([]);
+  });
+
+  it("memberi label yang terbaca manusia untuk pop-up", () => {
+    expect(missingSectionLabels(sections({ ROOT_CAUSE_OCCURRENCE: null }))).toEqual([
+      SECTION_LABEL.ROOT_CAUSE_OCCURRENCE,
+    ]);
+  });
+});
+
+describe("requiredVerifiers", () => {
+  it("menuntut empat kapasitas", () => {
+    expect(requiredVerifiers()).toEqual(["QA_HEAD", "USER_HEAD", "FACTORY_MGR", "PRESDIR"]);
+  });
+});
+
+describe("verificationProgress", () => {
+  const cycle = 2;
+
+  function record(role: RoleCode, decision: "VERIFIED" | "REVISE", at = cycle): VerificationRecord {
+    return { role, decision, cycle: at };
+  }
+
+  it("belum lengkap ketika baru sebagian memutuskan", () => {
+    const progress = verificationProgress([record("QA_HEAD", "VERIFIED")], cycle);
+
+    expect(progress.isComplete).toBe(false);
+    expect(progress.verified).toEqual(["QA_HEAD"]);
+    expect(progress.pending).toEqual(["USER_HEAD", "FACTORY_MGR", "PRESDIR"]);
+  });
+
+  it("lengkap hanya ketika keempat kapasitas menyatakan VERIFIED", () => {
+    const progress = verificationProgress(
+      [
+        record("QA_HEAD", "VERIFIED"),
+        record("USER_HEAD", "VERIFIED"),
+        record("FACTORY_MGR", "VERIFIED"),
+        record("PRESDIR", "VERIFIED"),
+      ],
+      cycle,
+    );
+
+    expect(progress.isComplete).toBe(true);
+    expect(progress.pending).toEqual([]);
+  });
+
+  it("tidak menghitung VERIFIED dari siklus sebelumnya", () => {
+    const progress = verificationProgress(
+      [
+        record("QA_HEAD", "VERIFIED", 1),
+        record("USER_HEAD", "VERIFIED", 1),
+        record("FACTORY_MGR", "VERIFIED", 1),
+        record("PRESDIR", "VERIFIED", 1),
+        record("QA_HEAD", "VERIFIED"),
+      ],
+      cycle,
+    );
+
+    expect(progress.isComplete).toBe(false);
+    expect(progress.verified).toEqual(["QA_HEAD"]);
+  });
+
+  it("menganggap REVISE sebagai sudah memutuskan, tetapi bukan sebagai setuju", () => {
+    const progress = verificationProgress(
+      [
+        record("QA_HEAD", "VERIFIED"),
+        record("USER_HEAD", "REVISE"),
+        record("FACTORY_MGR", "VERIFIED"),
+        record("PRESDIR", "VERIFIED"),
+      ],
+      cycle,
+    );
+
+    expect(progress.isComplete).toBe(false);
+    expect(progress.verified).not.toContain("USER_HEAD");
+    expect(progress.pending).not.toContain("USER_HEAD");
+  });
+});
+
+describe("verifierCapacity", () => {
+  it("memilih kapasitas sesuai urutan verifier wajib", () => {
+    expect(verifierCapacity(["QA_HEAD", "QA"], "dept-qa", USER_DEPT_CPAR)).toBe("QA_HEAD");
+  });
+
+  it("menolak USER_HEAD dari departemen yang bukan penanggung jawab", () => {
+    expect(verifierCapacity(["USER_HEAD"], OTHER_DEPT, USER_DEPT_CPAR)).toBeNull();
+  });
+
+  it("menerima USER_HEAD dari departemen penanggung jawab", () => {
+    expect(verifierCapacity(["USER_HEAD"], LEAD_DEPT, USER_DEPT_CPAR)).toBe("USER_HEAD");
+  });
+
+  it("pada CFT hanya head lead dept yang menjadi verifier wajib (asumsi A-04)", () => {
+    expect(verifierCapacity(["USER_HEAD"], LEAD_DEPT, CFT_CPAR)).toBe("USER_HEAD");
+    expect(verifierCapacity(["USER_HEAD"], OTHER_DEPT, CFT_CPAR)).toBeNull();
+  });
+
+  it("menolak role yang tidak termasuk verifier wajib", () => {
+    expect(verifierCapacity(["QA"], "dept-qa", USER_DEPT_CPAR)).toBeNull();
+    expect(verifierCapacity(["ADMIN"], null, USER_DEPT_CPAR)).toBeNull();
+    expect(verifierCapacity(["USER_DEPT"], LEAD_DEPT, USER_DEPT_CPAR)).toBeNull();
+  });
+
+  it("mengabaikan USER_HEAD yang tidak berhak tetapi tetap memakai kapasitas lain", () => {
+    // Factory Manager yang juga head dept lain tetap memutuskan sebagai FACTORY_MGR.
+    expect(verifierCapacity(["USER_HEAD", "FACTORY_MGR"], OTHER_DEPT, USER_DEPT_CPAR)).toBe(
+      "FACTORY_MGR",
+    );
+  });
+});

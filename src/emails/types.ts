@@ -34,6 +34,15 @@ export interface ClaimEmailPayload {
   readonly cftMembers?: readonly string[];
   readonly initialDocuments?: readonly string[];
   readonly dueDate?: string | null;
+
+  /** Terisi pada notifikasi rantai verifikasi (§8 #7, #9, #10). */
+  readonly cycle?: number | null;
+  /** Tautan ke halaman CPAR; `portalUrl` menunjuk ke halaman klaim. */
+  readonly cparUrl?: string | null;
+  /** Kapasitas verifier wajib, dibekukan saat siklus dibuka (PLAN §2.4). */
+  readonly verifierCapacities?: readonly string[];
+  /** Section yang ditandai bermasalah oleh verifier. */
+  readonly targetSections?: readonly string[];
 }
 
 export interface RenderedEmail {

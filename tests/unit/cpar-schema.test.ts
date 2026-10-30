@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { IGNORE_REASON_MIN, followUpSchema, ignoreSchema } from "@/schemas/cpar";
+import {
+  IGNORE_REASON_MIN,
+  SECTION_CONTENT_MIN,
+  cparSectionSchema,
+  followUpSchema,
+  ignoreSchema,
+  verifySchema,
+} from "@/schemas/cpar";
 
 function errorsFor(
   result: { success: boolean; error?: { issues: { path: PropertyKey[]; message: string }[] } },
@@ -129,5 +136,97 @@ describe("penutupan klaim tanpa CPAR", () => {
   it("tidak mewajibkan konfirmasi di tingkat skema — itu diputuskan server dari tipe klaim", () => {
     // Skema tidak tahu tipe klaimnya; aturan A-02 ditegakkan di ignoreClaim().
     expect(ignoreSchema.safeParse({ reason: alasanMemadai }).success).toBe(true);
+  });
+});
+
+describe("cparSectionSchema", () => {
+  const isiMemadai = "Cacat burr pada gate, 240 pcs dari lot 2026-10-14.";
+
+  it("menerima section yang terisi memadai", () => {
+    const result = cparSectionSchema.safeParse({
+      key: "PROBLEM_DESCRIPTION",
+      content: isiMemadai,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("menolak isi yang terlalu pendek", () => {
+    const result = cparSectionSchema.safeParse({ key: "TEMPORARY_ACTION", content: "sudah" });
+
+    expect(errorsFor(result, "content")).toHaveLength(1);
+  });
+
+  it("menolak isi yang hanya spasi", () => {
+    const result = cparSectionSchema.safeParse({
+      key: "TEMPORARY_ACTION",
+      content: " ".repeat(SECTION_CONTENT_MIN + 10),
+    });
+
+    expect(errorsFor(result, "content")).toHaveLength(1);
+  });
+
+  it("menolak key yang bukan section CPAR", () => {
+    const result = cparSectionSchema.safeParse({ key: "TIDAK_ADA", content: isiMemadai });
+
+    expect(errorsFor(result, "key")).toHaveLength(1);
+  });
+
+  it("membuang spasi di tepi sebelum disimpan", () => {
+    const result = cparSectionSchema.safeParse({
+      key: "ROOT_CAUSE_OUTFLOW",
+      content: `  ${isiMemadai}  `,
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.content).toBe(isiMemadai);
+  });
+});
+
+describe("verifySchema", () => {
+  const catatanMemadai = "Root cause occurrence masih berhenti di gejala, telusuri lebih dalam.";
+
+  it("menerima VERIFIED tanpa komentar", () => {
+    const result = verifySchema.safeParse({ decision: "VERIFIED" });
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.targetSections).toEqual([]);
+  });
+
+  it("mewajibkan komentar pada REVISE", () => {
+    const result = verifySchema.safeParse({ decision: "REVISE", comment: "" });
+
+    expect(errorsFor(result, "comment")).toHaveLength(1);
+  });
+
+  it("menolak komentar REVISE yang terlalu pendek", () => {
+    const result = verifySchema.safeParse({ decision: "REVISE", comment: "kurang" });
+
+    expect(errorsFor(result, "comment")).toHaveLength(1);
+  });
+
+  it("menerima REVISE dengan komentar memadai dan section yang ditandai", () => {
+    const result = verifySchema.safeParse({
+      decision: "REVISE",
+      comment: catatanMemadai,
+      targetSections: ["ROOT_CAUSE_OCCURRENCE", "PERMANENT_COUNTERMEASURE"],
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.targetSections).toHaveLength(2);
+  });
+
+  it("menolak keputusan yang tidak dikenal", () => {
+    expect(verifySchema.safeParse({ decision: "MUNGKIN" }).success).toBe(false);
+  });
+
+  it("menolak section yang tidak dikenal pada targetSections", () => {
+    const result = verifySchema.safeParse({
+      decision: "REVISE",
+      comment: catatanMemadai,
+      targetSections: ["BUKAN_SECTION"],
+    });
+
+    expect(result.success).toBe(false);
   });
 });

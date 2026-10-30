@@ -34,6 +34,18 @@ const FASE_3_TYPES = [
 
 const MODUL_2_TYPES = ["CPAR_REQUEST", "CLAIM_IGNORATION"] as const;
 
+const MODUL_3_TYPES = ["CPAR_REVIEW_REQUEST", "CPAR_REVISION_REQUEST", "CPAR_APPROVED"] as const;
+
+/** Modulnya belum dibangun; template-nya menyusul bersama Fase 6 dan 7. */
+const BELUM_DIBANGUN = [
+  "CPAR_DAILY_REMINDER",
+  "CPAR_REVIEW_REMINDER",
+  "MONITORING_EVIDENCE_REQUEST",
+  "MONITORING_WEEKLY_REMINDER",
+  "CAPA_NOT_EFFECTIVE",
+  "MONITORING_FINISHED",
+] as const;
+
 describe("kelengkapan template", () => {
   it("memberi label untuk keempat belas jenis notifikasi §8", () => {
     const types = Object.values(NotificationType);
@@ -45,15 +57,17 @@ describe("kelengkapan template", () => {
   });
 
   it("baru menyediakan template untuk jenis yang modulnya sudah dibangun", () => {
-    for (const type of [...FASE_3_TYPES, ...MODUL_2_TYPES]) {
+    for (const type of [...FASE_3_TYPES, ...MODUL_2_TYPES, ...MODUL_3_TYPES]) {
       expect(hasTemplate(type), type).toBe(true);
     }
 
-    expect(hasTemplate("CPAR_REVIEW_REQUEST")).toBe(false);
+    for (const type of BELUM_DIBANGUN) {
+      expect(hasTemplate(type), type).toBe(false);
+    }
   });
 
   it("menolak merender jenis yang templatenya belum ada, alih-alih mengirim email kosong", async () => {
-    await expect(renderClaimEmail("CPAR_REVIEW_REQUEST", payload)).rejects.toThrow(/belum dibuat/);
+    await expect(renderClaimEmail("CPAR_REVIEW_REMINDER", payload)).rejects.toThrow(/belum dibuat/);
   });
 });
 
@@ -199,5 +213,56 @@ describe("badan email", () => {
     });
 
     expect(html).not.toContain("Lampiran:");
+  });
+});
+
+describe("notifikasi Modul 3", () => {
+  const cparPayload = {
+    ...payload,
+    cparNo: "NID/CPAR/26/0002",
+    responsibleDept: "Production",
+    cycle: 2,
+    cparUrl: "https://ncc.nifco.co.id/cpar/claim-1",
+    verifierCapacities: ["QA Dept. Head", "User Dept. Head", "Factory Manager", "President Director"],
+  };
+
+  it("menyebut siklus dan keempat kapasitas pada permintaan verifikasi", async () => {
+    const { html, subject } = await renderClaimEmail("CPAR_REVIEW_REQUEST", cparPayload);
+
+    expect(subject).toContain("siklus 2");
+    expect(html).toContain("NID/CPAR/26/0002");
+    expect(html).toContain("Factory Manager");
+    expect(html).toContain("President Director");
+  });
+
+  it("menautkan ke halaman CPAR, bukan halaman klaim", async () => {
+    for (const type of MODUL_3_TYPES) {
+      const { html } = await renderClaimEmail(type, cparPayload);
+
+      expect(html, type).toContain("https://ncc.nifco.co.id/cpar/claim-1");
+    }
+  });
+
+  it("membawa komentar verifier dan section yang ditandai pada permintaan revisi", async () => {
+    const { html } = await renderClaimEmail("CPAR_REVISION_REQUEST", {
+      ...cparPayload,
+      comment: "Root cause occurrence masih berhenti di gejala.",
+      targetSections: ["Root cause — occurrence"],
+    });
+
+    expect(html).toContain("masih berhenti di gejala");
+    expect(html).toContain("Root cause — occurrence");
+  });
+
+  it("tidak pernah menulis undefined pada baris preview walau CPAR No. belum ada", async () => {
+    // cparNo sengaja dihilangkan: baris preview adalah teks pertama yang terbaca di
+    // daftar kotak masuk, dan "undefined menunggu verifikasi Anda" terlihat seperti bug.
+    for (const type of MODUL_3_TYPES) {
+      const { html, text } = await renderClaimEmail(type, { ...cparPayload, cparNo: null });
+
+      expect(html, type).not.toContain("undefined");
+      expect(text, type).not.toContain("undefined");
+      expect(html, type).toContain("NID/CC/26/10/0005");
+    }
   });
 });

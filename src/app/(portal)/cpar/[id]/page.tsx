@@ -1,14 +1,31 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { forbidden, notFound } from "next/navigation";
-import { CalendarClock, CircleDashed } from "lucide-react";
+import { CalendarClock, CircleDashed, FileText } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CparEvidence } from "@/components/cpar/cpar-evidence";
+import { SectionEditor, type SectionView } from "@/components/cpar/section-editor";
+import { SubmitFinal } from "@/components/cpar/submit-final";
+import {
+  VerificationChain,
+  VerificationHistory,
+  type VerificationView,
+} from "@/components/cpar/verification-chain";
+import { VerificationPanel } from "@/components/cpar/verification-panel";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { StatusRail } from "@/components/shared/status-rail";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  SECTION_ORDER,
+  missingSectionLabels,
+  requiredVerifiers,
+  verificationProgress,
+  verifierCapacity,
+} from "@/lib/cpar";
 import { db } from "@/lib/db";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { canViewClaim } from "@/lib/permissions";
+import { DOCUMENT_TITLE } from "@/lib/pdf";
+import { can, canFillSection, canViewClaim, type ClaimContext } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -16,26 +33,14 @@ export const metadata: Metadata = {
 };
 
 /**
- * Halaman CPAR — tujuan Action Button B (§6 Modul 2).
+ * Halaman CPAR — Modul 3 (§6).
  *
  * Alamatnya memakai id klaim, bukan id CPAR: satu klaim punya paling banyak satu CPAR
  * (PLAN D1), sehingga tautan dari halaman klaim tetap sama walau CPAR dibuat belakangan.
  *
- * Fase 4 menampilkan penetapan penanggung jawabnya. Pengisian tujuh section, unggah
- * evidence, dan rantai verifikasi dibangun pada Fase 5.
+ * Seluruh hak akses dihitung di sini dan diturunkan ke komponen sebagai boolean. Yang
+ * menolak tetap server action — ini hanya menentukan apa yang digambar.
  */
-const SECTION_LABEL: Record<string, string> = {
-  PROBLEM_DESCRIPTION: "Problem description",
-  TEMPORARY_ACTION: "Temporary action",
-  ROOT_CAUSE_OCCURRENCE: "Root cause — occurrence",
-  ROOT_CAUSE_OUTFLOW: "Root cause — outflow",
-  PERMANENT_COUNTERMEASURE: "Permanent countermeasure",
-  STANDARDIZATION_HORIZONTAL: "Standardization & horizontal deployment",
-  EFFECTIVENESS_PLAN: "Effectiveness plan",
-};
-
-const SECTION_ORDER = Object.keys(SECTION_LABEL);
-
 export default async function CparPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await getPortalUser();
@@ -57,27 +62,79 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
       responsibleDept: { select: { code: true, name: true } },
       cftMembers: { include: { department: { select: { code: true, name: true } } } },
       initialDocuments: { include: { initialDocument: { select: { name: true } } } },
-      sections: true,
+      sections: { include: { filledBy: { select: { name: true } } } },
+      verifications: {
+        include: { verifier: { select: { name: true, jobTitle: true } } },
+        orderBy: { decidedAt: "asc" },
+      },
     },
   });
 
   if (!cpar) notFound();
 
-  const allowed = canViewClaim(user, {
+  const context: ClaimContext = {
     status: cpar.claim.status,
     createdById: cpar.claim.createdById,
     cpar: {
       responsibleDeptId: cpar.responsibleDeptId,
       cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
     },
+  };
+
+  if (!canViewClaim(user, context)) forbidden();
+
+  const [evidence, documents] = await Promise.all([
+    db.attachment.findMany({
+      where: { entityType: "Cpar", entityId: cpar.id },
+      include: { uploadedBy: { select: { name: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    db.generatedDocument.findMany({
+      where: { claimId: id, kind: "CPAR" },
+      orderBy: [{ cycle: "desc" }, { version: "desc" }],
+    }),
+  ]);
+
+  const sections: SectionView[] = SECTION_ORDER.map((key) => {
+    const record = cpar.sections.find((section) => section.key === key);
+
+    return {
+      key,
+      content: record?.content ?? null,
+      isRequired: record?.isRequired ?? true,
+      revisionNote: record?.revisionNote ?? null,
+      lockedAt: record?.lockedAt ?? null,
+      filledByName: record?.filledBy?.name ?? null,
+      filledAt: record?.filledAt ?? null,
+      canFill: canFillSection(user, key, context),
+    };
   });
 
-  if (!allowed) forbidden();
+  const verifications: VerificationView[] = cpar.verifications.map((entry) => ({
+    id: entry.id,
+    role: entry.role,
+    decision: entry.decision,
+    comment: entry.comment,
+    targetSections: entry.targetSections,
+    cycle: entry.cycle,
+    decidedAt: entry.decidedAt,
+    verifierName: entry.verifier.name,
+    verifierJobTitle: entry.verifier.jobTitle,
+  }));
+
+  const progress = verificationProgress(verifications, cpar.cycle);
+  const missing = missingSectionLabels(sections);
+
+  const canSubmit = can(user, "cpar.submitFinal", context);
+  const capacity = can(user, "cpar.verify", context)
+    ? verifierCapacity(user.roles, user.departmentId, cpar)
+    : null;
+  const alreadyDecided = verifications.some(
+    (entry) => entry.role === capacity && entry.cycle === cpar.cycle,
+  );
 
   const overdue = cpar.dueDate < new Date() && !cpar.submittedAt;
-  const sections = SECTION_ORDER.map(
-    (key) => cpar.sections.find((section) => section.key === key) ?? null,
-  );
+  const underVerification = cpar.claim.status === "CPAR_UNDER_VERIFICATION";
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -162,14 +219,13 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
           ) : (
             <ul className="space-y-2">
               {cpar.initialDocuments.map((entry) => (
-                <li
-                  key={entry.initialDocumentId}
-                  className="flex items-center gap-2.5 text-sm"
-                >
+                <li key={entry.initialDocumentId} className="flex items-center gap-2.5 text-sm">
                   <CircleDashed
                     aria-hidden
                     className={
-                      entry.fulfilledAt ? "size-4 text-[var(--status-closed)]" : "size-4 text-muted-foreground"
+                      entry.fulfilledAt
+                        ? "size-4 text-[var(--status-closed)]"
+                        : "size-4 text-muted-foreground"
                     }
                   />
                   {entry.initialDocument.name}
@@ -189,35 +245,150 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
         <CardHeader>
           <CardTitle>Section CPAR</CardTitle>
           <CardDescription>
-            Tujuh section dibuat kosong saat CPAR terbit. Pengisian per role, unggah evidence, dan
-            rantai verifikasi dibangun pada Fase 5.
+            Tujuh section, masing-masing dapat diisi oleh role tertentu. Section yang bukan bagian
+            Anda tetap terbaca agar pengisian saling nyambung.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ol className="divide-y divide-nid-border">
-            {SECTION_ORDER.map((key, index) => {
-              const section = sections[index];
-              const filled = Boolean(section?.content?.trim());
-
-              return (
-                <li key={key} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3 first:pt-0">
-                  <span className="w-5 text-xs tabular text-muted-foreground">{index + 1}</span>
-                  <span className="min-w-0 flex-1 text-sm">{SECTION_LABEL[key]}</span>
-                  <span
-                    className="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                    style={{
-                      backgroundColor: filled ? "var(--status-closed-bg)" : "var(--status-draft-bg)",
-                      color: filled ? "var(--status-closed)" : "var(--status-draft)",
-                    }}
-                  >
-                    {filled ? "Terisi" : "Kosong"}
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
+          <SectionEditor
+            claimId={id}
+            sections={sections}
+            lockReason={underVerification ? "VERIFYING" : "APPROVED"}
+          />
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Evidence</CardTitle>
+          <CardDescription>
+            Berkas pendukung untuk seluruh CPAR — foto perbaikan, standar kerja yang diperbarui,
+            atau data pengukuran.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CparEvidence
+            claimId={id}
+            canUpload={can(user, "cpar.evidence.upload", context)}
+            files={evidence.map((file) => ({
+              id: file.id,
+              originalName: file.originalName,
+              url: `/api/files/${file.path}`,
+              uploadedByName: file.uploadedBy.name,
+              uploadedAt: file.createdAt,
+            }))}
+          />
+        </CardContent>
+      </Card>
+
+      {canSubmit ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Submit final report</CardTitle>
+            <CardDescription>
+              {missing.length === 0
+                ? "Seluruh section wajib sudah terisi. Mengirim CPAR mengunci isinya dan membuka rantai verifikasi."
+                : `Masih ada ${missing.length} section wajib yang kosong.`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SubmitFinal claimId={id} cparNo={cpar.cparNo} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {cpar.submittedAt ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Rantai verifikasi</CardTitle>
+            <CardDescription>
+              CPAR disetujui hanya bila keempat kapasitas di bawah menyatakan Verified pada siklus
+              yang sama. Satu Needs revision membuka siklus baru dan verifikasi diulang.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <VerificationChain
+              required={requiredVerifiers()}
+              verifications={verifications}
+              cycle={cpar.cycle}
+            />
+
+            {underVerification && capacity && !alreadyDecided ? (
+              <div className="border-t border-nid-border pt-6">
+                <VerificationPanel claimId={id} capacity={capacity} />
+              </div>
+            ) : null}
+
+            {underVerification && capacity && alreadyDecided ? (
+              <p className="border-t border-nid-border pt-4 text-sm text-muted-foreground">
+                Keputusan Anda pada siklus {cpar.cycle} sudah tercatat. Menunggu{" "}
+                {progress.pending.length} kapasitas lain.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {verifications.some((entry) => entry.cycle < cpar.cycle) ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Riwayat siklus</CardTitle>
+            <CardDescription>
+              Keputusan siklus sebelumnya tidak pernah dihapus — inilah alasan CPAR ini berbentuk
+              seperti sekarang.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <VerificationHistory verifications={verifications} cycle={cpar.cycle} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {documents.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Dokumen CPAR</CardTitle>
+            <CardDescription>
+              Dicetak per siklus. Lembar sebelum approval diberi watermark DRAFT.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y divide-nid-border">
+              {documents.map((document) => (
+                <li
+                  key={document.id}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3 first:pt-0"
+                >
+                  <FileText aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+
+                  <a
+                    href={`/api/files/${document.path}`}
+                    target="_blank"
+                    rel="noopener"
+                    className="text-sm font-medium text-nid-orange-700 hover:underline"
+                  >
+                    {DOCUMENT_TITLE.CPAR}
+                  </a>
+
+                  <span className="text-xs tabular text-muted-foreground">
+                    siklus {document.cycle} · v{document.version}
+                  </span>
+
+                  {document.isDraft ? (
+                    <span className="rounded-full bg-[var(--status-draft-bg)] px-2 py-0.5 text-[11px] text-[var(--status-draft)]">
+                      DRAFT
+                    </span>
+                  ) : null}
+
+                  <span className="ml-auto text-xs tabular text-muted-foreground">
+                    {formatDateTime(document.generatedAt)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

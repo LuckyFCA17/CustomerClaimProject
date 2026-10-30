@@ -67,6 +67,34 @@ export async function loadClaimForPrint(claimId: string) {
   return claim;
 }
 
+export async function loadCparForPrint(claimId: string) {
+  const cpar = await db.cpar.findUnique({
+    where: { claimId },
+    include: {
+      claim: {
+        include: {
+          productCategory: true,
+          ncDetail: true,
+          customer: true,
+          createdBy: { select: { name: true, jobTitle: true } },
+        },
+      },
+      responsibleDept: { select: { code: true, name: true } },
+      cftMembers: { include: { department: { select: { code: true, name: true } } } },
+      initialDocuments: { include: { initialDocument: { select: { name: true } } } },
+      sections: { include: { filledBy: { select: { name: true, jobTitle: true } } } },
+      verifications: {
+        include: { verifier: { select: { name: true, jobTitle: true } } },
+        orderBy: { decidedAt: "asc" },
+      },
+    },
+  });
+
+  if (!cpar) notFound();
+
+  return cpar;
+}
+
 /**
  * Foto dibaca dari penyimpanan dan ditanam sebagai data URI.
  *

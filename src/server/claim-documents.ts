@@ -89,6 +89,94 @@ export async function generateDocument(
 }
 
 /**
+ * PDF CPAR (§9).
+ *
+ * Dicetak per siklus, bukan per klaim: satu REVISE menghasilkan lembar yang berbeda
+ * isinya, dan keduanya harus tetap terbaca. Watermark DRAFT menempel selama CPAR belum
+ * disetujui seluruh verifier (§6 Modul 3) — lembar yang beredar sebelum approval tidak
+ * boleh tertukar dengan yang sudah sah.
+ *
+ * Mengembalikan null bila pencetakan gagal: CPAR sudah disetujui dan statusnya tidak
+ * boleh dibatalkan hanya karena Chromium tidak tersedia, seperti di Termux.
+ */
+export async function generateCparDocument(
+  claimId: string,
+  actorId: string | null,
+): Promise<GeneratedDoc | null> {
+  try {
+    const cpar = await db.cpar.findUniqueOrThrow({
+      where: { claimId },
+      select: { cycle: true, approvedAt: true },
+    });
+
+    const claim = await db.claim.findUniqueOrThrow({
+      where: { id: claimId },
+      select: { claimNo: true },
+    });
+
+    const claimNo = claim.claimNo ?? `DRAFT-${claimId.slice(-6).toUpperCase()}`;
+
+    const latest = await db.generatedDocument.findFirst({
+      where: { claimId, kind: "CPAR", cycle: cpar.cycle },
+      orderBy: { version: "desc" },
+      select: { version: true },
+    });
+
+    const version = (latest?.version ?? 0) + 1;
+    const isDraft = cpar.approvedAt === null;
+
+    const pdf = await renderPdf({ kind: "CPAR", claimId, draft: isDraft });
+    const stored = await storePdf(
+      "CPAR",
+      claimFolder(claim.claimNo, claimId),
+      `${claimNo}_c${cpar.cycle}`,
+      pdf,
+      version,
+    );
+
+    await db.generatedDocument.create({
+      data: {
+        claimId,
+        kind: "CPAR",
+        version,
+        cycle: cpar.cycle,
+        path: stored.path,
+        snapshot: await cparSnapshot(claimId),
+        isDraft,
+        generatedById: actorId,
+      },
+    });
+
+    return { kind: "CPAR", path: stored.path, filename: stored.filename };
+  } catch (error) {
+    console.error(
+      `Gagal mencetak ${DOCUMENT_TITLE.CPAR} untuk klaim ${claimId}:`,
+      error instanceof Error ? error.message : error,
+    );
+
+    return null;
+  }
+}
+
+async function cparSnapshot(claimId: string): Promise<Prisma.InputJsonValue> {
+  const cpar = await db.cpar.findUniqueOrThrow({
+    where: { claimId },
+    include: {
+      responsibleDept: { select: { code: true, name: true } },
+      cftMembers: { include: { department: { select: { code: true, name: true } } } },
+      sections: { include: { filledBy: { select: { name: true, jobTitle: true } } } },
+      verifications: { include: { verifier: { select: { name: true, jobTitle: true } } } },
+    },
+  });
+
+  return JSON.parse(
+    JSON.stringify(cpar, (_key, value: unknown) =>
+      typeof value === "bigint" ? value.toString() : value,
+    ),
+  ) as Prisma.InputJsonValue;
+}
+
+/**
  * Dua dokumen yang menyertai setiap klaim (§6 Modul 1 butir 3).
  *
  * Kegagalan pencetakan tidak dilempar ke pemanggil: klaim sudah berpindah status dan
