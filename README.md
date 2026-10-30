@@ -173,9 +173,15 @@ cd CustomerClaimProject && pnpm dev
 Gunakan **mode produksi**, bukan `pnpm dev`:
 
 ```bash
-pnpm build      # sekali tiap kali kode berubah; berat, biarkan selesai
-pnpm start      # jauh lebih ringan daripada pnpm dev
+pnpm serve      # = pnpm build && pnpm start
 ```
+
+> **Setiap kali setelah `git pull`, build ulang.** `pnpm start` menyajikan isi `.next`
+> apa adanya, jadi route yang baru ditarik belum ada di sana sampai `pnpm build`
+> dijalankan lagi — gejalanya **menu yang 404 padahal kodenya sudah ada**. Tidak ada
+> yang memberi tahu; build basi tetap melayani permintaan seolah normal. `pnpm serve`
+> menggabungkan keduanya supaya langkahnya tidak bisa terlewat, dan `pnpm doctor`
+> memperingatkan bila kode lebih baru daripada hasil build.
 
 Alasannya memori. `next dev` membawa compiler dan menyimpan hasil kompilasi tiap route
 yang dibuka, sehingga pemakaiannya terus naik; mode produksi menyajikan berkas yang sudah
@@ -289,7 +295,8 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm db:reset` | Menghapus database dan menjalankan ulang migrasi + seed |
 | `pnpm db:apply-sql` | Menerapkan migrasi tanpa schema-engine (untuk Termux); `--dry-run`, `--repair`, `--reset` |
 | `pnpm env:init` | Membuat `.env` dari `.env.example` dan mengisi `AUTH_SECRET` |
-| `pnpm doctor` | Memeriksa `.env`, basis data, migrasi, seed, dan SMTP sekaligus |
+| `pnpm doctor` | Memeriksa folder, umur build, `.env`, basis data, migrasi, seed, dan SMTP |
+| `pnpm serve` | `pnpm build` lalu `pnpm start` — mode produksi, dipakai di Termux |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 bila MailHog tidak tersedia |
 
 ### Catatan komponen UI

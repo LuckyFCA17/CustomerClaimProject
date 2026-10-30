@@ -1,5 +1,5 @@
 import { createConnection } from "node:net";
-import { access, readdir } from "node:fs/promises";
+import { access, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 import "dotenv/config";
@@ -88,6 +88,72 @@ async function checkProjectRoot() {
 
   ok("package.json dan prisma/migrations ditemukan");
   return true;
+}
+
+/**
+ * Membandingkan umur hasil build dengan umur kodenya.
+ *
+ * `pnpm start` menyajikan isi .next apa adanya. Setelah `git pull`, route yang baru
+ * belum ada di dalamnya sampai `pnpm build` dijalankan lagi — dan gejalanya adalah
+ * halaman 404 pada menu yang kodenya jelas-jelas sudah ada. Tidak ada yang memberi
+ * tahu; build yang basi tetap melayani permintaan seolah semuanya normal.
+ */
+async function checkBuildFreshness() {
+  console.log("\nHasil build");
+
+  const buildId = await stat(path.resolve(".next/BUILD_ID")).catch(() => null);
+
+  if (!buildId) {
+    warn(
+      "belum pernah di-build",
+      "wajib sebelum pnpm start; pnpm dev tidak memerlukannya",
+    );
+    return;
+  }
+
+  const newest = await newestSourceMtime();
+
+  if (newest > buildId.mtimeMs) {
+    const minutes = Math.round((newest - buildId.mtimeMs) / 60000);
+
+    fail(
+      `kode lebih baru daripada hasil build (selisih ${minutes} menit) — route baru akan 404`,
+      "pnpm build, lalu jalankan ulang pnpm start",
+    );
+    return;
+  }
+
+  ok("hasil build lebih baru daripada kodenya");
+}
+
+/** Waktu ubah terakhir di antara berkas yang memengaruhi hasil build. */
+async function newestSourceMtime() {
+  const roots = ["src", "prisma/schema.prisma", "next.config.ts", "package.json"];
+  let newest = 0;
+
+  async function walk(target) {
+    const info = await stat(target).catch(() => null);
+    if (!info) return;
+
+    if (info.isDirectory()) {
+      const entries = await readdir(target, { withFileTypes: true });
+      for (const entry of entries) {
+        // src/generated diisi ulang `prisma generate` setiap pnpm install, jadi
+        // waktunya tidak mencerminkan perubahan kode yang perlu di-build ulang.
+        if (entry.name === "generated") continue;
+        await walk(path.join(target, entry.name));
+      }
+      return;
+    }
+
+    newest = Math.max(newest, info.mtimeMs);
+  }
+
+  for (const root of roots) {
+    await walk(path.resolve(root));
+  }
+
+  return newest;
 }
 
 async function checkEnv() {
@@ -283,6 +349,8 @@ async function main() {
   console.log(`  folder: ${process.cwd()}`);
 
   if (await checkProjectRoot()) {
+    await checkBuildFreshness();
+
     if (await checkEnv()) {
       await checkDatabase();
     }
