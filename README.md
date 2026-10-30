@@ -172,6 +172,34 @@ cd CustomerClaimProject && pnpm dev
 perbaikannya. Penyebab tersering di Termux adalah PostgreSQL yang belum dinyalakan
 ulang setelah ponsel di-restart.
 
+### Membuka dari peramban Android
+
+Server `pnpm dev` sudah mendengarkan di semua antarmuka — barisnya tercetak saat start:
+
+```
+- Local:    http://localhost:3000
+- Network:  http://10.81.151.112:3000    ← alamat untuk perangkat lain
+```
+
+| Dari mana | Alamat |
+|---|---|
+| Peramban di ponsel yang sama dengan Termux | `http://localhost:3000` |
+| Ponsel, tablet, atau laptop lain di Wi-Fi yang sama | alamat **Network** di atas |
+
+**Kosongkan `AUTH_URL` di `.env` sebelum mengakses dari perangkat lain.** Bila diisi
+`http://localhost:3000`, Auth.js memakai host itu untuk seluruh redirect: login dari
+peramban di perangkat lain berhasil di sisi server, lalu dilempar ke `localhost` milik
+perangkat itu sendiri — dan gagal **tanpa pesan apa pun di layar**, hanya kembali ke
+halaman login. Dibiarkan kosong, portal mengikuti host yang dipakai pengunjung.
+`pnpm doctor` memperingatkan bila `AUTH_URL` masih menunjuk ke localhost.
+
+Agar tautan "Open in portal" di email juga dapat dibuka dari perangkat itu, isi
+`APP_URL` dengan alamat Network yang sama, lalu jalankan ulang server.
+
+Catatan Wi-Fi: sebagian jaringan kantor dan hotspot mengaktifkan *client isolation*,
+sehingga perangkat tidak dapat saling menghubungi. Bila alamat Network tidak terbuka
+padahal `pnpm doctor` hijau, coba lewat hotspot ponsel.
+
 Dua pesan yang tampak menakutkan padahal bukan kegagalan:
 
 | Pesan | Artinya |

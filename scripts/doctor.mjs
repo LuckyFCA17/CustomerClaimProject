@@ -116,7 +116,38 @@ async function checkEnv() {
   }
 
   ok("DATABASE_URL terisi");
+  checkHostBinding();
+
   return true;
+}
+
+/**
+ * AUTH_URL yang menunjuk ke localhost adalah jebakan khusus akses dari perangkat lain:
+ * Auth.js memakainya untuk seluruh redirect, jadi login dari peramban ponsel dilempar
+ * balik ke localhost milik ponsel itu dan gagal tanpa pesan apa pun di layar.
+ */
+function checkHostBinding() {
+  const authUrl = process.env.AUTH_URL?.trim();
+  const appUrl = process.env.APP_URL?.trim();
+  const isLoopback = (value) => /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(value);
+
+  if (authUrl && isLoopback(authUrl)) {
+    warn(
+      `AUTH_URL diisi ${authUrl} — login dari perangkat lain akan dilempar ke sana dan gagal`,
+      "kosongkan AUTH_URL di .env kecuali portal berada di belakang reverse proxy",
+    );
+  } else if (authUrl) {
+    ok(`AUTH_URL disetel ke ${authUrl}`);
+  } else {
+    ok("AUTH_URL kosong — portal mengikuti host yang dipakai pengunjung");
+  }
+
+  if (appUrl && isLoopback(appUrl)) {
+    warn(
+      "APP_URL menunjuk ke localhost — tautan di email tidak dapat dibuka dari perangkat lain",
+      "isi APP_URL dengan IP LAN mesin ini bila portal diakses dari ponsel",
+    );
+  }
 }
 
 async function checkDatabase() {
