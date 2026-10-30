@@ -70,6 +70,41 @@ function unwrapCause(error: AuthError): { readonly summary: string; readonly roo
 }
 
 /**
+ * Menerjemahkan kode galat Prisma menjadi perintah yang dapat dijalankan.
+ *
+ * Tanpa ini layar login menampilkan kalimat seperti "The table `public.User` does not
+ * exist in the current database" — benar, tetapi menyuruh pembacanya menyimpulkan
+ * sendiri bahwa yang kurang adalah langkah migrasi. Lima kode di bawah mencakup
+ * seluruh cara pemasangan baru gagal sebelum pengguna pertama sempat dibaca.
+ */
+function prismaRemedy(root: Error | null): string | null {
+  if (!root || !("code" in root) || typeof root.code !== "string") return null;
+
+  switch (root.code) {
+    case "P2021": // tabel tidak ada
+    case "P2022": // kolom tidak ada
+      return (
+        "Basis data belum disiapkan — tabelnya belum dibuat. " +
+        "Jalankan: pnpm db:apply-sql lalu pnpm db:seed, kemudian pnpm doctor untuk memastikan."
+      );
+    case "P1001": // tidak dapat menjangkau server
+      return (
+        "Server basis data tidak dapat dijangkau. Nyalakan PostgreSQL " +
+        "(Termux: pg_ctl -D $PREFIX/var/lib/postgresql start), lalu coba lagi."
+      );
+    case "P1000": // autentikasi ditolak
+      return "Pengguna atau kata sandi pada DATABASE_URL ditolak basis data. Periksa berkas .env.";
+    case "P1003": // basis data tidak ada
+      return (
+        "Basis data pada DATABASE_URL tidak ada. Buat dulu dengan createdb, " +
+        "lalu jalankan pnpm db:apply-sql && pnpm db:seed."
+      );
+    default:
+      return null;
+  }
+}
+
+/**
  * Memeriksa konfigurasi yang wajib ada sebelum login dicoba.
  *
  * Tanpa ini, AUTH_SECRET yang kosong membuat Auth.js menjawab "There was a problem with
@@ -149,6 +184,14 @@ export async function loginFormAction(prevState: LoginState, formData: FormData)
 
       console.error(`[login] kegagalan non-kredensial (${error.type}): ${summary}`);
       if (root?.stack) console.error(root.stack);
+
+      // Kegagalan pemasangan yang dikenali dijawab dengan perintah perbaikannya, bukan
+      // dengan kalimat galat Prisma — pesan itu menyebut gejalanya, bukan langkahnya.
+      const remedy = prismaRemedy(root);
+
+      if (remedy) {
+        return { ...echo, message: remedy };
+      }
 
       return {
         ...echo,
