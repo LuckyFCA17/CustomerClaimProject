@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { FileUp, Loader2, Trash2 } from "lucide-react";
 
+import { submitUpload } from "@/components/shared/submit-upload";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format";
 import { deleteCparEvidence, uploadCparEvidence } from "@/server/actions/cpar-filling";
@@ -42,18 +43,18 @@ export function CparEvidence({
     setUploading(true);
 
     try {
-      const formData = new FormData();
-      formData.set("claimId", claimId);
-      formData.set("file", file);
+      const sent = await submitUpload(
+        file,
+        (chosen) => {
+          const formData = new FormData();
+          formData.set("claimId", claimId);
+          formData.set("file", chosen);
+          return formData;
+        },
+        uploadCparEvidence,
+      );
 
-      const result = await uploadCparEvidence(formData);
-
-      if (!result.ok) {
-        toast.error("Unggah evidence gagal", { description: result.message });
-        return;
-      }
-
-      router.refresh();
+      if (sent) router.refresh();
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";

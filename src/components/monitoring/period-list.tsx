@@ -13,6 +13,7 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { submitUpload } from "@/components/shared/submit-upload";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -110,18 +111,18 @@ function PeriodCard({
     setUploading(true);
 
     try {
-      const formData = new FormData();
-      formData.set("periodId", period.id);
-      formData.set("file", file);
+      const sent = await submitUpload(
+        file,
+        (chosen) => {
+          const formData = new FormData();
+          formData.set("periodId", period.id);
+          formData.set("file", chosen);
+          return formData;
+        },
+        uploadMonitoringEvidence,
+      );
 
-      const result = await uploadMonitoringEvidence(formData);
-
-      if (!result.ok) {
-        toast.error("Unggah evidence gagal", { description: result.message });
-        return;
-      }
-
-      router.refresh();
+      if (sent) router.refresh();
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";

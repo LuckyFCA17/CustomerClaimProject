@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import type { FieldErrors, UseFormRegister } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
+import { submitUpload } from "@/components/shared/submit-upload";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SelectNative } from "@/components/ui/select-native";
@@ -51,18 +52,19 @@ export function PartPanel({
     setUploading(true);
 
     try {
-      const formData = new FormData();
-      formData.set("claimId", claimId);
-      formData.set("side", side);
-      formData.set("file", file);
+      const sent = await submitUpload(
+        file,
+        (chosen) => {
+          const formData = new FormData();
+          formData.set("claimId", claimId);
+          formData.set("side", side);
+          formData.set("file", chosen);
+          return formData;
+        },
+        uploadPartPhoto,
+      );
 
-      const result = await uploadPartPhoto(formData);
-
-      if (result.ok) {
-        toast.success("Foto terunggah");
-      } else {
-        toast.error("Unggah foto gagal", { description: result.message });
-      }
+      if (sent) toast.success("Foto terunggah");
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";

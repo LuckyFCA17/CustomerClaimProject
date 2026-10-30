@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { ValidationError } from "@/lib/errors";
+import { UPLOAD_LIMITS, isAllowedType, isImage } from "@/lib/uploads";
 
 /**
  * Penyimpanan berkas unggahan.
@@ -28,29 +29,8 @@ export interface StorageDriver {
   moveFolder(from: string, to: string): Promise<void>;
 }
 
-/** Batas unggahan (asumsi A-18). */
-export const UPLOAD_LIMITS = {
-  maxBytes: 10 * 1024 * 1024,
-  /** Sisi terpanjang foto dikompres ke ukuran ini (§7C). */
-  maxImageEdge: 1600,
-  imageTypes: ["image/jpeg", "image/png", "image/webp"],
-  documentTypes: [
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ],
-} as const;
-
-export function isAllowedType(mimeType: string): boolean {
-  return (
-    (UPLOAD_LIMITS.imageTypes as readonly string[]).includes(mimeType) ||
-    (UPLOAD_LIMITS.documentTypes as readonly string[]).includes(mimeType)
-  );
-}
-
-export function isImage(mimeType: string): boolean {
-  return (UPLOAD_LIMITS.imageTypes as readonly string[]).includes(mimeType);
-}
+// Diteruskan supaya pemanggil lama tetap mengimpornya dari sini; sumbernya satu.
+export { UPLOAD_LIMITS, isAllowedType, isImage };
 
 /**
  * sharp dimuat saat dibutuhkan, bukan saat modul diimpor.
@@ -179,19 +159,33 @@ export async function saveUpload({ file, folder, entityType }: SaveUploadInput):
     const sharp = await loadSharp();
 
     if (sharp) {
-      data = await sharp(original)
-        .rotate() // hormati orientasi EXIF sebelum metadatanya dibuang
-        .resize({
-          width: UPLOAD_LIMITS.maxImageEdge,
-          height: UPLOAD_LIMITS.maxImageEdge,
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .jpeg({ quality: 82, progressive: true })
-        .toBuffer();
+      try {
+        data = await sharp(original)
+          .rotate() // hormati orientasi EXIF sebelum metadatanya dibuang
+          .resize({
+            width: UPLOAD_LIMITS.maxImageEdge,
+            height: UPLOAD_LIMITS.maxImageEdge,
+            fit: "inside",
+            withoutEnlargement: true,
+          })
+          .jpeg({ quality: 82, progressive: true })
+          .toBuffer();
 
-      mimeType = "image/jpeg";
-      extension = ".jpg";
+        mimeType = "image/jpeg";
+        extension = ".jpg";
+      } catch (error) {
+        // Berkas yang berekstensi gambar tetapi isinya rusak atau bukan gambar membuat
+        // sharp melempar galat libvips yang panjang. Dibiarkan naik, galat itu menjadi
+        // HTTP 500 tanpa pesan di layar; pengunggah hanya melihat tidak terjadi apa-apa.
+        console.warn(
+          `Gambar ${file.name} tidak dapat diproses:`,
+          error instanceof Error ? error.message.split("\n")[0] : error,
+        );
+
+        throw new ValidationError(
+          "Berkas gambar tidak dapat dibaca. Pastikan berkasnya tidak rusak, lalu coba lagi.",
+        );
+      }
     }
   }
 

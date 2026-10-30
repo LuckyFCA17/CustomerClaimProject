@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { FileUp, Loader2, Trash2, XCircle } from "lucide-react";
 
+import { submitUpload } from "@/components/shared/submit-upload";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -56,17 +57,20 @@ export function IgnoreForm({
     setUploading(true);
 
     try {
-      const formData = new FormData();
-      formData.set("claimId", claimId);
-      formData.set("file", file);
+      const sent = await submitUpload(
+        file,
+        (chosen) => {
+          const formData = new FormData();
+          formData.set("claimId", claimId);
+          formData.set("file", chosen);
+          return formData;
+        },
+        uploadIgnorationEvidence,
+      );
 
-      const result = await uploadIgnorationEvidence(formData);
-
-      if (result.ok) {
+      if (sent) {
         toast.success("Evidence terunggah");
         router.refresh();
-      } else {
-        toast.error("Unggah evidence gagal", { description: result.message });
       }
     } finally {
       setUploading(false);

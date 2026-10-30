@@ -168,6 +168,35 @@ pg_ctl -D $PREFIX/var/lib/postgresql start
 cd CustomerClaimProject && pnpm dev
 ```
 
+### Sesi Termux mati saat mengunggah berkas
+
+Gunakan **mode produksi**, bukan `pnpm dev`:
+
+```bash
+pnpm build      # sekali tiap kali kode berubah; berat, biarkan selesai
+pnpm start      # jauh lebih ringan daripada pnpm dev
+```
+
+Alasannya memori. `next dev` membawa compiler dan menyimpan hasil kompilasi tiap route
+yang dibuka, sehingga pemakaiannya terus naik; mode produksi menyajikan berkas yang sudah
+jadi. Diukur pada proyek ini:
+
+| Mode | RSS |
+|---|---:|
+| `pnpm dev`, baru menyalakan, halaman login saja | 820 MB |
+| `pnpm dev`, setelah membuka halaman CPAR | 1.270 MB |
+| `pnpm dev`, sesi panjang dengan banyak route | 1.821 MB |
+| `pnpm start`, halaman login saja | 223 MB |
+| `pnpm start`, setelah mengunggah foto 8,5 MiB | 370 MB |
+
+Android menutup proses latar belakang begitu memori menipis, dan unggahan adalah lonjakan
+yang memicunya: berkasnya ditahan utuh di memori saat diterima, lalu disalin lagi saat
+dikompres. Pada `pnpm dev` yang sudah memakai 1,3 GB, lonjakan itu cukup untuk membuat
+Android menghentikan Termux — sesi tertutup tanpa pesan galat, karena memang bukan proses
+itu yang memutuskan berhenti.
+
+Jalankan juga `termux-wake-lock` sebelum layar dimatikan.
+
 **Tidak bisa login?** Jalankan `pnpm doctor`. Satu perintah itu memeriksa posisi folder,
 `.env`, koneksi basis data, migrasi, seed, dan SMTP sekaligus, lalu menyebut perintah
 perbaikannya. Penyebab tersering di Termux adalah PostgreSQL yang belum dinyalakan
