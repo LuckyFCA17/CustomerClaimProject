@@ -256,6 +256,82 @@ function CparApproved({ payload }: { payload: ClaimEmailPayload }) {
   );
 }
 
+function MonitoringEvidenceRequest({ payload }: { payload: ClaimEmailPayload }) {
+  return (
+    <EmailShell
+      preview={`Pemantauan CAPA dimulai untuk ${payload.cparNo ?? payload.claimNo}`}
+      heading="Pemantauan efektivitas CAPA dimulai"
+    >
+      <Paragraph>
+        {payload.actorName} ({payload.actorJobTitle}) membuka jadwal pemantauan untuk
+        countermeasure berikut. Mohon kumpulkan evidence tiap periode melalui portal sebelum
+        tenggatnya; Factory Manager atau President Director yang akan menilai efektivitasnya.
+      </Paragraph>
+
+      <SummaryTable rows={cparRows(payload)} />
+
+      {payload.periods?.length ? (
+        <>
+          <Paragraph>Jadwal periode:</Paragraph>
+          <BulletList items={payload.periods} />
+        </>
+      ) : null}
+
+      <ActionButton href={payload.cparUrl ?? payload.portalUrl} label="Open in portal" />
+    </EmailShell>
+  );
+}
+
+function CapaNotEffective({ payload }: { payload: ClaimEmailPayload }) {
+  return (
+    <EmailShell
+      preview={`CAPA ${payload.cparNo ?? payload.claimNo} dinyatakan tidak efektif`}
+      heading="CAPA dinyatakan tidak efektif"
+    >
+      <Paragraph>
+        {payload.actorName} ({payload.actorJobTitle}) menilai periode{" "}
+        {payload.periodNo ?? "pemantauan"} sebagai <strong>Not Effective</strong>. Countermeasure
+        dibuka kembali: seluruh section CPAR dapat diisi lagi, dan verifikasi diulang dari awal
+        pada siklus baru.
+      </Paragraph>
+
+      {payload.comment ? <Note>{payload.comment}</Note> : null}
+
+      <SummaryTable rows={cparRows(payload)} />
+
+      <ActionButton href={payload.cparUrl ?? payload.portalUrl} label="Open in portal" />
+    </EmailShell>
+  );
+}
+
+function MonitoringFinished({ payload }: { payload: ClaimEmailPayload }) {
+  return (
+    <EmailShell
+      preview={`${payload.claimNo} ditutup — Verified Closed`}
+      heading="Klaim ditutup — Verified Closed"
+    >
+      <Paragraph>
+        Seluruh periode pemantauan dinyatakan efektif dan Improvement Report sudah tersimpan.
+        Klaim berikut ditutup oleh {payload.actorName} ({payload.actorJobTitle}).
+      </Paragraph>
+
+      {payload.comment ? <Note>{payload.comment}</Note> : null}
+
+      <SummaryTable rows={cparRows(payload)} />
+
+      {payload.periods?.length ? (
+        <>
+          <Paragraph>Hasil pemantauan:</Paragraph>
+          <BulletList items={payload.periods} />
+        </>
+      ) : null}
+
+      <ActionButton href={payload.cparUrl ?? payload.portalUrl} label="Open in portal" />
+      <AttachmentNote names={payload.attachmentNames ?? []} />
+    </EmailShell>
+  );
+}
+
 const SUBJECTS: Partial<Record<NotificationType, (payload: ClaimEmailPayload) => string>> = {
   CLAIM_REVIEW_REQUEST: (p) => `[NCC] Review request — ${p.claimNo} (${p.partName})`,
   CLAIM_REVISION_REQUEST: (p) => `[NCC] Revisi diminta — ${p.claimNo} (${p.partName})`,
@@ -267,6 +343,11 @@ const SUBJECTS: Partial<Record<NotificationType, (payload: ClaimEmailPayload) =>
   CPAR_REVISION_REQUEST: (p) =>
     `[NCC] CPAR perlu perbaikan — ${p.cparNo ?? p.claimNo} (${p.partName})`,
   CPAR_APPROVED: (p) => `[NCC] CPAR disetujui — ${p.cparNo ?? p.claimNo} (${p.partName})`,
+  MONITORING_EVIDENCE_REQUEST: (p) =>
+    `[NCC] Pemantauan CAPA dimulai — ${p.cparNo ?? p.claimNo} (${p.partName})`,
+  CAPA_NOT_EFFECTIVE: (p) =>
+    `[NCC] CAPA tidak efektif — ${p.cparNo ?? p.claimNo} periode ${p.periodNo ?? "?"} (${p.partName})`,
+  MONITORING_FINISHED: (p) => `[NCC] Verified Closed — ${p.claimNo} (${p.partName})`,
 };
 
 const TEMPLATES: Partial<
@@ -280,6 +361,9 @@ const TEMPLATES: Partial<
   CPAR_REVIEW_REQUEST: CparReviewRequest,
   CPAR_REVISION_REQUEST: CparRevisionRequest,
   CPAR_APPROVED: CparApproved,
+  MONITORING_EVIDENCE_REQUEST: MonitoringEvidenceRequest,
+  CAPA_NOT_EFFECTIVE: CapaNotEffective,
+  MONITORING_FINISHED: MonitoringFinished,
 };
 
 export function hasTemplate(type: NotificationType): boolean {

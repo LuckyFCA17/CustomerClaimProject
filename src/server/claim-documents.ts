@@ -158,6 +158,106 @@ export async function generateCparDocument(
   }
 }
 
+/**
+ * Dokumen penutup klaim (§9): lembar pemantauan dan A3 Improvement Report.
+ *
+ * Keduanya dicetak per siklus dan tidak pernah berwatermark DRAFT — keduanya hanya ada
+ * setelah klaim ditutup. Kegagalan satu dokumen tidak menggagalkan yang lain, dan tidak
+ * pernah membatalkan penutupan klaim yang sudah terjadi.
+ */
+export async function generateClosingDocuments(
+  claimId: string,
+  actorId: string | null,
+): Promise<GeneratedDoc[]> {
+  const kinds: DocumentKind[] = ["MONITORING", "A3"];
+  const results: GeneratedDoc[] = [];
+
+  for (const kind of kinds) {
+    try {
+      results.push(await generateCycleDocument(claimId, kind, actorId));
+    } catch (error) {
+      console.error(
+        `Gagal mencetak ${DOCUMENT_TITLE[kind]} untuk klaim ${claimId}:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  return results;
+}
+
+/** Dokumen yang diversi per siklus CPAR, bukan per klaim. */
+async function generateCycleDocument(
+  claimId: string,
+  kind: DocumentKind,
+  actorId: string | null,
+): Promise<GeneratedDoc> {
+  const cpar = await db.cpar.findUniqueOrThrow({
+    where: { claimId },
+    select: { cycle: true },
+  });
+
+  const claim = await db.claim.findUniqueOrThrow({
+    where: { id: claimId },
+    select: { claimNo: true },
+  });
+
+  const claimNo = claim.claimNo ?? `DRAFT-${claimId.slice(-6).toUpperCase()}`;
+
+  const latest = await db.generatedDocument.findFirst({
+    where: { claimId, kind, cycle: cpar.cycle },
+    orderBy: { version: "desc" },
+    select: { version: true },
+  });
+
+  const version = (latest?.version ?? 0) + 1;
+
+  const pdf = await renderPdf({ kind, claimId, draft: false });
+  const stored = await storePdf(
+    kind,
+    claimFolder(claim.claimNo, claimId),
+    `${claimNo}_c${cpar.cycle}`,
+    pdf,
+    version,
+  );
+
+  await db.generatedDocument.create({
+    data: {
+      claimId,
+      kind,
+      version,
+      cycle: cpar.cycle,
+      path: stored.path,
+      snapshot: await monitoringSnapshot(claimId, cpar.cycle),
+      isDraft: false,
+      generatedById: actorId,
+    },
+  });
+
+  return { kind, path: stored.path, filename: stored.filename };
+}
+
+async function monitoringSnapshot(claimId: string, cycle: number): Promise<Prisma.InputJsonValue> {
+  const [periods, report] = await Promise.all([
+    db.monitoringPeriod.findMany({
+      where: { claimId, cycle },
+      include: { filledBy: { select: { name: true, jobTitle: true } } },
+      orderBy: { periodNo: "asc" },
+    }),
+    db.improvementReport.findFirst({
+      where: { claimId, cycle },
+      include: { submittedBy: { select: { name: true, jobTitle: true } } },
+      orderBy: { submittedAt: "desc" },
+    }),
+  ]);
+
+  return JSON.parse(
+    JSON.stringify({ cycle, periods, report }, (_key, value: unknown) =>
+      typeof value === "bigint" ? value.toString() : value,
+    ),
+  ) as Prisma.InputJsonValue;
+}
+
 async function cparSnapshot(claimId: string): Promise<Prisma.InputJsonValue> {
   const cpar = await db.cpar.findUniqueOrThrow({
     where: { claimId },

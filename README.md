@@ -4,10 +4,11 @@ Customer Complaint Handling Portal untuk **PT Nifco Indonesia (NID)**. Mengganti
 (Excel log + email + PDF manual) dengan satu record klaim hidup yang bergerak lewat *action button*
 dari input sampai `Verified Closed`.
 
-> **Status: Fase 5 selesai** — klaim berjalan dari `DRAFT` sampai `CPAR_APPROVED` lewat UI,
-> termasuk pengisian tujuh section per role, rantai verifikasi empat kapasitas, dan siklus
-> revisi. Mencetak tiga PDF dan mengirim delapan dari empat belas notifikasi §8. Monitoring
-> CAPA menyusul pada Fase 6.
+> **Status: Fase 6 selesai** — klaim berjalan penuh dari `DRAFT` sampai `VERIFIED_CLOSED`
+> lewat UI, termasuk pengisian CPAR per role, rantai verifikasi empat kapasitas, siklus
+> revisi, pemantauan efektivitas CAPA, dan jalur Not Effective yang memulangkan klaim ke
+> pengisian. Mencetak kelima PDF §9 dan mengirim sebelas dari empat belas notifikasi §8.
+> Tiga sisanya dipicu cron dan menyusul pada Fase 7.
 > Rujukan rancangan: [`PLAN.md`](./PLAN.md) (skema Prisma final, matriks permission, diagram state)
 > dan [`ASSUMPTIONS.md`](./ASSUMPTIONS.md) (aturan bisnis yang diasumsikan).
 
@@ -404,6 +405,6 @@ DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
 - [x] **Fase 3** — PDF Bad News & Quick Info, mailer, template email
 - [x] **Fase 4** — Modul 2 (Follow Up / Ignore, CPAR ID)
 - [x] **Fase 5** — Modul 3 (CPAR form, verifikasi, siklus revisi)
-- [ ] **Fase 6** — Modul 4 (monitoring, Not Effective, Verified Closed)
+- [x] **Fase 6** — Modul 4 (monitoring, Not Effective, Verified Closed)
 - [ ] **Fase 7** — Worker cron, dashboard, claim list, master data
 - [ ] **Fase 8** — E2E Playwright, README final

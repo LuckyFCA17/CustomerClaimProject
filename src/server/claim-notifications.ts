@@ -17,7 +17,11 @@ import {
 import { SECTION_LABEL, VERIFIER_CAPACITY_LABEL, requiredVerifiers } from "@/lib/cpar";
 import { renderSubject } from "@/emails/templates";
 import type { ClaimEmailPayload } from "@/emails/types";
-import { generateClaimDocuments, generateCparDocument } from "@/server/claim-documents";
+import {
+  generateClaimDocuments,
+  generateClosingDocuments,
+  generateCparDocument,
+} from "@/server/claim-documents";
 
 /**
  * Notifikasi Modul 1 (§8 baris 1, 2, dan 3).
@@ -46,6 +50,10 @@ function cparUrl(claimId: string): string {
   return `${appBase()}/cpar/${claimId}`;
 }
 
+function monitoringUrl(claimId: string): string {
+  return `${appBase()}/monitoring/${claimId}`;
+}
+
 type PayloadExtras = Partial<
   Pick<
     ClaimEmailPayload,
@@ -60,6 +68,8 @@ type PayloadExtras = Partial<
     | "cparUrl"
     | "verifierCapacities"
     | "targetSections"
+    | "periods"
+    | "periodNo"
   >
 >;
 
@@ -105,6 +115,8 @@ async function buildPayload(
     cparUrl: extra.cparUrl ?? null,
     verifierCapacities: extra.verifierCapacities,
     targetSections: extra.targetSections,
+    periods: extra.periods,
+    periodNo: extra.periodNo ?? null,
   };
 }
 
@@ -400,6 +412,152 @@ export async function notifyCparApproved(
     to: await emailsForGroup("ALL_PORTAL_USERS"),
     payload,
     attachmentPaths: document ? [document.path] : undefined,
+  });
+}
+
+// ─────────────────────── Modul 4: pemantauan CAPA ───────────────────────
+
+/**
+ * Pihak yang terlibat pada sebuah CPAR: departemen penanggung jawab, anggota CFT,
+ * dan QA. Dipakai oleh notifikasi yang harus sampai ke semua orang yang pernah
+ * menyentuh countermeasure-nya, bukan hanya ke pengisi terakhir.
+ */
+async function cparParticipants(claimId: string): Promise<readonly string[]> {
+  const cpar = await db.cpar.findUniqueOrThrow({
+    where: { claimId },
+    select: {
+      responsibleDeptId: true,
+      cftMembers: { select: { departmentId: true } },
+    },
+  });
+
+  const departmentIds = [
+    cpar.responsibleDeptId,
+    ...cpar.cftMembers.map((member) => member.departmentId),
+  ];
+
+  const people = (await Promise.all(departmentIds.map((id) => emailsForDepartment(id)))).flat();
+
+  return unique([...people, ...(await emailsForRoles(["QA", "QA_HEAD"]))]);
+}
+
+/** §8 #11 — periode pemantauan dibuka; departemen pelaksana diminta mengumpulkan bukti. */
+export async function notifyMonitoringStarted(
+  claimId: string,
+  actor: { id: string; name: string; jobTitle: string },
+): Promise<void> {
+  const cpar = await db.cpar.findUniqueOrThrow({
+    where: { claimId },
+    include: { responsibleDept: { select: { id: true, name: true } } },
+  });
+
+  const periods = await db.monitoringPeriod.findMany({
+    where: { claimId, cycle: cpar.cycle },
+    orderBy: { periodNo: "asc" },
+    select: { id: true, periodNo: true, dueDate: true },
+  });
+
+  if (periods.length === 0) return;
+
+  const payload = await buildPayload(claimId, actor, {
+    cparNo: cpar.cparNo,
+    responsibleDept: cpar.responsibleDept.name,
+    cycle: cpar.cycle,
+    cparUrl: monitoringUrl(claimId),
+    dueDate: formatDate(periods[periods.length - 1].dueDate),
+    periods: periods.map((period) => `Periode ${period.periodNo} — ${formatDate(period.dueDate)}`),
+  });
+
+  await queueAndSend({
+    type: "MONITORING_EVIDENCE_REQUEST",
+    claimId,
+    // Kunci memakai periode pertama: satu pembukaan jadwal = satu permintaan, dan
+    // membuka ulang siklus berikutnya menghasilkan periode dengan id yang berbeda.
+    dedupeKey: `MONITORING_EVIDENCE_REQUEST:${periods[0].id}`,
+    to: await emailsForDepartment(cpar.responsibleDept.id),
+    cc: await emailsForRoles(["QA_HEAD"]),
+    payload,
+  });
+}
+
+/** §8 #13 — satu periode gagal; seluruh pihak CPAR perlu tahu countermeasure dibuka lagi. */
+export async function notifyCapaNotEffective(
+  claimId: string,
+  actor: { id: string; name: string; jobTitle: string },
+  periodId: string,
+  periodNo: number,
+  note: string | null,
+): Promise<void> {
+  const cpar = await db.cpar.findUniqueOrThrow({
+    where: { claimId },
+    include: { responsibleDept: { select: { name: true } } },
+  });
+
+  const payload = await buildPayload(claimId, actor, {
+    cparNo: cpar.cparNo,
+    responsibleDept: cpar.responsibleDept.name,
+    // Siklus CPAR sudah dinaikkan sebelum notifikasi berjalan, jadi yang disebut
+    // adalah siklus baru tempat perbaikan akan dikerjakan.
+    cycle: cpar.cycle,
+    cparUrl: cparUrl(claimId),
+    comment: note,
+    periodNo,
+  });
+
+  await queueAndSend({
+    type: "CAPA_NOT_EFFECTIVE",
+    claimId,
+    dedupeKey: `CAPA_NOT_EFFECTIVE:${periodId}`,
+    to: await cparParticipants(claimId),
+    payload,
+  });
+}
+
+/** §8 #14 — seluruh periode efektif dan laporan tersimpan; klaim ditutup. */
+export async function notifyMonitoringFinished(
+  claimId: string,
+  actor: { id: string; name: string; jobTitle: string },
+  cycle: number,
+): Promise<void> {
+  const cpar = await db.cpar.findUniqueOrThrow({
+    where: { claimId },
+    include: { responsibleDept: { select: { name: true } } },
+  });
+
+  const report = await db.improvementReport.findFirst({
+    where: { claimId, cycle },
+    orderBy: { submittedAt: "desc" },
+    select: { summary: true },
+  });
+
+  const periods = await db.monitoringPeriod.findMany({
+    where: { claimId, cycle },
+    orderBy: { periodNo: "asc" },
+    select: { periodNo: true, filledAt: true },
+  });
+
+  const documents = await generateClosingDocuments(claimId, actor.id);
+
+  const payload = await buildPayload(claimId, actor, {
+    cparNo: cpar.cparNo,
+    responsibleDept: cpar.responsibleDept.name,
+    cycle,
+    cparUrl: monitoringUrl(claimId),
+    comment: report?.summary ?? null,
+    periods: periods.map(
+      (period) =>
+        `Periode ${period.periodNo} — Effective${period.filledAt ? ` (${formatDate(period.filledAt)})` : ""}`,
+    ),
+    attachmentNames: documents.map((document) => document.filename),
+  });
+
+  await queueAndSend({
+    type: "MONITORING_FINISHED",
+    claimId,
+    dedupeKey: `MONITORING_FINISHED:${claimId}:${cycle}`,
+    to: await emailsForGroup("ALL_PORTAL_USERS"),
+    payload,
+    attachmentPaths: documents.map((document) => document.path),
   });
 }
 

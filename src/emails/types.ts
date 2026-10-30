@@ -43,6 +43,10 @@ export interface ClaimEmailPayload {
   readonly verifierCapacities?: readonly string[];
   /** Section yang ditandai bermasalah oleh verifier. */
   readonly targetSections?: readonly string[];
+
+  /** Terisi pada notifikasi pemantauan CAPA (§8 #11, #13, #14). */
+  readonly periods?: readonly string[];
+  readonly periodNo?: number | null;
 }
 
 export interface RenderedEmail {

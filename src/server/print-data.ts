@@ -96,6 +96,64 @@ export async function loadCparForPrint(claimId: string) {
 }
 
 /**
+ * Data pemantauan satu siklus, untuk lembar MONITORING dan A3.
+ *
+ * Siklus yang diambil adalah siklus CPAR saat ini. Periode siklus sebelumnya tidak ikut
+ * dicetak: lembar ini menggambarkan percobaan yang berhasil, sedangkan percobaan yang
+ * gagal terbaca di timeline klaim dan di PDF siklus itu sendiri.
+ */
+export async function loadMonitoringForPrint(claimId: string) {
+  const cpar = await db.cpar.findUnique({
+    where: { claimId },
+    include: {
+      claim: {
+        include: {
+          ncDetail: true,
+          customer: true,
+          createdBy: { select: { name: true, jobTitle: true } },
+        },
+      },
+      responsibleDept: { select: { code: true, name: true } },
+    },
+  });
+
+  if (!cpar) notFound();
+
+  const [periods, report] = await Promise.all([
+    db.monitoringPeriod.findMany({
+      where: { claimId, cycle: cpar.cycle },
+      include: { filledBy: { select: { name: true, jobTitle: true } } },
+      orderBy: { periodNo: "asc" },
+    }),
+    db.improvementReport.findFirst({
+      where: { claimId, cycle: cpar.cycle },
+      include: { submittedBy: { select: { name: true, jobTitle: true } } },
+      orderBy: { submittedAt: "desc" },
+    }),
+  ]);
+
+  return { cpar, claim: cpar.claim, periods, report };
+}
+
+/**
+ * Blok A3 dibaca dari kolom Json, jadi bentuknya diperiksa di sini.
+ *
+ * Kolom itu diisi versi aplikasi yang bisa saja berbeda dari yang sedang mencetak;
+ * nilai yang bukan string dilewati, bukan dicetak sebagai "[object Object]".
+ */
+export function readA3Content(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+
+  const result: Record<string, string> = {};
+
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string" && entry.trim().length > 0) result[key] = entry;
+  }
+
+  return result;
+}
+
+/**
  * Foto dibaca dari penyimpanan dan ditanam sebagai data URI.
  *
  * Puppeteer membuka halaman cetak tanpa cookie sesi, jadi ia tidak akan bisa mengambil

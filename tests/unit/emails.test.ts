@@ -36,14 +36,17 @@ const MODUL_2_TYPES = ["CPAR_REQUEST", "CLAIM_IGNORATION"] as const;
 
 const MODUL_3_TYPES = ["CPAR_REVIEW_REQUEST", "CPAR_REVISION_REQUEST", "CPAR_APPROVED"] as const;
 
-/** Modulnya belum dibangun; template-nya menyusul bersama Fase 6 dan 7. */
+const MODUL_4_TYPES = [
+  "MONITORING_EVIDENCE_REQUEST",
+  "CAPA_NOT_EFFECTIVE",
+  "MONITORING_FINISHED",
+] as const;
+
+/** Ketiganya dipicu cron, bukan tindakan pengguna; template-nya menyusul pada Fase 7. */
 const BELUM_DIBANGUN = [
   "CPAR_DAILY_REMINDER",
   "CPAR_REVIEW_REMINDER",
-  "MONITORING_EVIDENCE_REQUEST",
   "MONITORING_WEEKLY_REMINDER",
-  "CAPA_NOT_EFFECTIVE",
-  "MONITORING_FINISHED",
 ] as const;
 
 describe("kelengkapan template", () => {
@@ -57,7 +60,7 @@ describe("kelengkapan template", () => {
   });
 
   it("baru menyediakan template untuk jenis yang modulnya sudah dibangun", () => {
-    for (const type of [...FASE_3_TYPES, ...MODUL_2_TYPES, ...MODUL_3_TYPES]) {
+    for (const type of [...FASE_3_TYPES, ...MODUL_2_TYPES, ...MODUL_3_TYPES, ...MODUL_4_TYPES]) {
       expect(hasTemplate(type), type).toBe(true);
     }
 
@@ -263,6 +266,61 @@ describe("notifikasi Modul 3", () => {
       expect(html, type).not.toContain("undefined");
       expect(text, type).not.toContain("undefined");
       expect(html, type).toContain("NID/CC/26/10/0005");
+    }
+  });
+});
+
+describe("notifikasi Modul 4", () => {
+  const monitoringPayload = {
+    ...payload,
+    cparNo: "NID/CPAR/26/0002",
+    responsibleDept: "Production",
+    cycle: 2,
+    cparUrl: "https://ncc.nifco.co.id/monitoring/claim-1",
+    periods: ["Periode 1 — 04 Nov 2026", "Periode 2 — 11 Nov 2026"],
+  };
+
+  it("mendaftar jadwal periode pada permintaan evidence", async () => {
+    const { html, subject } = await renderClaimEmail(
+      "MONITORING_EVIDENCE_REQUEST",
+      monitoringPayload,
+    );
+
+    expect(subject).toContain("Pemantauan CAPA dimulai");
+    expect(html).toContain("Periode 1 — 04 Nov 2026");
+    expect(html).toContain("Periode 2 — 11 Nov 2026");
+  });
+
+  it("menyebut nomor periode yang gagal dan catatan penilainya", async () => {
+    const { html, subject } = await renderClaimEmail("CAPA_NOT_EFFECTIVE", {
+      ...monitoringPayload,
+      periodNo: 2,
+      comment: "Masih ditemukan 3 pcs kaki patah pada 500 pcs pertama.",
+    });
+
+    expect(subject).toContain("periode 2");
+    expect(html).toContain("Masih ditemukan 3 pcs");
+    expect(html).toContain("Not Effective");
+  });
+
+  it("menyebut Verified Closed dan melampirkan dokumen penutup", async () => {
+    const { html, subject } = await renderClaimEmail("MONITORING_FINISHED", {
+      ...monitoringPayload,
+      comment: "Seal diganti terjadwal, tiga periode nol temuan.",
+      attachmentNames: ["NID-CC-26-10-0008_c2_monitoring_v1.pdf", "NID-CC-26-10-0008_c2_a3_v1.pdf"],
+    });
+
+    expect(subject).toContain("Verified Closed");
+    expect(html).toContain("Seal diganti terjadwal");
+    expect(html).toContain("a3_v1.pdf");
+  });
+
+  it("tidak pernah menulis undefined walau CPAR No. belum ada", async () => {
+    for (const type of MODUL_4_TYPES) {
+      const { html, text } = await renderClaimEmail(type, { ...monitoringPayload, cparNo: null });
+
+      expect(html, type).not.toContain("undefined");
+      expect(text, type).not.toContain("undefined");
     }
   });
 });
