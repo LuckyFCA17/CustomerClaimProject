@@ -48,6 +48,12 @@ const FILLED_DATA: Partial<Record<CparSectionKey, unknown>> = {
       { name: "Final inspection", suspectOccurrence: false, suspectOutflow: true },
     ],
   },
+  ROOT_CAUSE_OCCURRENCE: {
+    factors: [{ category: "MACHINE", item: "Tekanan holding", judgement: "NG" }],
+  },
+  ROOT_CAUSE_OUTFLOW: {
+    factors: [{ category: "METHOD", item: "Titik inspeksi", judgement: "NG" }],
+  },
 };
 
 function sections(overrides: Partial<Record<CparSectionKey, string | null>> = {}): SectionState[] {
@@ -78,8 +84,8 @@ describe("missingRequiredSections", () => {
 
   it("memperlakukan isi yang hanya spasi sebagai kosong", () => {
     // Pada section paragraf; section tabel terisi lewat barisnya, bukan lewat teks.
-    expect(missingRequiredSections(sections({ ROOT_CAUSE_OCCURRENCE: "   \n\t  " }))).toEqual([
-      "ROOT_CAUSE_OCCURRENCE",
+    expect(missingRequiredSections(sections({ PERMANENT_COUNTERMEASURE: "   \n\t  " }))).toEqual([
+      "PERMANENT_COUNTERMEASURE",
     ]);
   });
 

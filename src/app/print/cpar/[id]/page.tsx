@@ -13,8 +13,10 @@ import {
 import { formatDate, formatDateTime } from "@/lib/format";
 import { ProblemDescriptionSheet } from "@/components/print/problem-sheet";
 import { ProcessFlowSheet } from "@/components/print/process-flow-sheet";
+import { RootCauseSheet } from "@/components/print/root-cause-sheet";
 import { TemporaryActionSheet } from "@/components/print/temporary-action-sheet";
 import { readProcessFlow } from "@/schemas/process-flow";
+import { readRootCause } from "@/schemas/root-cause";
 import { readTemporaryAction } from "@/schemas/temporary-action";
 import { loadProblemDescription } from "@/server/cpar-problem";
 import { TYPE_LABEL, authorizePrint, loadCparForPrint } from "@/server/print-data";
@@ -123,6 +125,8 @@ export default async function CparPrintPage({
               <ProblemDescriptionSheet problem={problem} />
             ) : key === "PROCESS_FLOW" ? (
               <ProcessFlowSheet value={readProcessFlow(record?.data)} />
+            ) : key === "ROOT_CAUSE_OCCURRENCE" || key === "ROOT_CAUSE_OUTFLOW" ? (
+              <RootCauseSheet value={readRootCause(record?.data)} />
             ) : isStructuredSection(key) ? (
               <TemporaryActionSheet value={readTemporaryAction(record?.data)} />
             ) : (

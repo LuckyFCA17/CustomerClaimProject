@@ -6,6 +6,7 @@ import { CalendarClock, CircleDashed, FileText } from "lucide-react";
 import { CparEvidence } from "@/components/cpar/cpar-evidence";
 import { ProblemDescriptionPanel } from "@/components/cpar/problem-description";
 import { ProcessFlowEditor } from "@/components/cpar/process-flow-editor";
+import { RootCauseEditor } from "@/components/cpar/root-cause-editor";
 import { TemporaryActionEditor } from "@/components/cpar/temporary-action-editor";
 import { SectionEditor, type SectionView } from "@/components/cpar/section-editor";
 import { SubmitFinal } from "@/components/cpar/submit-final";
@@ -31,6 +32,7 @@ import { DOCUMENT_TITLE } from "@/lib/pdf";
 import { can, canFillSection, canViewClaim, type ClaimContext } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
 import { readProcessFlow } from "@/schemas/process-flow";
+import { readRootCause } from "@/schemas/root-cause";
 import { readTemporaryAction } from "@/schemas/temporary-action";
 import { loadProblemDescription } from "@/server/cpar-problem";
 
@@ -133,6 +135,31 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
   const sectionRow = (key: string) => cpar.sections.find((entry) => entry.key === key);
   const temporaryAction = readTemporaryAction(sectionRow("TEMPORARY_ACTION")?.data);
   const processFlow = readProcessFlow(sectionRow("PROCESS_FLOW")?.data);
+  const rootCause = {
+    ROOT_CAUSE_OCCURRENCE: readRootCause(sectionRow("ROOT_CAUSE_OCCURRENCE")?.data),
+    ROOT_CAUSE_OUTFLOW: readRootCause(sectionRow("ROOT_CAUSE_OUTFLOW")?.data),
+  } as const;
+
+  // Kepala ikan memakai masalah mutu dari klaim bila belum ditulis sendiri, sehingga
+  // diagramnya tidak pernah dimulai dari kotak kosong.
+  const rootCauseEditor = (
+    sectionKey: "ROOT_CAUSE_OCCURRENCE" | "ROOT_CAUSE_OUTFLOW",
+    defaultProblem: string,
+  ) => (
+    <RootCauseEditor
+      claimId={id}
+      sectionKey={sectionKey}
+      value={rootCause[sectionKey]}
+      canFill={canFillSection(user, sectionKey, context)}
+      locked={sectionRow(sectionKey)?.lockedAt !== null}
+      defaultProblem={defaultProblem}
+      legacyText={
+        rootCause[sectionKey].factors.length === 0
+          ? (sectionRow(sectionKey)?.content ?? null)
+          : null
+      }
+    />
+  );
 
   const progress = verificationProgress(verifications, cpar.cycle);
   const missing = missingSectionLabels(sections);
@@ -280,6 +307,14 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
                       : null
                   }
                 />
+              ),
+              ROOT_CAUSE_OCCURRENCE: rootCauseEditor(
+                "ROOT_CAUSE_OCCURRENCE",
+                `${problem.ncDetail ?? "Cacat"} — mengapa terbentuk`,
+              ),
+              ROOT_CAUSE_OUTFLOW: rootCauseEditor(
+                "ROOT_CAUSE_OUTFLOW",
+                `${problem.ncDetail ?? "Cacat"} — mengapa lolos`,
               ),
               PROCESS_FLOW: (
                 <ProcessFlowEditor

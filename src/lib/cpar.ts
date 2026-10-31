@@ -1,6 +1,7 @@
 import type { CparSectionKey, ResponsibilityType, RoleCode } from "@/generated/prisma/enums";
 import { REQUIRED_VERIFIER_ROLES } from "@/lib/permissions";
 import { hasProcessFlow } from "@/schemas/process-flow";
+import { hasRootCause } from "@/schemas/root-cause";
 import { hasTemporaryAction } from "@/schemas/temporary-action";
 
 /**
@@ -85,6 +86,8 @@ export function sectionLabel(key: CparSectionKey): string {
 export const STRUCTURED_SECTIONS = [
   "TEMPORARY_ACTION",
   "PROCESS_FLOW",
+  "ROOT_CAUSE_OCCURRENCE",
+  "ROOT_CAUSE_OUTFLOW",
 ] as const satisfies readonly CparSectionKey[];
 
 export function isStructuredSection(key: CparSectionKey): boolean {
@@ -103,6 +106,9 @@ export interface SectionState {
 export function isSectionFilled(section: Pick<SectionState, "key" | "content" | "data">): boolean {
   if (section.key === "TEMPORARY_ACTION") return hasTemporaryAction(section.data);
   if (section.key === "PROCESS_FLOW") return hasProcessFlow(section.data);
+  if (section.key === "ROOT_CAUSE_OCCURRENCE" || section.key === "ROOT_CAUSE_OUTFLOW") {
+    return hasRootCause(section.data);
+  }
 
   return (section.content ?? "").trim().length > 0;
 }

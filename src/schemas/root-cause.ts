@@ -1,0 +1,140 @@
+import { z } from "zod";
+
+/**
+ * Analisis akar masalah 4M1E (§6 Modul 3, section 4 dan 5).
+ *
+ * Diagram tulang ikan dan tabel 4M1E bukan dua isian yang berbeda, melainkan dua
+ * tampilan dari data yang sama: tiap faktor adalah satu duri pada kategori tulangnya,
+ * sekaligus satu baris pada tabel. Dipisahkan menjadi dua isian, keduanya akan segera
+ * berbeda isi — dan yang satu akan menjadi gambar yang tidak lagi menggambarkan apa pun.
+ */
+
+export const FISHBONE_CATEGORIES = ["MAN", "MACHINE", "METHOD", "MATERIAL", "ENVIRONMENT"] as const;
+
+export type FishboneCategory = (typeof FISHBONE_CATEGORIES)[number];
+
+export const CATEGORY_LABEL: Record<FishboneCategory, string> = {
+  MAN: "Man",
+  MACHINE: "Machine",
+  METHOD: "Method",
+  MATERIAL: "Material",
+  ENVIRONMENT: "Environment",
+};
+
+export const CATEGORY_HINT: Record<FishboneCategory, string> = {
+  MAN: "Operator, keterampilan, kepatuhan terhadap instruksi kerja.",
+  MACHINE: "Mesin, jig, cetakan, alat ukur, dan parameternya.",
+  METHOD: "Cara kerja, urutan proses, standar dan instruksi kerja.",
+  MATERIAL: "Material, komponen, lot, dan penyimpanannya.",
+  ENVIRONMENT: "Suhu, kelembapan, kebersihan, pencahayaan, tata letak.",
+};
+
+/**
+ * Tiga keputusan per faktor.
+ *
+ * "OK but need improvement" bukan nilai tengah yang samar: ia berarti faktornya tidak
+ * menyebabkan cacat ini, tetapi standarnya tetap perlu diperbaiki — dan itu sering
+ * menjadi asal tindakan pencegahan yang tidak akan muncul bila hanya ada OK dan NG.
+ */
+export const JUDGEMENTS = ["OK", "NG", "OK_NEED_IMPROVEMENT"] as const;
+
+export type Judgement = (typeof JUDGEMENTS)[number];
+
+export const JUDGEMENT_LABEL: Record<Judgement, string> = {
+  OK: "OK",
+  NG: "NG",
+  OK_NEED_IMPROVEMENT: "OK but need improvement",
+};
+
+/** Singkatan untuk ruang sempit: duri pada diagram dan kolom pada lembar cetak. */
+export const JUDGEMENT_SHORT: Record<Judgement, string> = {
+  OK: "OK",
+  NG: "NG",
+  OK_NEED_IMPROVEMENT: "OK-NI",
+};
+
+const trimmed = (max: number) => z.string().trim().max(max, `Maksimal ${max} karakter.`);
+
+export const rootCauseFactorSchema = z.object({
+  category: z.enum(FISHBONE_CATEGORIES, { message: "Pilih kategori 4M1E." }),
+  /** Faktor yang diperiksa, mis. "Setting tekanan holding". */
+  item: z.string().trim().min(1, "Item 4M1E wajib diisi.").max(120, "Maksimal 120 karakter."),
+  /** Standar acuannya — angka, dokumen, atau ketentuan yang seharusnya berlaku. */
+  controlPoint: trimmed(300).optional().or(z.literal("")),
+  /** Kondisi yang benar-benar ditemukan saat diperiksa. */
+  actual: trimmed(300).optional().or(z.literal("")),
+  judgement: z.enum(JUDGEMENTS, { message: "Pilih judgement." }),
+  note: trimmed(500).optional().or(z.literal("")),
+});
+
+export type RootCauseFactor = z.infer<typeof rootCauseFactorSchema>;
+
+export const ROOT_CAUSE_FACTOR_MAX = 30;
+
+export const rootCauseSchema = z.object({
+  /** Akibat yang dianalisis — kepala ikan pada diagram. */
+  problem: trimmed(200).optional().or(z.literal("")),
+  factors: z
+    .array(rootCauseFactorSchema)
+    .max(ROOT_CAUSE_FACTOR_MAX, `Maksimal ${ROOT_CAUSE_FACTOR_MAX} faktor.`)
+    .default([]),
+  /** Kesimpulan akar masalah setelah seluruh faktor dinilai. */
+  conclusion: trimmed(2000).optional().or(z.literal("")),
+});
+
+export type RootCauseInput = z.infer<typeof rootCauseSchema>;
+
+export function blankFactor(category: FishboneCategory): RootCauseFactor {
+  return { category, item: "", controlPoint: "", actual: "", judgement: "OK", note: "" };
+}
+
+/**
+ * Membaca kembali isi kolom Json; bentuknya diperiksa, bukan dipercaya.
+ *
+ * Faktor yang rusak dilewati satu per satu — lebih baik kehilangan satu duri daripada
+ * menjatuhkan seluruh halaman CPAR.
+ */
+export function readRootCause(value: unknown): RootCauseInput {
+  const parsed = rootCauseSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+
+  if (typeof value === "object" && value !== null && "factors" in value) {
+    const raw = (value as { factors: unknown }).factors;
+
+    if (Array.isArray(raw)) {
+      const factors = raw
+        .map((factor) => rootCauseFactorSchema.safeParse(factor))
+        .filter((result) => result.success)
+        .map((result) => result.data);
+
+      return { problem: "", factors, conclusion: "" };
+    }
+  }
+
+  return { problem: "", factors: [], conclusion: "" };
+}
+
+/** Faktor per kategori, dalam urutan tetap — dipakai diagram maupun tabel. */
+export function groupByCategory(
+  value: RootCauseInput,
+): readonly { category: FishboneCategory; factors: readonly RootCauseFactor[] }[] {
+  return FISHBONE_CATEGORIES.map((category) => ({
+    category,
+    factors: value.factors.filter((factor) => factor.category === category),
+  }));
+}
+
+export function countNg(value: RootCauseInput): number {
+  return value.factors.filter((factor) => factor.judgement === "NG").length;
+}
+
+/**
+ * Section terisi ketika ada setidaknya satu faktor yang diperiksa.
+ *
+ * Sengaja tidak menuntut adanya faktor NG: analisis yang jujur dapat menyimpulkan
+ * seluruh faktor pada satu sisi memang sesuai standar, dan akar masalahnya ada di sisi
+ * lain. Yang kurang hanya diingatkan di layar, bukan menahan submit.
+ */
+export function hasRootCause(value: unknown): boolean {
+  return readRootCause(value).factors.length > 0;
+}

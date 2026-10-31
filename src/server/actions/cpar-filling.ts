@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { after } from "next/server";
 
 import type { CparSectionKey } from "@/generated/prisma/enums";
@@ -28,6 +29,7 @@ import {
   flowCompleteness,
   processFlowSchema,
 } from "@/schemas/process-flow";
+import { type RootCauseFactor, rootCauseSchema } from "@/schemas/root-cause";
 import {
   type TemporaryActionEntry,
   temporaryActionSchema,
@@ -113,6 +115,16 @@ function flattenZodErrors(error: { issues: { path: PropertyKey[]; message: strin
 
   return fieldErrors;
 }
+
+/**
+ * Kedua sisi analisis akar masalah memakai action yang sama, jadi section tujuannya
+ * ikut divalidasi — bukan diterima apa adanya dari klien.
+ */
+const rootCausePayloadSchema = rootCauseSchema.extend({
+  sectionKey: z.enum(["ROOT_CAUSE_OCCURRENCE", "ROOT_CAUSE_OUTFLOW"], {
+    message: "Section analisis tidak dikenal.",
+  }),
+});
 
 function revalidateCpar(claimId: string): void {
   revalidatePath(`/cpar/${claimId}`);
@@ -404,6 +416,122 @@ export async function saveCparProcessFlow(claimId: string, input: unknown): Prom
   } catch (error) {
     return failure(error);
   }
+}
+
+/**
+ * Menyimpan analisis akar masalah 4M1E untuk salah satu dari kedua sisinya.
+ *
+ * Satu action untuk occurrence dan outflow: isinya sama bentuknya, dan memisahkannya
+ * hanya akan menghasilkan dua salinan kode yang lambat laun berbeda.
+ */
+export async function saveCparRootCause(claimId: string, input: unknown): Promise<ActionResult> {
+  try {
+    const actor = await requireActor();
+    const cpar = await loadCpar(claimId);
+    const context = toContext(cpar);
+
+    assertCan(actor, "cpar.section.fill", context);
+
+    const parsed = rootCausePayloadSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        message: "Periksa kembali isian analisis.",
+        fieldErrors: flattenZodErrors(parsed.error),
+      };
+    }
+
+    const { sectionKey } = parsed.data;
+    assertCanFillSection(actor, sectionKey, context);
+
+    const section = cpar.sections.find((entry) => entry.key === sectionKey);
+    if (!section) throw new NotFoundError(`Section ${SECTION_LABEL[sectionKey]} tidak ditemukan.`);
+
+    if (section.lockedAt) {
+      throw new ForbiddenError(
+        `Section ${SECTION_LABEL[sectionKey]} terkunci karena CPAR sedang diverifikasi.`,
+        "cpar.section.fill",
+      );
+    }
+
+    const problem = (parsed.data.problem ?? "").trim();
+    const conclusion = (parsed.data.conclusion ?? "").trim();
+    const factors = parsed.data.factors;
+
+    const requestContext = await readRequestContext();
+    const isFirstFill = cpar.claim.status === "CPAR_ISSUED";
+
+    if (isFirstFill) {
+      assertTransition(cpar.claim.status, "CPAR_IN_PROGRESS", actor.roles);
+    }
+
+    await db.$transaction(async (tx) => {
+      await tx.cparSection.update({
+        where: { id: section.id },
+        data: {
+          data: { problem, factors, conclusion },
+          content: summarizeRootCause(factors, conclusion),
+          filledById: actor.id,
+          filledAt: new Date(),
+          revisionNote: null,
+        },
+      });
+
+      if (isFirstFill) {
+        await tx.claim.update({ where: { id: claimId }, data: { status: "CPAR_IN_PROGRESS" } });
+      }
+
+      await writeAuditLog(
+        tx,
+        {
+          actorId: actor.id,
+          entityType: "CparSection",
+          entityId: section.id,
+          claimId,
+          action: "cpar.section.fill",
+          fromStatus: isFirstFill ? cpar.claim.status : null,
+          toStatus: isFirstFill ? "CPAR_IN_PROGRESS" : null,
+          payloadDiff: {
+            section: sectionKey,
+            cycle: cpar.cycle,
+            factors: factors.length,
+            ng: factors.filter((factor) => factor.judgement === "NG").length,
+          },
+        },
+        requestContext,
+      );
+    });
+
+    revalidateCpar(claimId);
+
+    const ng = factors.filter((factor) => factor.judgement === "NG").length;
+
+    return {
+      ok: true,
+      message:
+        ng > 0
+          ? `${factors.length} faktor tersimpan, ${ng} dinilai NG.`
+          : `${factors.length} faktor tersimpan — belum ada yang dinilai NG.`,
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Ringkasan analisis sebagai teks, untuk kolom `content`. */
+function summarizeRootCause(factors: readonly RootCauseFactor[], conclusion: string): string {
+  const lines = factors.map((factor) => {
+    const parts = [
+      `[${factor.category}] ${factor.item}`,
+      factor.controlPoint ? `standar: ${factor.controlPoint}` : null,
+      factor.actual ? `aktual: ${factor.actual}` : null,
+      `judgement: ${factor.judgement}`,
+    ].filter(Boolean);
+
+    return parts.join(" — ");
+  });
+
+  return [...lines, conclusion].filter(Boolean).join("\n");
 }
 
 /** Ringkasan alur sebagai satu baris teks, untuk kolom `content`. */

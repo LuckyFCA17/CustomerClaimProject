@@ -47,6 +47,8 @@ export interface ProblemPart {
 export interface ProblemDescription {
   readonly claimId: string;
   readonly claimNo: string | null;
+  /** Nama cacatnya saja — dipakai sebagai kepala diagram tulang ikan, yang ruangnya sempit. */
+  readonly ncDetail: string | null;
   readonly fields: readonly ProblemField[];
   readonly qualityProblem: string;
   readonly abnormalSource: string | null;
@@ -139,6 +141,7 @@ export async function loadProblemDescription(
   return {
     claimId: claim.id,
     claimNo: claim.claimNo,
+    ncDetail: claim.ncDetail?.name ?? null,
     fields: [
       { label: "Kategori klaim", value: claim.type ? (TYPE_LABEL[claim.type] ?? claim.type) : null },
       { label: "Product category", value: claim.productCategory?.name ?? null },
