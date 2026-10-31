@@ -180,9 +180,14 @@ pnpm serve      # = pnpm build && pnpm start
 >
 > ```bash
 > pnpm install          # bila package.json berubah
-> pnpm db:apply-sql     # bila ada migrasi baru; idempotent, aman diulang
-> pnpm serve            # prisma generate + build + start
+> pnpm serve            # prisma generate + migrasi + build + start
 > ```
+>
+> `pnpm serve` menyelaraskan ketiga hal yang dapat tertinggal setelah `git pull` —
+> Prisma Client, isi basis data, dan hasil build — lalu menjalankan portalnya. Ketiganya
+> pernah menjadi sebab kegagalan yang berbeda-beda dan tidak satupun menyebut langkah
+> yang terlewat, jadi digabung menjadi satu perintah yang tidak bisa setengah dijalankan.
+> `pnpm build` dan `pnpm start` sendiri **tidak** menerapkan migrasi.
 >
 > **`prisma generate` wajib setiap kali `prisma/schema.prisma` berubah**, bukan hanya saat
 > `package.json` berubah. Folder `src/generated` tidak ikut di-commit, jadi `git pull`
@@ -312,7 +317,7 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm db:apply-sql` | Menerapkan migrasi tanpa schema-engine (untuk Termux); `--dry-run`, `--repair`, `--reset` |
 | `pnpm env:init` | Membuat `.env` dari `.env.example` dan mengisi `AUTH_SECRET` |
 | `pnpm doctor` | Memeriksa folder, umur build, `.env`, basis data, migrasi, seed, dan SMTP |
-| `pnpm serve` | `pnpm build` lalu `pnpm start` — mode produksi, dipakai di Termux |
+| `pnpm serve` | `prisma generate` → migrasi → `build` → `start`; mode produksi, dipakai di Termux |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 bila MailHog tidak tersedia |
 
 ### Catatan komponen UI

@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "serve": "prisma generate && next build && next start",
+    "serve": "prisma generate && node scripts/apply-migrations.mjs && next build && next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

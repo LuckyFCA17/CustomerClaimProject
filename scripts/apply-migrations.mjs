@@ -63,7 +63,19 @@ async function main() {
   }
 
   const client = new pg.Client({ connectionString });
-  await client.connect();
+
+  try {
+    await client.connect();
+  } catch (error) {
+    // Perintah ini kini juga dijalankan `pnpm serve`, jadi pesannya harus menyebut
+    // obatnya — bukan galat koneksi mentah di tengah rangkaian build.
+    const reason = error instanceof Error ? error.message : String(error);
+
+    throw new Error(
+      `Tidak dapat terhubung ke basis data: ${reason}\n` +
+        "  Nyalakan PostgreSQL lebih dulu — Termux: pg_ctl -D $PREFIX/var/lib/postgresql start",
+    );
+  }
 
   try {
     // PostgreSQL 15 ke atas tidak lagi memberi hak CREATE pada schema public kepada
