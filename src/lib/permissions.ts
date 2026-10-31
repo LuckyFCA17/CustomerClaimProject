@@ -214,6 +214,9 @@ export const PERMISSION_MATRIX: Record<Action, ActionRule> = {
 export const CPAR_SECTION_OWNERS: Record<CparSectionKey, readonly RoleCode[]> = {
   PROBLEM_DESCRIPTION: ["QA"],
   TEMPORARY_ACTION: ["USER_DEPT", "QA"],
+  // Diagram alur proses digambar departemen pelaksana; QA ikut karena merekalah yang
+  // memetakan proses lintas departemen saat penanganannya bertipe CFT.
+  PROCESS_FLOW: ["USER_DEPT", "QA"],
   ROOT_CAUSE_OCCURRENCE: ["USER_DEPT"],
   ROOT_CAUSE_OUTFLOW: ["USER_DEPT"],
   PERMANENT_COUNTERMEASURE: ["USER_DEPT"],

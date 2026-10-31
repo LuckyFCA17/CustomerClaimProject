@@ -153,12 +153,13 @@ export async function followUpClaim(claimId: string, input: unknown): Promise<Ac
           initialDocuments: {
             create: initialDocumentIds.map((initialDocumentId) => ({ initialDocumentId })),
           },
-          // Ketujuh section dibuat kosong sejak awal agar hak isi per role dapat
+          // Kedelapan section dibuat kosong sejak awal agar hak isi per role dapat
           // dievaluasi tanpa menunggu seseorang menyentuhnya lebih dulu.
           sections: {
             create: [
               { key: "PROBLEM_DESCRIPTION" },
               { key: "TEMPORARY_ACTION" },
+              { key: "PROCESS_FLOW" },
               { key: "ROOT_CAUSE_OCCURRENCE" },
               { key: "ROOT_CAUSE_OUTFLOW" },
               { key: "PERMANENT_COUNTERMEASURE" },

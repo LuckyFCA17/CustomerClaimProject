@@ -91,6 +91,9 @@ enum ResponsibilityType {
 enum CparSectionKey {
   PROBLEM_DESCRIPTION
   TEMPORARY_ACTION
+  /// Urutan proses beserta proses yang dicurigai sebagai sumber occurrence dan outflow.
+  /// Mendahului kedua analisis akar masalah, karena keduanya menunjuk ke proses di sini.
+  PROCESS_FLOW
   ROOT_CAUSE_OCCURRENCE
   ROOT_CAUSE_OUTFLOW
   PERMANENT_COUNTERMEASURE

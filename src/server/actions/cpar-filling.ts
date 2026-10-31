@@ -24,6 +24,11 @@ import { requireActor } from "@/lib/session";
 import { claimFolder, saveUpload, storage } from "@/lib/storage";
 import { cparSectionSchema, verifySchema } from "@/schemas/cpar";
 import {
+  type ProcessStep,
+  flowCompleteness,
+  processFlowSchema,
+} from "@/schemas/process-flow";
+import {
   type TemporaryActionEntry,
   temporaryActionSchema,
 } from "@/schemas/temporary-action";
@@ -299,6 +304,124 @@ export async function saveCparTemporaryAction(
   } catch (error) {
     return failure(error);
   }
+}
+
+/**
+ * Menyimpan diagram alur proses.
+ *
+ * Disimpan sekalipun belum lengkap: memetakan urutan prosesnya dan menandai proses
+ * suspek sering terjadi pada dua kesempatan berbeda — yang pertama sendirian, yang
+ * kedua setelah dibahas bersama. Kelengkapannya diperiksa saat submit final, dan
+ * kekurangannya sudah tampil di layar jauh sebelum itu.
+ */
+export async function saveCparProcessFlow(claimId: string, input: unknown): Promise<ActionResult> {
+  const key: CparSectionKey = "PROCESS_FLOW";
+
+  try {
+    const actor = await requireActor();
+    const cpar = await loadCpar(claimId);
+    const context = toContext(cpar);
+
+    assertCan(actor, "cpar.section.fill", context);
+    assertCanFillSection(actor, key, context);
+
+    const parsed = processFlowSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        message: "Periksa kembali urutan prosesnya.",
+        fieldErrors: flattenZodErrors(parsed.error),
+      };
+    }
+
+    const section = cpar.sections.find((entry) => entry.key === key);
+    if (!section) throw new NotFoundError(`Section ${SECTION_LABEL[key]} tidak ditemukan.`);
+
+    if (section.lockedAt) {
+      throw new ForbiddenError(
+        `Section ${SECTION_LABEL[key]} terkunci karena CPAR sedang diverifikasi.`,
+        "cpar.section.fill",
+      );
+    }
+
+    const steps = parsed.data.steps;
+    const note = (parsed.data.note ?? "").trim();
+    const completeness = flowCompleteness(parsed.data);
+
+    const requestContext = await readRequestContext();
+    const isFirstFill = cpar.claim.status === "CPAR_ISSUED";
+
+    if (isFirstFill) {
+      assertTransition(cpar.claim.status, "CPAR_IN_PROGRESS", actor.roles);
+    }
+
+    await db.$transaction(async (tx) => {
+      await tx.cparSection.update({
+        where: { id: section.id },
+        data: {
+          data: { steps, note },
+          content: summarizeFlow(steps, note),
+          filledById: actor.id,
+          filledAt: new Date(),
+          revisionNote: null,
+        },
+      });
+
+      if (isFirstFill) {
+        await tx.claim.update({ where: { id: claimId }, data: { status: "CPAR_IN_PROGRESS" } });
+      }
+
+      await writeAuditLog(
+        tx,
+        {
+          actorId: actor.id,
+          entityType: "CparSection",
+          entityId: section.id,
+          claimId,
+          action: "cpar.section.fill",
+          fromStatus: isFirstFill ? cpar.claim.status : null,
+          toStatus: isFirstFill ? "CPAR_IN_PROGRESS" : null,
+          payloadDiff: {
+            section: key,
+            cycle: cpar.cycle,
+            steps: steps.length,
+            suspectOccurrence: steps.filter((step) => step.suspectOccurrence).length,
+            suspectOutflow: steps.filter((step) => step.suspectOutflow).length,
+          },
+        },
+        requestContext,
+      );
+    });
+
+    revalidateCpar(claimId);
+
+    return {
+      ok: true,
+      message: completeness.isComplete
+        ? `${steps.length} proses tersimpan, suspek occurrence dan outflow sudah ditandai.`
+        : `${steps.length} proses tersimpan — ${completeness.missing.join(", ")}.`,
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Ringkasan alur sebagai satu baris teks, untuk kolom `content`. */
+function summarizeFlow(steps: readonly ProcessStep[], note: string): string {
+  if (steps.length === 0) return note;
+
+  const chain = steps
+    .map((step) => {
+      const marks = [
+        step.suspectOccurrence ? "occurrence" : null,
+        step.suspectOutflow ? "outflow" : null,
+      ].filter(Boolean);
+
+      return marks.length > 0 ? `${step.name} [suspek ${marks.join(" & ")}]` : step.name;
+    })
+    .join(" → ");
+
+  return [chain, note].filter(Boolean).join("\n");
 }
 
 /** Ringkasan satu baris per tindakan, untuk kolom `content`. */

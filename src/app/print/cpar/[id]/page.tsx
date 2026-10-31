@@ -12,7 +12,9 @@ import {
 } from "@/lib/cpar";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { ProblemDescriptionSheet } from "@/components/print/problem-sheet";
+import { ProcessFlowSheet } from "@/components/print/process-flow-sheet";
 import { TemporaryActionSheet } from "@/components/print/temporary-action-sheet";
+import { readProcessFlow } from "@/schemas/process-flow";
 import { readTemporaryAction } from "@/schemas/temporary-action";
 import { loadProblemDescription } from "@/server/cpar-problem";
 import { TYPE_LABEL, authorizePrint, loadCparForPrint } from "@/server/print-data";
@@ -119,6 +121,8 @@ export default async function CparPrintPage({
           <div className="border border-[#e4e7eb] px-[3mm] py-[2mm] text-[9pt]">
             {isDerivedSection(key) ? (
               <ProblemDescriptionSheet problem={problem} />
+            ) : key === "PROCESS_FLOW" ? (
+              <ProcessFlowSheet value={readProcessFlow(record?.data)} />
             ) : isStructuredSection(key) ? (
               <TemporaryActionSheet value={readTemporaryAction(record?.data)} />
             ) : (

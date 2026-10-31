@@ -34,12 +34,33 @@ const CFT_CPAR: CparForVerification = {
   responsibleDeptId: LEAD_DEPT,
 };
 
+/**
+ * Section tabel tidak terisi lewat paragraf, jadi helper ini memberi mereka isi
+ * terstruktur yang setara. Mengosongkannya tetap dilakukan lewat `overrides`.
+ */
+const FILLED_DATA: Partial<Record<CparSectionKey, unknown>> = {
+  TEMPORARY_ACTION: {
+    entries: [{ kind: "REPLACEMENT", label: "Replacement part", totalPcs: 10 }],
+  },
+  PROCESS_FLOW: {
+    steps: [
+      { name: "Injection", suspectOccurrence: true, suspectOutflow: false },
+      { name: "Final inspection", suspectOccurrence: false, suspectOutflow: true },
+    ],
+  },
+};
+
 function sections(overrides: Partial<Record<CparSectionKey, string | null>> = {}): SectionState[] {
-  return SECTION_ORDER.map((key) => ({
-    key,
-    content: key in overrides ? (overrides[key] ?? null) : "Isi yang memadai untuk section ini.",
-    isRequired: true,
-  }));
+  return SECTION_ORDER.map((key) => {
+    const emptied = key in overrides && overrides[key] === null;
+
+    return {
+      key,
+      content: key in overrides ? (overrides[key] ?? null) : "Isi yang memadai untuk section ini.",
+      isRequired: true,
+      data: emptied ? undefined : FILLED_DATA[key],
+    };
+  });
 }
 
 describe("missingRequiredSections", () => {
@@ -56,8 +77,9 @@ describe("missingRequiredSections", () => {
   });
 
   it("memperlakukan isi yang hanya spasi sebagai kosong", () => {
-    expect(missingRequiredSections(sections({ TEMPORARY_ACTION: "   \n\t  " }))).toEqual([
-      "TEMPORARY_ACTION",
+    // Pada section paragraf; section tabel terisi lewat barisnya, bukan lewat teks.
+    expect(missingRequiredSections(sections({ ROOT_CAUSE_OCCURRENCE: "   \n\t  " }))).toEqual([
+      "ROOT_CAUSE_OCCURRENCE",
     ]);
   });
 

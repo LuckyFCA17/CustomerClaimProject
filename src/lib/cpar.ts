@@ -1,5 +1,6 @@
 import type { CparSectionKey, ResponsibilityType, RoleCode } from "@/generated/prisma/enums";
 import { REQUIRED_VERIFIER_ROLES } from "@/lib/permissions";
+import { hasProcessFlow } from "@/schemas/process-flow";
 import { hasTemporaryAction } from "@/schemas/temporary-action";
 
 /**
@@ -13,6 +14,7 @@ import { hasTemporaryAction } from "@/schemas/temporary-action";
 export const SECTION_ORDER = [
   "PROBLEM_DESCRIPTION",
   "TEMPORARY_ACTION",
+  "PROCESS_FLOW",
   "ROOT_CAUSE_OCCURRENCE",
   "ROOT_CAUSE_OUTFLOW",
   "PERMANENT_COUNTERMEASURE",
@@ -23,6 +25,7 @@ export const SECTION_ORDER = [
 export const SECTION_LABEL: Record<CparSectionKey, string> = {
   PROBLEM_DESCRIPTION: "Problem description",
   TEMPORARY_ACTION: "Temporary action",
+  PROCESS_FLOW: "Process flow diagram",
   ROOT_CAUSE_OCCURRENCE: "Root cause — occurrence",
   ROOT_CAUSE_OUTFLOW: "Root cause — outflow",
   PERMANENT_COUNTERMEASURE: "Permanent countermeasure",
@@ -36,6 +39,8 @@ export const SECTION_HINT: Record<CparSectionKey, string> = {
     "Apa yang terjadi menurut pelanggan, beserta angkanya: jumlah, lot, dan tanggal.",
   TEMPORARY_ACTION:
     "Tindakan penahan yang sudah dijalankan — sortir, hold, penggantian — berikut waktunya.",
+  PROCESS_FLOW:
+    "Urutan proses dari material sampai pengiriman, dengan tanda pada proses yang dicurigai membentuk cacat (occurrence) dan yang meloloskannya (outflow).",
   ROOT_CAUSE_OCCURRENCE: "Mengapa cacat itu terbentuk. Telusuri sampai sebab yang bisa dikendalikan.",
   ROOT_CAUSE_OUTFLOW: "Mengapa cacat itu lolos sampai ke pelanggan.",
   PERMANENT_COUNTERMEASURE:
@@ -79,6 +84,7 @@ export function sectionLabel(key: CparSectionKey): string {
  */
 export const STRUCTURED_SECTIONS = [
   "TEMPORARY_ACTION",
+  "PROCESS_FLOW",
 ] as const satisfies readonly CparSectionKey[];
 
 export function isStructuredSection(key: CparSectionKey): boolean {
@@ -95,7 +101,8 @@ export interface SectionState {
 
 /** Sebuah section terisi bila ada paragrafnya, atau ada barisnya pada section tabel. */
 export function isSectionFilled(section: Pick<SectionState, "key" | "content" | "data">): boolean {
-  if (isStructuredSection(section.key) && hasTemporaryAction(section.data)) return true;
+  if (section.key === "TEMPORARY_ACTION") return hasTemporaryAction(section.data);
+  if (section.key === "PROCESS_FLOW") return hasProcessFlow(section.data);
 
   return (section.content ?? "").trim().length > 0;
 }

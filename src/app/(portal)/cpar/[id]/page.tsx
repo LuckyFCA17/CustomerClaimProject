@@ -5,6 +5,7 @@ import { CalendarClock, CircleDashed, FileText } from "lucide-react";
 
 import { CparEvidence } from "@/components/cpar/cpar-evidence";
 import { ProblemDescriptionPanel } from "@/components/cpar/problem-description";
+import { ProcessFlowEditor } from "@/components/cpar/process-flow-editor";
 import { TemporaryActionEditor } from "@/components/cpar/temporary-action-editor";
 import { SectionEditor, type SectionView } from "@/components/cpar/section-editor";
 import { SubmitFinal } from "@/components/cpar/submit-final";
@@ -29,6 +30,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { DOCUMENT_TITLE } from "@/lib/pdf";
 import { can, canFillSection, canViewClaim, type ClaimContext } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
+import { readProcessFlow } from "@/schemas/process-flow";
 import { readTemporaryAction } from "@/schemas/temporary-action";
 import { loadProblemDescription } from "@/server/cpar-problem";
 
@@ -128,9 +130,9 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
     verifierJobTitle: entry.verifier.jobTitle,
   }));
 
-  const temporaryAction = readTemporaryAction(
-    cpar.sections.find((entry) => entry.key === "TEMPORARY_ACTION")?.data,
-  );
+  const sectionRow = (key: string) => cpar.sections.find((entry) => entry.key === key);
+  const temporaryAction = readTemporaryAction(sectionRow("TEMPORARY_ACTION")?.data);
+  const processFlow = readProcessFlow(sectionRow("PROCESS_FLOW")?.data);
 
   const progress = verificationProgress(verifications, cpar.cycle);
   const missing = missingSectionLabels(sections);
@@ -271,14 +273,23 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
                   claimId={id}
                   value={temporaryAction}
                   canFill={canFillSection(user, "TEMPORARY_ACTION", context)}
-                  locked={
-                    cpar.sections.find((entry) => entry.key === "TEMPORARY_ACTION")?.lockedAt !==
-                    null
-                  }
+                  locked={sectionRow("TEMPORARY_ACTION")?.lockedAt !== null}
                   legacyText={
                     temporaryAction.entries.length === 0
-                      ? (cpar.sections.find((entry) => entry.key === "TEMPORARY_ACTION")?.content ??
-                        null)
+                      ? (sectionRow("TEMPORARY_ACTION")?.content ?? null)
+                      : null
+                  }
+                />
+              ),
+              PROCESS_FLOW: (
+                <ProcessFlowEditor
+                  claimId={id}
+                  value={processFlow}
+                  canFill={canFillSection(user, "PROCESS_FLOW", context)}
+                  locked={sectionRow("PROCESS_FLOW")?.lockedAt !== null}
+                  legacyText={
+                    processFlow.steps.length === 0
+                      ? (sectionRow("PROCESS_FLOW")?.content ?? null)
                       : null
                   }
                 />
