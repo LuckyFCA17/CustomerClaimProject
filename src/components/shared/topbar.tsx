@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Bell, ChevronRight, LogOut, Menu, Search, UserCog } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -55,7 +55,11 @@ export function Topbar({
   unreadNotifications?: number;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const crumbs = breadcrumbFrom(pathname);
+
+  // Hanya daftar klaim yang punya kata pencarian; di halaman lain kotaknya kosong.
+  const activeSearch = pathname === "/claims" ? (searchParams.get("q") ?? "") : "";
   const mobileItems = navItemsFor(user.roles);
 
   return (
@@ -101,15 +105,30 @@ export function Topbar({
         </ol>
       </nav>
 
-      <div className="relative ml-auto hidden w-64 lg:block">
+      {/*
+        Pencarian mengirim ke daftar klaim lewat GET biasa.
+        Hasilnya tertulis di alamat halaman, sehingga sama persis dengan kotak pencarian
+        di halaman daftar — satu kotak tidak boleh mencari dengan cara yang berbeda dari
+        kotak lainnya. Nilainya diambil kembali dari alamat supaya kata yang sedang
+        dicari tetap terbaca setelah halamannya termuat.
+      */}
+      <form
+        action="/claims"
+        method="get"
+        role="search"
+        className="relative ml-auto hidden w-64 lg:block"
+      >
         <Search aria-hidden className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
+          key={activeSearch}
+          name="q"
           type="search"
+          defaultValue={activeSearch}
           placeholder="Cari claim no. atau part no."
-          aria-label="Search claims"
+          aria-label="Cari klaim"
           className="pl-9"
         />
-      </div>
+      </form>
 
       <Link
         href="/notifications"
