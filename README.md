@@ -181,8 +181,16 @@ pnpm serve      # = pnpm build && pnpm start
 > ```bash
 > pnpm install          # bila package.json berubah
 > pnpm db:apply-sql     # bila ada migrasi baru; idempotent, aman diulang
-> pnpm serve            # build + start
+> pnpm serve            # prisma generate + build + start
 > ```
+>
+> **`prisma generate` wajib setiap kali `prisma/schema.prisma` berubah**, bukan hanya saat
+> `package.json` berubah. Folder `src/generated` tidak ikut di-commit, jadi `git pull`
+> tidak pernah membawanya — ia hanya berubah ketika perintah itu dijalankan. Client yang
+> tertinggal tidak mengekspor enum baru, dan impor yang `undefined` meledak jauh di dalam
+> Zod sebagai `Cannot convert undefined or null to object`, galat yang sama sekali tidak
+> menyebut Prisma. `pnpm serve` sudah menjalankannya lebih dulu, dan `pnpm doctor`
+> menyebutkan enum mana yang hilang bila sempat terlewat.
 >
 > `pnpm start` menyajikan isi `.next` apa adanya, jadi route yang baru ditarik belum ada
 > di sana sampai `pnpm build` dijalankan lagi — gejalanya **menu yang 404 padahal kodenya

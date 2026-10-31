@@ -1,5 +1,5 @@
 import { createConnection } from "node:net";
-import { access, readdir, stat } from "node:fs/promises";
+import { access, readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 import "dotenv/config";
@@ -154,6 +154,51 @@ async function newestSourceMtime() {
   }
 
   return newest;
+}
+
+/**
+ * Memastikan Prisma Client hasil generate sejalan dengan schema.
+ *
+ * `src/generated` tidak ikut di-commit, jadi `git pull` tidak pernah membawanya: ia
+ * hanya berubah ketika `prisma generate` dijalankan. Setelah schema menambah enum,
+ * client lama tidak mengekspornya, dan impor yang undefined baru meledak jauh di
+ * dalam Zod sebagai "Cannot convert undefined or null to object" — galat yang sama
+ * sekali tidak menyebut Prisma maupun langkah yang terlewat.
+ *
+ * Yang dibandingkan adalah daftar enum-nya, bukan waktu berkas: lebih langsung, dan
+ * tidak terpengaruh jam sistem maupun urutan penyalinan berkas.
+ */
+async function checkPrismaClient() {
+  console.log("\nPrisma Client");
+
+  const schema = await readFile(path.resolve("prisma/schema.prisma"), "utf8").catch(() => null);
+
+  if (schema === null) {
+    fail("prisma/schema.prisma tidak terbaca", "pastikan berada di akar proyek");
+    return;
+  }
+
+  const generated = await readFile(path.resolve("src/generated/prisma/enums.ts"), "utf8").catch(
+    () => null,
+  );
+
+  if (generated === null) {
+    fail("Prisma Client belum pernah dibuat", "pnpm exec prisma generate");
+    return;
+  }
+
+  const declared = [...schema.matchAll(/^enum\s+(\w+)\s*\{/gm)].map((match) => match[1]);
+  const missing = declared.filter((name) => !new RegExp(`\\b${name}\\b`).test(generated));
+
+  if (missing.length > 0) {
+    fail(
+      `Prisma Client tertinggal dari schema — enum ${missing.join(", ")} belum ada di dalamnya`,
+      "pnpm exec prisma generate, lalu build ulang",
+    );
+    return;
+  }
+
+  ok(`Prisma Client memuat ${declared.length} enum yang dideklarasikan schema`);
 }
 
 async function checkEnv() {
@@ -349,6 +394,7 @@ async function main() {
   console.log(`  folder: ${process.cwd()}`);
 
   if (await checkProjectRoot()) {
+    await checkPrismaClient();
     await checkBuildFreshness();
 
     if (await checkEnv()) {
