@@ -29,7 +29,7 @@ import {
   flowCompleteness,
   processFlowSchema,
 } from "@/schemas/process-flow";
-import { type RootCauseFactor, rootCauseSchema } from "@/schemas/root-cause";
+import { type RootCauseFactor, filledWhys, rootCauseSchema } from "@/schemas/root-cause";
 import {
   type TemporaryActionEntry,
   temporaryActionSchema,
@@ -528,7 +528,13 @@ function summarizeRootCause(factors: readonly RootCauseFactor[], conclusion: str
       `judgement: ${factor.judgement}`,
     ].filter(Boolean);
 
-    return parts.join(" — ");
+    const whys = filledWhys(factor);
+    const chain =
+      whys.length > 0
+        ? "\n" + whys.map((why, level) => `  Why ${level + 1}: ${why}`).join("\n")
+        : "";
+
+    return parts.join(" — ") + chain;
   });
 
   return [...lines, conclusion].filter(Boolean).join("\n");

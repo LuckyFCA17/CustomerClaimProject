@@ -18,12 +18,15 @@ import {
   FISHBONE_CATEGORIES,
   JUDGEMENTS,
   JUDGEMENT_LABEL,
+  WHY_DEPTH,
   type FishboneCategory,
   type Judgement,
   type RootCauseFactor,
   type RootCauseInput,
   blankFactor,
   countNg,
+  factorsWithWhys,
+  filledWhys,
 } from "@/schemas/root-cause";
 import { saveCparRootCause } from "@/server/actions/cpar-filling";
 
@@ -95,6 +98,9 @@ export function RootCauseEditor({
           actual: factor.actual,
           judgement: factor.judgement,
           note: factor.note,
+          // Ekor kosong tidak ikut dikirim: rantai yang berhenti di tingkat ketiga
+          // disimpan sepanjang tiga, bukan tiga jawaban dan dua baris kosong.
+          whys: filledWhys(factor),
         })),
       });
 
@@ -231,6 +237,13 @@ function FactorRow({
   };
   const errorFor = (field: string) => errors[`factors.${index}.${field}`];
 
+  // Rantai 5 Why terbuka sendiri pada faktor yang dinilai NG — di situlah penelusurannya
+  // bermakna. Faktor yang sudah terlanjur punya rantai tetap menampilkannya meski
+  // judgement-nya berubah, supaya isian yang pernah ditulis tidak hilang dari layar.
+  const [opened, setOpened] = useState(false);
+  const showWhy =
+    opened || factor.judgement === "NG" || (factor.whys ?? []).some((why) => why.trim());
+
   return (
     <div className="rounded-lg border border-nid-border p-3">
       <div className="flex items-start gap-2">
@@ -315,6 +328,24 @@ function FactorRow({
               onChange={(event) => onChange({ note: event.target.value })}
             />
           </div>
+
+          <div className="sm:col-span-2">
+            {showWhy ? (
+              <WhyChainEditor
+                whys={factor.whys ?? []}
+                errors={errors}
+                index={index}
+                onChange={(whys) => onChange({ whys })}
+              />
+            ) : (
+              // Faktor yang dinilai OK pun kadang perlu ditelusuri — mis. "OK but need
+              // improvement" yang standarnya sendiri yang bermasalah.
+              <Button type="button" size="sm" variant="ghost" onClick={() => setOpened(true)}>
+                <Plus aria-hidden />
+                Telusuri 5 Why
+              </Button>
+            )}
+          </div>
         </div>
 
         <button
@@ -327,6 +358,82 @@ function FactorRow({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Rantai "mengapa" sedalam lima tingkat.
+ *
+ * Tingkat berikutnya baru muncul setelah tingkat sebelumnya terisi: menampilkan lima
+ * kotak kosong sekaligus mengesankan kelimanya wajib, padahal rantai yang jujur sering
+ * berhenti lebih awal — begitu sampai pada sebab yang dapat dikendalikan.
+ */
+function WhyChainEditor({
+  whys,
+  index,
+  errors,
+  onChange,
+}: {
+  whys: readonly string[];
+  index: number;
+  errors: Record<string, string[]>;
+  onChange: (whys: string[]) => void;
+}) {
+  // Akar adalah jawaban terdalam yang terisi, bukan yang ke-sekian dari jumlah isian:
+  // ketika satu tingkat di tengah dikosongkan, hitungan jumlah akan menunjuk baris yang
+  // salah sebagai akar.
+  const deepest = whys.map((why) => why.trim().length > 0).lastIndexOf(true);
+  const shown = Math.min(WHY_DEPTH, Math.max(1, deepest + 2));
+
+  function set(level: number, value: string) {
+    const next = Array.from({ length: WHY_DEPTH }, (_, i) => whys[i] ?? "");
+    next[level] = value;
+
+    // Ekor kosong tidak perlu disimpan; rantai disimpan sepanjang isinya saja.
+    const last = next.map((why) => why.trim().length > 0).lastIndexOf(true);
+    onChange(last === -1 ? [] : next.slice(0, last + 1));
+  }
+
+  return (
+    <fieldset className="rounded-lg border border-nid-border bg-secondary/40 p-2.5">
+      <legend className="px-1 text-xs font-medium">5 Why</legend>
+
+      <ol className="space-y-1.5">
+        {Array.from({ length: shown }, (_, level) => {
+          const isRoot = level === deepest;
+
+          return (
+            <li key={level} className="flex items-start gap-2">
+              <span className="mt-2 w-12 shrink-0 text-[11px] text-muted-foreground">
+                Why {level + 1}
+              </span>
+              <div className="min-w-0 flex-1 space-y-1">
+                <Input
+                  aria-label={`Why ${level + 1} untuk faktor ${index + 1}`}
+                  value={whys[level] ?? ""}
+                  placeholder={
+                    level === 0 ? "Mengapa kondisi aktual itu terjadi?" : "Mengapa itu terjadi?"
+                  }
+                  onChange={(event) => set(level, event.target.value)}
+                />
+                <FieldError messages={errors[`factors.${index}.whys.${level}`]} />
+              </div>
+              {isRoot ? (
+                <span className="mt-1.5 shrink-0 rounded-full bg-[var(--status-danger-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--status-danger)]">
+                  akar
+                </span>
+              ) : (
+                <span className="w-9 shrink-0" />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+
+      <p className="mt-1.5 text-[11px] text-muted-foreground">
+        Berhenti begitu sampai pada sebab yang dapat dikendalikan — tidak harus lima tingkat.
+      </p>
+    </fieldset>
   );
 }
 
@@ -354,6 +461,66 @@ const JUDGEMENT_BADGE: Record<Judgement, { className: string; icon: typeof Circl
     icon: TriangleAlert,
   },
 };
+
+/**
+ * Rantai 5 Why pada tampilan baca.
+ *
+ * Diletakkan di bawah tabel, bukan di dalam selnya: rantai sepanjang lima baris di dalam
+ * satu sel akan memaksa tabelnya melebar sampai kolom lain tak terbaca. Tiap rantai
+ * menyebut faktor asalnya, sehingga tetap jelas "mengapa" atas apa yang sedang dirunut.
+ */
+function WhyChainList({ value }: { value: RootCauseInput }) {
+  const factors = factorsWithWhys(value);
+  if (factors.length === 0) return null;
+
+  return (
+    <section className="space-y-2">
+      <h4 className="text-xs uppercase tracking-wide text-muted-foreground">Analisis 5 Why</h4>
+
+      <ul className="space-y-2">
+        {factors.map((factor, index) => {
+          const whys = filledWhys(factor);
+
+          return (
+            <li
+              key={`${factor.item}-${index}`}
+              className="rounded-lg border border-nid-border bg-secondary/40 p-3"
+            >
+              <div className="text-sm font-medium break-words">
+                <span className="text-xs uppercase tracking-wide text-nid-orange-700">
+                  {CATEGORY_LABEL[factor.category]}
+                </span>{" "}
+                {factor.item}
+              </div>
+
+              <ol className="mt-2 space-y-1">
+                {whys.map((why, level) => {
+                  const isRoot = level === whys.length - 1;
+
+                  return (
+                    <li key={level} className="flex items-start gap-2 text-sm">
+                      <span className="mt-0.5 w-12 shrink-0 text-xs text-muted-foreground">
+                        Why {level + 1}
+                      </span>
+                      <span className={`min-w-0 break-words ${isRoot ? "font-medium" : ""}`}>
+                        {why}
+                      </span>
+                      {isRoot ? (
+                        <span className="mt-0.5 shrink-0 rounded-full bg-[var(--status-danger-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--status-danger)]">
+                          akar
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ol>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 
 /** Tampilan baca: diagram lebih dulu, lalu tabel 4M1E yang menjadi sumbernya. */
 export function RootCauseView({
@@ -438,6 +605,8 @@ export function RootCauseView({
           </tbody>
         </table>
       </div>
+
+      <WhyChainList value={value} />
 
       {ng === 0 ? (
         <p className="text-xs text-[var(--status-pending)]">

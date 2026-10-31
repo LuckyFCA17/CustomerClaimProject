@@ -1,5 +1,11 @@
 import { Fishbone } from "@/components/cpar/fishbone";
-import { CATEGORY_LABEL, JUDGEMENT_SHORT, type RootCauseInput } from "@/schemas/root-cause";
+import {
+  CATEGORY_LABEL,
+  JUDGEMENT_SHORT,
+  type RootCauseInput,
+  factorsWithWhys,
+  filledWhys,
+} from "@/schemas/root-cause";
 
 /**
  * Analisis akar masalah pada lembar CPAR (§9): diagram tulang ikan lalu tabel 4M1E.
@@ -8,6 +14,56 @@ import { CATEGORY_LABEL, JUDGEMENT_SHORT, type RootCauseInput } from "@/schemas/
  * Lembar ini sering difotokopi hitam putih, dan tanda yang hanya berupa warna hilang
  * pada salinan pertama.
  */
+/**
+ * Rantai 5 Why pada lembar cetak.
+ *
+ * Satu baris tabel per tingkat, bukan satu sel panjang: lembar ini dibaca berjejer dengan
+ * tabel 4M1E di atasnya, dan rantai yang ditumpuk dalam satu sel kehilangan nomor
+ * tingkatnya begitu teksnya membungkus. Jawaban terdalam ditebalkan — bukan diberi warna,
+ * karena lembarnya difotokopi hitam putih.
+ */
+function WhyChains({ value }: { value: RootCauseInput }) {
+  const factors = factorsWithWhys(value);
+  if (factors.length === 0) return null;
+
+  return (
+    <div className="space-y-[1.5mm]">
+      <div className="text-[7pt] uppercase tracking-wide text-[#6b7280]">Analisis 5 Why</div>
+
+      {factors.map((factor, index) => {
+        const whys = filledWhys(factor);
+
+        return (
+          <div key={`${factor.item}-${index}`} className="break-inside-avoid">
+            <div className="text-[8pt] font-semibold">
+              {CATEGORY_LABEL[factor.category]} — {factor.item}
+            </div>
+
+            <table className="w-full border-collapse text-[8pt]">
+              <tbody>
+                {whys.map((why, level) => (
+                  <tr key={level}>
+                    <td className="w-[14mm] border border-[#e4e7eb] px-[1.5mm] py-[0.8mm] align-top text-[7pt] text-[#6b7280]">
+                      Why {level + 1}
+                    </td>
+                    <td
+                      className={`border border-[#e4e7eb] px-[1.5mm] py-[0.8mm] align-top ${
+                        level === whys.length - 1 ? "font-bold" : ""
+                      }`}
+                    >
+                      {why}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function RootCauseSheet({ value }: { value: RootCauseInput }) {
   if (value.factors.length === 0) {
     return <p className="m-0 min-h-[12mm]">—</p>;
@@ -58,6 +114,8 @@ export function RootCauseSheet({ value }: { value: RootCauseInput }) {
           ))}
         </tbody>
       </table>
+
+      <WhyChains value={value} />
 
       {value.conclusion ? (
         <div>

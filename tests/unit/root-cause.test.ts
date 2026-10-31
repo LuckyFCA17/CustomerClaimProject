@@ -5,13 +5,17 @@ import {
   FISHBONE_CATEGORIES,
   JUDGEMENTS,
   ROOT_CAUSE_FACTOR_MAX,
+  WHY_DEPTH,
   blankFactor,
   countNg,
+  factorsWithWhys,
+  filledWhys,
   groupByCategory,
   hasRootCause,
   readRootCause,
   rootCauseFactorSchema,
   rootCauseSchema,
+  rootOf,
 } from "@/schemas/root-cause";
 
 function errorsFor(
@@ -81,6 +85,77 @@ describe("rootCauseFactorSchema", () => {
   it("menolak kategori dan judgement yang tidak dikenal", () => {
     expect(rootCauseFactorSchema.safeParse({ ...tekanan, category: "MONEY" }).success).toBe(false);
     expect(rootCauseFactorSchema.safeParse({ ...tekanan, judgement: "MUNGKIN" }).success).toBe(false);
+  });
+});
+
+describe("analisis 5 Why", () => {
+  const whys = [
+    "Tekanan holding turun di bawah standar",
+    "Regulator bocor",
+    "Seal regulator tidak pernah diganti",
+    "Seal tidak masuk daftar perawatan berkala",
+  ];
+
+  it("rantai menempel pada faktornya, sedalam-dalamnya lima tingkat", () => {
+    expect(WHY_DEPTH).toBe(5);
+    expect(rootCauseFactorSchema.safeParse({ ...tekanan, whys }).success).toBe(true);
+    expect(
+      rootCauseFactorSchema.safeParse({ ...tekanan, whys: [...whys, "a", "b"] }).success,
+    ).toBe(false);
+  });
+
+  it("faktor tanpa rantai tetap sah — tidak semua faktor perlu ditelusuri", () => {
+    const result = rootCauseFactorSchema.safeParse(operator);
+
+    expect(result.success).toBe(true);
+    expect(result.success ? result.data.whys : null).toEqual([]);
+    expect(blankFactor("MAN").whys).toEqual([]);
+  });
+
+  it("menolak rantai yang berlubang", () => {
+    // "Why 3" terisi sementara "Why 2" kosong memutus sebab-akibatnya: pembacanya tidak
+    // dapat tahu apa yang hilang di antaranya.
+    const result = rootCauseFactorSchema.safeParse({
+      ...tekanan,
+      whys: ["Tekanan turun", "", "Seal bocor"],
+    });
+
+    expect(result.success).toBe(false);
+    expect(errorsFor(result, "whys.1")).toHaveLength(1);
+  });
+
+  it("berhenti lebih awal diperbolehkan — ekor kosong bukan lubang", () => {
+    const result = rootCauseFactorSchema.safeParse({
+      ...tekanan,
+      whys: ["Tekanan turun", "Regulator bocor", "", ""],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.success ? filledWhys(result.data) : null).toEqual([
+      "Tekanan turun",
+      "Regulator bocor",
+    ]);
+  });
+
+  it("jawaban terdalam adalah akar yang ditemukan, bukan selalu tingkat kelima", () => {
+    const value = readRootCause({ factors: [{ ...tekanan, whys }, operator] });
+
+    expect(rootOf(value.factors[0])).toBe("Seal tidak masuk daftar perawatan berkala");
+    expect(rootOf(value.factors[1])).toBeNull();
+  });
+
+  it("hanya faktor yang punya rantai yang ditampilkan sebagai 5 Why", () => {
+    const value = readRootCause({ factors: [operator, { ...tekanan, whys }] });
+
+    expect(factorsWithWhys(value).map((factor) => factor.item)).toEqual([
+      "Setting tekanan holding",
+    ]);
+  });
+
+  it("rantai lama tetap terbaca kembali dari kolom Json", () => {
+    const value = readRootCause({ factors: [{ ...tekanan, whys }] });
+
+    expect(value.factors[0].whys).toEqual(whys);
   });
 });
 
