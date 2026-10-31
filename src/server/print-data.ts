@@ -3,12 +3,14 @@ import "server-only";
 import { forbidden, notFound } from "next/navigation";
 
 import type { DocumentKind } from "@/generated/prisma/enums";
+import { COUNTERMEASURE_ENTITY } from "@/lib/cpar";
 import { db } from "@/lib/db";
 import { DOCUMENT_ROUTE } from "@/lib/pdf";
 import { canViewClaim } from "@/lib/permissions";
 import { verifyPrintToken } from "@/lib/print-token";
 import { readSessionActor } from "@/lib/session";
 import { storage } from "@/lib/storage";
+import { type CountermeasureInput, itemIds } from "@/schemas/countermeasure";
 
 /**
  * Pemuat data bersama untuk halaman /print/*.
@@ -188,6 +190,44 @@ export async function photosForParts(partIds: readonly string[]) {
   }
 
   return byPart;
+}
+
+/**
+ * Nama PIC dan jumlah evidence untuk tabel permanent countermeasure.
+ *
+ * Keduanya hidup di luar kolom Json: PIC disimpan sebagai id, dan evidence sebagai
+ * lampiran yang menempel pada penanda baris. Evidence disaring dengan claimId juga,
+ * sehingga penanda baris yang keliru tidak dapat menghitung berkas milik klaim lain.
+ */
+export async function loadCountermeasureContext(
+  claimId: string,
+  value: CountermeasureInput,
+): Promise<{
+  picNames: Record<string, string>;
+  evidenceCounts: Record<string, number>;
+}> {
+  const ids = [...itemIds(value)];
+  const picIds = [...new Set(value.items.map((item) => item.picId))];
+
+  if (ids.length === 0 && picIds.length === 0) {
+    return { picNames: {}, evidenceCounts: {} };
+  }
+
+  const [people, files] = await Promise.all([
+    db.user.findMany({ where: { id: { in: picIds } }, select: { id: true, name: true } }),
+    ids.length > 0
+      ? db.attachment.groupBy({
+          by: ["entityId"],
+          where: { entityType: COUNTERMEASURE_ENTITY, entityId: { in: ids }, claimId },
+          _count: { _all: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  return {
+    picNames: Object.fromEntries(people.map((person) => [person.id, person.name])),
+    evidenceCounts: Object.fromEntries(files.map((row) => [row.entityId, row._count._all])),
+  };
 }
 
 export const TYPE_LABEL: Record<string, string> = {

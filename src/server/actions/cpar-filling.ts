@@ -1,5 +1,7 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { after } from "next/server";
@@ -8,6 +10,7 @@ import type { CparSectionKey } from "@/generated/prisma/enums";
 import { readRequestContext, writeAuditLog } from "@/lib/audit";
 import { assertTransition } from "@/lib/claim-state";
 import {
+  COUNTERMEASURE_ENTITY,
   SECTION_LABEL,
   missingRequiredSections,
   verificationProgress,
@@ -24,6 +27,12 @@ import { assertCan, assertCanFillSection, type ClaimContext } from "@/lib/permis
 import { requireActor } from "@/lib/session";
 import { claimFolder, saveUpload, storage } from "@/lib/storage";
 import { cparSectionSchema, verifySchema } from "@/schemas/cpar";
+import {
+  type CountermeasureItem,
+  countermeasureSchema,
+  itemIds,
+  readCountermeasure,
+} from "@/schemas/countermeasure";
 import {
   type ProcessStep,
   flowCompleteness,
@@ -518,6 +527,174 @@ export async function saveCparRootCause(claimId: string, input: unknown): Promis
   }
 }
 
+/**
+ * Menyimpan daftar perbaikan tetap.
+ *
+ * Dua hal dikerjakan di sini dan tidak boleh diserahkan ke peramban. Pertama, penanda
+ * baris diberikan server: evidence menempel pada penanda itu, dan penanda yang datang
+ * dari klien dapat menunjuk baris milik klaim lain. Kedua, PIC diperiksa benar-benar ada
+ * dan masih aktif — daftar pilihan di layar bisa saja sudah basi.
+ */
+export async function saveCparCountermeasure(
+  claimId: string,
+  input: unknown,
+): Promise<ActionResult> {
+  const key: CparSectionKey = "PERMANENT_COUNTERMEASURE";
+
+  try {
+    const actor = await requireActor();
+    const cpar = await loadCpar(claimId);
+    const context = toContext(cpar);
+
+    assertCan(actor, "cpar.section.fill", context);
+    assertCanFillSection(actor, key, context);
+
+    const parsed = countermeasureSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        message: "Periksa kembali daftar perbaikan tetap.",
+        fieldErrors: flattenZodErrors(parsed.error),
+      };
+    }
+
+    const section = cpar.sections.find((entry) => entry.key === key);
+    if (!section) throw new NotFoundError(`Section ${SECTION_LABEL[key]} tidak ditemukan.`);
+
+    if (section.lockedAt) {
+      throw new ForbiddenError(
+        `Section ${SECTION_LABEL[key]} terkunci karena CPAR sedang diverifikasi.`,
+        "cpar.section.fill",
+      );
+    }
+
+    const note = (parsed.data.note ?? "").trim();
+
+    const picIds = [...new Set(parsed.data.items.map((item) => item.picId))];
+    const people = await db.user.findMany({
+      where: { id: { in: picIds }, isActive: true },
+      select: { id: true, name: true },
+    });
+    const nameById = new Map(people.map((person) => [person.id, person.name]));
+
+    const unknownPic: Record<string, string[]> = {};
+    parsed.data.items.forEach((item, index) => {
+      if (!nameById.has(item.picId)) {
+        unknownPic[`items.${index}.picId`] = ["PIC tidak ditemukan atau sudah tidak aktif."];
+      }
+    });
+
+    if (Object.keys(unknownPic).length > 0) {
+      return { ok: false, message: "Periksa kembali PIC yang dipilih.", fieldErrors: unknownPic };
+    }
+
+    // Baris lama membawa penandanya sendiri; baris baru mendapat penanda di sini.
+    const previousIds = new Set(itemIds(readCountermeasure(section.data)));
+    const items = parsed.data.items.map((item) => ({
+      ...item,
+      id: item.id && previousIds.has(item.id) ? item.id : randomUUID(),
+    }));
+    const survivingIds = new Set(items.map((item) => item.id));
+
+    // Evidence milik baris yang dihapus ikut dilepas, supaya berkasnya tidak tertinggal
+    // menempel pada tindakan yang tidak ada lagi di lembar mana pun.
+    const orphaned = [...previousIds].filter((id) => !survivingIds.has(id));
+
+    const requestContext = await readRequestContext();
+    const isFirstFill = cpar.claim.status === "CPAR_ISSUED";
+
+    if (isFirstFill) {
+      assertTransition(cpar.claim.status, "CPAR_IN_PROGRESS", actor.roles);
+    }
+
+    await db.$transaction(async (tx) => {
+      await tx.cparSection.update({
+        where: { id: section.id },
+        data: {
+          data: { items, note },
+          content: summarizeCountermeasure(items, nameById, note),
+          filledById: actor.id,
+          filledAt: new Date(),
+          revisionNote: null,
+        },
+      });
+
+      if (orphaned.length > 0) {
+        await tx.attachment.updateMany({
+          where: {
+            entityType: COUNTERMEASURE_ENTITY,
+            entityId: { in: orphaned },
+            claimId,
+            deletedAt: null,
+          },
+          data: { deletedAt: new Date() },
+        });
+      }
+
+      if (isFirstFill) {
+        await tx.claim.update({ where: { id: claimId }, data: { status: "CPAR_IN_PROGRESS" } });
+      }
+
+      await writeAuditLog(
+        tx,
+        {
+          actorId: actor.id,
+          entityType: "CparSection",
+          entityId: section.id,
+          claimId,
+          action: "cpar.section.fill",
+          fromStatus: isFirstFill ? cpar.claim.status : null,
+          toStatus: isFirstFill ? "CPAR_IN_PROGRESS" : null,
+          payloadDiff: {
+            section: key,
+            cycle: cpar.cycle,
+            items: items.length,
+            withoutDate: items.filter((item) => !(item.implementedOn ?? "").trim()).length,
+            evidenceReleased: orphaned.length,
+          },
+        },
+        requestContext,
+      );
+    });
+
+    revalidateCpar(claimId);
+
+    const missingDate = items.filter((item) => !(item.implementedOn ?? "").trim()).length;
+
+    return {
+      ok: true,
+      message:
+        items.length === 0
+          ? "Daftar perbaikan tetap dikosongkan."
+          : missingDate === 0
+            ? `${items.length} tindakan tersimpan.`
+            : `${items.length} tindakan tersimpan — ${missingDate} belum punya tanggal implementasi.`,
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Ringkasan daftar perbaikan sebagai teks, untuk kolom `content`. */
+function summarizeCountermeasure(
+  items: readonly CountermeasureItem[],
+  nameById: ReadonlyMap<string, string>,
+  note: string,
+): string {
+  const lines = items.map((item) => {
+    const parts = [
+      item.action,
+      `PIC: ${nameById.get(item.picId) ?? "—"}`,
+      item.implementedOn ? `implementasi: ${item.implementedOn}` : null,
+      item.note || null,
+    ].filter(Boolean);
+
+    return parts.join(" — ");
+  });
+
+  return [...lines, note].filter(Boolean).join("\n");
+}
+
 /** Ringkasan analisis sebagai teks, untuk kolom `content`. */
 function summarizeRootCause(factors: readonly RootCauseFactor[], conclusion: string): string {
   const lines = factors.map((factor) => {
@@ -621,12 +798,79 @@ export async function uploadCparEvidence(formData: FormData): Promise<ActionResu
   }
 }
 
+/**
+ * Evidence untuk satu tindakan perbaikan tetap.
+ *
+ * Hanya baris yang sudah tersimpan dapat menerima berkas, dan itu memang urutan
+ * kerjanya: tindakan ditulis saat direncanakan, buktinya menyusul setelah dikerjakan.
+ * Menerima unggahan untuk baris yang belum tersimpan akan meninggalkan berkas yang
+ * menempel pada tindakan yang mungkin tidak pernah jadi.
+ */
+export async function uploadCountermeasureEvidence(formData: FormData): Promise<ActionResult> {
+  try {
+    const actor = await requireActor();
+
+    const claimId = String(formData.get("claimId") ?? "");
+    const itemId = String(formData.get("itemId") ?? "");
+    const file = formData.get("file");
+
+    if (!(file instanceof File) || file.size === 0) {
+      throw new ValidationError("Pilih berkas yang akan diunggah.");
+    }
+
+    const cpar = await loadCpar(claimId);
+    assertCan(actor, "cpar.evidence.upload", toContext(cpar));
+
+    const section = cpar.sections.find((entry) => entry.key === "PERMANENT_COUNTERMEASURE");
+    const known = itemIds(readCountermeasure(section?.data));
+
+    if (!known.includes(itemId)) {
+      throw new ValidationError("Simpan dulu tindakannya sebelum melampirkan evidence.");
+    }
+
+    if (section?.lockedAt) {
+      throw new ForbiddenError(
+        `Section ${SECTION_LABEL.PERMANENT_COUNTERMEASURE} terkunci karena CPAR sedang diverifikasi.`,
+        "cpar.evidence.upload",
+      );
+    }
+
+    const saved = await saveUpload({
+      file,
+      folder: claimFolder(cpar.claim.claimNo, claimId),
+      entityType: COUNTERMEASURE_ENTITY,
+    });
+
+    await db.attachment.create({
+      data: {
+        entityType: COUNTERMEASURE_ENTITY,
+        entityId: itemId,
+        claimId,
+        originalName: saved.originalName,
+        mimeType: saved.mimeType,
+        size: saved.size,
+        path: saved.path,
+        uploadedById: actor.id,
+      },
+    });
+
+    revalidateCpar(claimId);
+
+    return { ok: true, message: "Evidence terunggah." };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Dipakai evidence CPAR maupun evidence per tindakan — keduanya milik klaim yang sama. */
+const EVIDENCE_ENTITIES: readonly string[] = ["Cpar", COUNTERMEASURE_ENTITY];
+
 export async function deleteCparEvidence(attachmentId: string): Promise<ActionResult> {
   try {
     const actor = await requireActor();
 
     const attachment = await db.attachment.findUnique({ where: { id: attachmentId } });
-    if (!attachment?.claimId || attachment.entityType !== "Cpar") {
+    if (!attachment?.claimId || !EVIDENCE_ENTITIES.includes(attachment.entityType)) {
       throw new NotFoundError("Evidence tidak ditemukan.");
     }
 

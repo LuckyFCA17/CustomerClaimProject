@@ -3,6 +3,11 @@ import Link from "next/link";
 import { forbidden, notFound } from "next/navigation";
 import { CalendarClock, CircleDashed, FileText } from "lucide-react";
 
+import {
+  CountermeasureEditor,
+  type ItemEvidence,
+  type PicOption,
+} from "@/components/cpar/countermeasure-editor";
 import { CparEvidence } from "@/components/cpar/cpar-evidence";
 import { ProblemDescriptionPanel } from "@/components/cpar/problem-description";
 import { ProcessFlowEditor } from "@/components/cpar/process-flow-editor";
@@ -20,6 +25,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { StatusRail } from "@/components/shared/status-rail";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  COUNTERMEASURE_ENTITY,
   SECTION_ORDER,
   missingSectionLabels,
   requiredVerifiers,
@@ -31,6 +37,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { DOCUMENT_TITLE } from "@/lib/pdf";
 import { can, canFillSection, canViewClaim, type ClaimContext } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
+import { itemIds, readCountermeasure } from "@/schemas/countermeasure";
 import { readProcessFlow } from "@/schemas/process-flow";
 import { readRootCause } from "@/schemas/root-cause";
 import { readTemporaryAction } from "@/schemas/temporary-action";
@@ -133,6 +140,50 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
   }));
 
   const sectionRow = (key: string) => cpar.sections.find((entry) => entry.key === key);
+  const countermeasure = readCountermeasure(sectionRow("PERMANENT_COUNTERMEASURE")?.data);
+
+  // Evidence per tindakan disaring juga dengan claimId: penanda baris datang dari kolom
+  // Json, dan penanda milik klaim lain tidak boleh memanggil berkas klaim itu ke sini.
+  const [people, countermeasureFiles] = await Promise.all([
+    db.user.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+        jobTitle: true,
+        department: { select: { code: true } },
+      },
+      orderBy: [{ name: "asc" }],
+    }),
+    db.attachment.findMany({
+      where: {
+        entityType: COUNTERMEASURE_ENTITY,
+        entityId: { in: [...itemIds(countermeasure)] },
+        claimId: id,
+      },
+      include: { uploadedBy: { select: { name: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
+
+  const picOptions: PicOption[] = people.map((person) => ({
+    id: person.id,
+    name: person.name,
+    jobTitle: person.jobTitle,
+    departmentCode: person.department?.code ?? null,
+  }));
+
+  const countermeasureEvidence: Record<string, ItemEvidence[]> = {};
+  for (const file of countermeasureFiles) {
+    (countermeasureEvidence[file.entityId] ??= []).push({
+      id: file.id,
+      originalName: file.originalName,
+      url: `/api/files/${file.path}`,
+      uploadedByName: file.uploadedBy.name,
+      uploadedAt: file.createdAt,
+    });
+  }
+
   const temporaryAction = readTemporaryAction(sectionRow("TEMPORARY_ACTION")?.data);
   const processFlow = readProcessFlow(sectionRow("PROCESS_FLOW")?.data);
   const rootCause = {
@@ -315,6 +366,22 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
               ROOT_CAUSE_OUTFLOW: rootCauseEditor(
                 "ROOT_CAUSE_OUTFLOW",
                 `${problem.ncDetail ?? "Cacat"} — mengapa lolos`,
+              ),
+              PERMANENT_COUNTERMEASURE: (
+                <CountermeasureEditor
+                  claimId={id}
+                  value={countermeasure}
+                  people={picOptions}
+                  evidence={countermeasureEvidence}
+                  canFill={canFillSection(user, "PERMANENT_COUNTERMEASURE", context)}
+                  canUploadEvidence={can(user, "cpar.evidence.upload", context)}
+                  locked={sectionRow("PERMANENT_COUNTERMEASURE")?.lockedAt !== null}
+                  legacyText={
+                    countermeasure.items.length === 0
+                      ? (sectionRow("PERMANENT_COUNTERMEASURE")?.content ?? null)
+                      : null
+                  }
+                />
               ),
               PROCESS_FLOW: (
                 <ProcessFlowEditor

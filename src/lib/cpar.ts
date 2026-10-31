@@ -1,5 +1,6 @@
 import type { CparSectionKey, ResponsibilityType, RoleCode } from "@/generated/prisma/enums";
 import { REQUIRED_VERIFIER_ROLES } from "@/lib/permissions";
+import { hasCountermeasure } from "@/schemas/countermeasure";
 import { hasProcessFlow } from "@/schemas/process-flow";
 import { hasRootCause } from "@/schemas/root-cause";
 import { hasTemporaryAction } from "@/schemas/temporary-action";
@@ -88,11 +89,21 @@ export const STRUCTURED_SECTIONS = [
   "PROCESS_FLOW",
   "ROOT_CAUSE_OCCURRENCE",
   "ROOT_CAUSE_OUTFLOW",
+  "PERMANENT_COUNTERMEASURE",
 ] as const satisfies readonly CparSectionKey[];
 
 export function isStructuredSection(key: CparSectionKey): boolean {
   return (STRUCTURED_SECTIONS as readonly CparSectionKey[]).includes(key);
 }
+
+/**
+ * `Attachment.entityType` untuk evidence yang menempel pada satu tindakan perbaikan.
+ *
+ * Dibedakan dari evidence CPAR ("Cpar") yang berlaku untuk seluruh lembar: yang satu
+ * menjawab "bukti bahwa tindakan ini dikerjakan", yang lain "berkas pendukung CPAR ini".
+ * Menyatukan keduanya akan membuat daftar evidence umum dipenuhi berkas per tindakan.
+ */
+export const COUNTERMEASURE_ENTITY = "CparCountermeasure";
 
 export interface SectionState {
   readonly key: CparSectionKey;
@@ -109,6 +120,7 @@ export function isSectionFilled(section: Pick<SectionState, "key" | "content" | 
   if (section.key === "ROOT_CAUSE_OCCURRENCE" || section.key === "ROOT_CAUSE_OUTFLOW") {
     return hasRootCause(section.data);
   }
+  if (section.key === "PERMANENT_COUNTERMEASURE") return hasCountermeasure(section.data);
 
   return (section.content ?? "").trim().length > 0;
 }
