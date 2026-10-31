@@ -6,17 +6,18 @@ import {
   SECTION_LABEL,
   SECTION_ORDER,
   VERIFIER_CAPACITY_LABEL,
+  isActionPlanSection,
   isDerivedSection,
   isStructuredSection,
   requiredVerifiers,
 } from "@/lib/cpar";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { CountermeasureSheet } from "@/components/print/countermeasure-sheet";
+import { ActionPlanSheet } from "@/components/print/action-plan-sheet";
 import { ProblemDescriptionSheet } from "@/components/print/problem-sheet";
 import { ProcessFlowSheet } from "@/components/print/process-flow-sheet";
 import { RootCauseSheet } from "@/components/print/root-cause-sheet";
 import { TemporaryActionSheet } from "@/components/print/temporary-action-sheet";
-import { readCountermeasure } from "@/schemas/countermeasure";
+import { readActionPlan } from "@/schemas/action-plan";
 import { readProcessFlow } from "@/schemas/process-flow";
 import { readRootCause } from "@/schemas/root-cause";
 import { readTemporaryAction } from "@/schemas/temporary-action";
@@ -24,7 +25,7 @@ import { loadProblemDescription } from "@/server/cpar-problem";
 import {
   TYPE_LABEL,
   authorizePrint,
-  loadCountermeasureContext,
+  loadActionPlanContext,
   loadCparForPrint,
 } from "@/server/print-data";
 
@@ -65,10 +66,19 @@ export default async function CparPrintPage({
 
   // Nama PIC dan jumlah evidence hanya ada di luar kolom Json, jadi dikumpulkan di sini
   // sekali — bukan dicari ulang per baris saat merender.
-  const countermeasure = readCountermeasure(
-    sections.find((section) => section.key === "PERMANENT_COUNTERMEASURE")?.record?.data,
+  const actionPlans = {
+    PERMANENT_COUNTERMEASURE: readActionPlan(
+      sections.find((section) => section.key === "PERMANENT_COUNTERMEASURE")?.record?.data,
+    ),
+    STANDARDIZATION_HORIZONTAL: readActionPlan(
+      sections.find((section) => section.key === "STANDARDIZATION_HORIZONTAL")?.record?.data,
+    ),
+  } as const;
+
+  const { picNames, evidenceCounts } = await loadActionPlanContext(
+    id,
+    Object.values(actionPlans),
   );
-  const { picNames, evidenceCounts } = await loadCountermeasureContext(id, countermeasure);
 
   // Hanya keputusan siklus berjalan yang mengisi blok tanda tangan: siklus sebelumnya
   // sudah ditutup oleh satu REVISE, dan mencetaknya di sini akan terbaca seolah CPAR
@@ -141,9 +151,10 @@ export default async function CparPrintPage({
               <ProcessFlowSheet value={readProcessFlow(record?.data)} />
             ) : key === "ROOT_CAUSE_OCCURRENCE" || key === "ROOT_CAUSE_OUTFLOW" ? (
               <RootCauseSheet value={readRootCause(record?.data)} />
-            ) : key === "PERMANENT_COUNTERMEASURE" ? (
-              <CountermeasureSheet
-                value={countermeasure}
+            ) : isActionPlanSection(key) ? (
+              <ActionPlanSheet
+                sectionKey={key}
+                value={actionPlans[key]}
                 picNames={picNames}
                 evidenceCounts={evidenceCounts}
               />

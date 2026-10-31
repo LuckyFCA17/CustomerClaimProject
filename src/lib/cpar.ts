@@ -1,6 +1,6 @@
 import type { CparSectionKey, ResponsibilityType, RoleCode } from "@/generated/prisma/enums";
 import { REQUIRED_VERIFIER_ROLES } from "@/lib/permissions";
-import { hasCountermeasure } from "@/schemas/countermeasure";
+import { hasActionPlan } from "@/schemas/action-plan";
 import { hasProcessFlow } from "@/schemas/process-flow";
 import { hasRootCause } from "@/schemas/root-cause";
 import { hasTemporaryAction } from "@/schemas/temporary-action";
@@ -90,6 +90,7 @@ export const STRUCTURED_SECTIONS = [
   "ROOT_CAUSE_OCCURRENCE",
   "ROOT_CAUSE_OUTFLOW",
   "PERMANENT_COUNTERMEASURE",
+  "STANDARDIZATION_HORIZONTAL",
 ] as const satisfies readonly CparSectionKey[];
 
 export function isStructuredSection(key: CparSectionKey): boolean {
@@ -97,13 +98,78 @@ export function isStructuredSection(key: CparSectionKey): boolean {
 }
 
 /**
- * `Attachment.entityType` untuk evidence yang menempel pada satu tindakan perbaikan.
+ * `Attachment.entityType` untuk evidence yang menempel pada satu baris tindakan.
  *
  * Dibedakan dari evidence CPAR ("Cpar") yang berlaku untuk seluruh lembar: yang satu
  * menjawab "bukti bahwa tindakan ini dikerjakan", yang lain "berkas pendukung CPAR ini".
  * Menyatukan keduanya akan membuat daftar evidence umum dipenuhi berkas per tindakan.
+ *
+ * Satu nilai untuk kedua section yang memakainya: penanda barisnya UUID, jadi tidak ada
+ * yang bertabrakan, dan memecahnya per section hanya akan menambah cabang pada setiap
+ * pemanggilan tanpa membedakan apa pun.
  */
-export const COUNTERMEASURE_ENTITY = "CparCountermeasure";
+export const ACTION_ITEM_ENTITY = "CparActionItem";
+
+/**
+ * Section yang isinya daftar tindakan bertanggung jawab (PIC, tanggal, evidence).
+ *
+ * Permanent countermeasure memperbaiki akar masalahnya; standardization & horizontal
+ * deployment menyebarkan perbaikan itu ke dokumen, part, dan line lain. Keduanya sama
+ * bentuknya: daftar pekerjaan yang ditugaskan kepada orang dengan tenggat dan buktinya.
+ */
+export const ACTION_PLAN_SECTIONS = [
+  "PERMANENT_COUNTERMEASURE",
+  "STANDARDIZATION_HORIZONTAL",
+] as const satisfies readonly CparSectionKey[];
+
+export type ActionPlanSectionKey = (typeof ACTION_PLAN_SECTIONS)[number];
+
+export function isActionPlanSection(key: CparSectionKey): key is ActionPlanSectionKey {
+  return (ACTION_PLAN_SECTIONS as readonly CparSectionKey[]).includes(key);
+}
+
+/**
+ * Kata-kata yang berbeda antara kedua section.
+ *
+ * Bentuk isiannya sama, tetapi yang ditulis orang tidak: "tindakan perbaikan" pada
+ * section 6, "dokumen atau penerapan" pada section 7. Label yang seragam akan membuat
+ * section 7 terbaca seperti salinan section 6, dan isinya pun akan ikut menjadi salinan.
+ */
+export interface ActionPlanCopy {
+  readonly itemLabel: string;
+  readonly itemPlaceholder: string;
+  readonly addLabel: string;
+  readonly startLabel: string;
+  readonly notePlaceholder: string;
+  readonly savedTitle: string;
+  readonly emptyHint: string;
+}
+
+export const ACTION_PLAN_COPY: Record<ActionPlanSectionKey, ActionPlanCopy> = {
+  PERMANENT_COUNTERMEASURE: {
+    itemLabel: "Tindakan perbaikan",
+    itemPlaceholder:
+      "Mis. mengganti seal regulator mesin 4 dan memasukkannya ke jadwal perawatan jam operasi",
+    addLabel: "Tambah tindakan",
+    startLabel: "Isi perbaikan tetap",
+    notePlaceholder:
+      "Keterangan yang berlaku untuk seluruh perbaikan, misalnya urutan pelaksanaannya.",
+    savedTitle: "Perbaikan tetap tersimpan",
+    emptyHint: "Belum ada tindakan. Tambahkan baris di bawah.",
+  },
+  STANDARDIZATION_HORIZONTAL: {
+    itemLabel: "Dokumen atau penerapan",
+    itemPlaceholder:
+      "Mis. WI-PRD-014 direvisi ke rev. 3, atau jadwal perawatan jam operasi diterapkan ke mesin 1–3",
+    addLabel: "Tambah baris",
+    startLabel: "Isi standardisasi & penyebaran",
+    notePlaceholder:
+      "Keterangan yang berlaku untuk seluruh penyebaran, misalnya part atau line yang sengaja dikecualikan.",
+    savedTitle: "Standardisasi & penyebaran tersimpan",
+    emptyHint:
+      "Belum ada baris. Catat dokumen yang diperbarui dan part atau line lain yang menerima perbaikan serupa.",
+  },
+};
 
 export interface SectionState {
   readonly key: CparSectionKey;
@@ -120,7 +186,7 @@ export function isSectionFilled(section: Pick<SectionState, "key" | "content" | 
   if (section.key === "ROOT_CAUSE_OCCURRENCE" || section.key === "ROOT_CAUSE_OUTFLOW") {
     return hasRootCause(section.data);
   }
-  if (section.key === "PERMANENT_COUNTERMEASURE") return hasCountermeasure(section.data);
+  if (isActionPlanSection(section.key)) return hasActionPlan(section.data);
 
   return (section.content ?? "").trim().length > 0;
 }

@@ -4,10 +4,10 @@ import { forbidden, notFound } from "next/navigation";
 import { CalendarClock, CircleDashed, FileText } from "lucide-react";
 
 import {
-  CountermeasureEditor,
+  ActionPlanEditor,
   type ItemEvidence,
   type PicOption,
-} from "@/components/cpar/countermeasure-editor";
+} from "@/components/cpar/action-plan-editor";
 import { CparEvidence } from "@/components/cpar/cpar-evidence";
 import { ProblemDescriptionPanel } from "@/components/cpar/problem-description";
 import { ProcessFlowEditor } from "@/components/cpar/process-flow-editor";
@@ -25,8 +25,9 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { StatusRail } from "@/components/shared/status-rail";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  COUNTERMEASURE_ENTITY,
+  ACTION_ITEM_ENTITY,
   SECTION_ORDER,
+  type ActionPlanSectionKey,
   missingSectionLabels,
   requiredVerifiers,
   verificationProgress,
@@ -37,7 +38,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { DOCUMENT_TITLE } from "@/lib/pdf";
 import { can, canFillSection, canViewClaim, type ClaimContext } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
-import { itemIds, readCountermeasure } from "@/schemas/countermeasure";
+import { itemIds, readActionPlan } from "@/schemas/action-plan";
 import { readProcessFlow } from "@/schemas/process-flow";
 import { readRootCause } from "@/schemas/root-cause";
 import { readTemporaryAction } from "@/schemas/temporary-action";
@@ -140,11 +141,14 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
   }));
 
   const sectionRow = (key: string) => cpar.sections.find((entry) => entry.key === key);
-  const countermeasure = readCountermeasure(sectionRow("PERMANENT_COUNTERMEASURE")?.data);
+  const actionPlans = {
+    PERMANENT_COUNTERMEASURE: readActionPlan(sectionRow("PERMANENT_COUNTERMEASURE")?.data),
+    STANDARDIZATION_HORIZONTAL: readActionPlan(sectionRow("STANDARDIZATION_HORIZONTAL")?.data),
+  } as const;
 
-  // Evidence per tindakan disaring juga dengan claimId: penanda baris datang dari kolom
+  // Evidence per baris disaring juga dengan claimId: penanda baris datang dari kolom
   // Json, dan penanda milik klaim lain tidak boleh memanggil berkas klaim itu ke sini.
-  const [people, countermeasureFiles] = await Promise.all([
+  const [people, actionItemFiles] = await Promise.all([
     db.user.findMany({
       where: { isActive: true },
       select: {
@@ -157,8 +161,8 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
     }),
     db.attachment.findMany({
       where: {
-        entityType: COUNTERMEASURE_ENTITY,
-        entityId: { in: [...itemIds(countermeasure)] },
+        entityType: ACTION_ITEM_ENTITY,
+        entityId: { in: Object.values(actionPlans).flatMap((plan) => [...itemIds(plan)]) },
         claimId: id,
       },
       include: { uploadedBy: { select: { name: true } } },
@@ -173,9 +177,9 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
     departmentCode: person.department?.code ?? null,
   }));
 
-  const countermeasureEvidence: Record<string, ItemEvidence[]> = {};
-  for (const file of countermeasureFiles) {
-    (countermeasureEvidence[file.entityId] ??= []).push({
+  const actionItemEvidence: Record<string, ItemEvidence[]> = {};
+  for (const file of actionItemFiles) {
+    (actionItemEvidence[file.entityId] ??= []).push({
       id: file.id,
       originalName: file.originalName,
       url: `/api/files/${file.path}`,
@@ -206,6 +210,26 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
       defaultProblem={defaultProblem}
       legacyText={
         rootCause[sectionKey].factors.length === 0
+          ? (sectionRow(sectionKey)?.content ?? null)
+          : null
+      }
+    />
+  );
+
+  // Kedua section daftar tindakan memakai editor yang sama; yang berbeda hanya
+  // kata-katanya, dan itu ditentukan komponennya dari sectionKey.
+  const actionPlanEditor = (sectionKey: ActionPlanSectionKey) => (
+    <ActionPlanEditor
+      claimId={id}
+      sectionKey={sectionKey}
+      value={actionPlans[sectionKey]}
+      people={picOptions}
+      evidence={actionItemEvidence}
+      canFill={canFillSection(user, sectionKey, context)}
+      canUploadEvidence={can(user, "cpar.evidence.upload", context)}
+      locked={sectionRow(sectionKey)?.lockedAt !== null}
+      legacyText={
+        actionPlans[sectionKey].items.length === 0
           ? (sectionRow(sectionKey)?.content ?? null)
           : null
       }
@@ -367,22 +391,8 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
                 "ROOT_CAUSE_OUTFLOW",
                 `${problem.ncDetail ?? "Cacat"} — mengapa lolos`,
               ),
-              PERMANENT_COUNTERMEASURE: (
-                <CountermeasureEditor
-                  claimId={id}
-                  value={countermeasure}
-                  people={picOptions}
-                  evidence={countermeasureEvidence}
-                  canFill={canFillSection(user, "PERMANENT_COUNTERMEASURE", context)}
-                  canUploadEvidence={can(user, "cpar.evidence.upload", context)}
-                  locked={sectionRow("PERMANENT_COUNTERMEASURE")?.lockedAt !== null}
-                  legacyText={
-                    countermeasure.items.length === 0
-                      ? (sectionRow("PERMANENT_COUNTERMEASURE")?.content ?? null)
-                      : null
-                  }
-                />
-              ),
+              PERMANENT_COUNTERMEASURE: actionPlanEditor("PERMANENT_COUNTERMEASURE"),
+              STANDARDIZATION_HORIZONTAL: actionPlanEditor("STANDARDIZATION_HORIZONTAL"),
               PROCESS_FLOW: (
                 <ProcessFlowEditor
                   claimId={id}

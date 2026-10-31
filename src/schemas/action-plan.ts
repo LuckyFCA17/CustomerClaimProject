@@ -1,17 +1,20 @@
 import { z } from "zod";
 
 /**
- * Permanent countermeasure (§6 Modul 3, section 6).
+ * Daftar tindakan bertanggung jawab — dipakai dua section CPAR (§6 Modul 3):
+ * permanent countermeasure (section 6) dan standardization & horizontal deployment
+ * (section 7).
  *
- * Perbaikan tetap hampir tidak pernah satu tindakan: mengubah jig, memperbarui instruksi
- * kerja, dan menambah alat ukur dapat berjalan bersamaan, masing-masing oleh orang yang
- * berbeda dan selesai pada tanggal yang berbeda. Satu paragraf tidak dapat menjawab
- * "siapa" dan "kapan" per tindakan — dan dua pertanyaan itulah yang ditanyakan verifier.
+ * Keduanya menjawab pertanyaan yang sama bentuknya: apa yang dikerjakan, siapa yang
+ * diminta, kapan diimplementasikan, dan mana buktinya. Yang berbeda hanya isinya —
+ * yang satu perbaikan atas akar masalah, yang lain dokumen yang diperbarui dan line
+ * lain yang menerima perbaikan serupa. Memberi keduanya skema sendiri hanya akan
+ * menghasilkan dua salinan yang lambat laun berbeda tanpa alasan.
  *
  * Disimpan di `CparSection.data`, seperti section tabel lainnya; tanpa tabel baru.
  */
 
-export const COUNTERMEASURE_ITEM_MAX = 20;
+export const ACTION_ITEM_MAX = 20;
 
 const trimmed = (max: number) => z.string().trim().max(max, `Maksimal ${max} karakter.`);
 
@@ -28,7 +31,7 @@ const isoDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Tanggal belum lengkap.")
   .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), "Tanggal tidak dikenal.");
 
-export const countermeasureItemSchema = z.object({
+export const actionItemSchema = z.object({
   /**
    * Penanda baris yang tetap sama di seluruh penyimpanan.
    *
@@ -41,13 +44,13 @@ export const countermeasureItemSchema = z.object({
   action: z
     .string()
     .trim()
-    .min(1, "Tindakan wajib diisi.")
+    .min(1, "Isian wajib diisi.")
     .max(500, "Maksimal 500 karakter."),
   /**
    * Pengguna yang diminta mengerjakan tindakan ini.
    *
-   * Wajib: perbaikan tetap tanpa nama di belakangnya adalah niat, bukan rencana — dan
-   * pada verifikasi, "siapa" adalah pertanyaan pertama yang diajukan.
+   * Wajib: tindakan tanpa nama di belakangnya adalah niat, bukan rencana — dan pada
+   * verifikasi, "siapa" adalah pertanyaan pertama yang diajukan.
    */
   picId: z.string().trim().min(1, "Pilih PIC yang diminta."),
   /** Tanggal implementasi — rencana bila masih di depan, realisasi bila sudah lewat. */
@@ -55,31 +58,31 @@ export const countermeasureItemSchema = z.object({
   note: trimmed(1000).optional().or(z.literal("")),
 });
 
-export type CountermeasureItem = z.infer<typeof countermeasureItemSchema>;
+export type ActionItem = z.infer<typeof actionItemSchema>;
 
-export const countermeasureSchema = z.object({
+export const actionPlanSchema = z.object({
   items: z
-    .array(countermeasureItemSchema)
-    .max(COUNTERMEASURE_ITEM_MAX, `Maksimal ${COUNTERMEASURE_ITEM_MAX} tindakan.`)
+    .array(actionItemSchema)
+    .max(ACTION_ITEM_MAX, `Maksimal ${ACTION_ITEM_MAX} baris.`)
     .default([]),
   /** Penjelasan yang menyertai tabel; opsional. */
   note: trimmed(4000).optional().or(z.literal("")),
 });
 
-export type CountermeasureInput = z.infer<typeof countermeasureSchema>;
+export type ActionPlanInput = z.infer<typeof actionPlanSchema>;
 
-export function blankItem(): CountermeasureItem {
+export function blankItem(): ActionItem {
   return { action: "", picId: "", implementedOn: "", note: "" };
 }
 
 /**
  * Membaca kembali isi kolom Json; bentuknya diperiksa, bukan dipercaya.
  *
- * Baris yang rusak dilewati satu per satu — lebih baik kehilangan satu tindakan daripada
+ * Baris yang rusak dilewati satu per satu — lebih baik kehilangan satu baris daripada
  * menjatuhkan seluruh halaman CPAR.
  */
-export function readCountermeasure(value: unknown): CountermeasureInput {
-  const parsed = countermeasureSchema.safeParse(value);
+export function readActionPlan(value: unknown): ActionPlanInput {
+  const parsed = actionPlanSchema.safeParse(value);
   if (parsed.success) return parsed.data;
 
   if (typeof value === "object" && value !== null && "items" in value) {
@@ -87,7 +90,7 @@ export function readCountermeasure(value: unknown): CountermeasureInput {
 
     if (Array.isArray(raw)) {
       const items = raw
-        .map((item) => countermeasureItemSchema.safeParse(item))
+        .map((item) => actionItemSchema.safeParse(item))
         .filter((result) => result.success)
         .map((result) => result.data);
 
@@ -99,21 +102,21 @@ export function readCountermeasure(value: unknown): CountermeasureInput {
 }
 
 /** Id baris yang sudah pernah disimpan; dipakai untuk memanggil evidence-nya. */
-export function itemIds(value: CountermeasureInput): readonly string[] {
+export function itemIds(value: ActionPlanInput): readonly string[] {
   return value.items.map((item) => item.id).filter((id): id is string => Boolean(id));
 }
 
 /**
- * Tindakan yang belum punya tanggal implementasi.
+ * Baris yang belum punya tanggal implementasi.
  *
  * Tidak menahan penyimpanan: rencana sering ditulis sebelum tanggalnya disepakati.
  * Yang kurang diingatkan di layar, supaya terlihat jauh sebelum tombol submit ditekan.
  */
-export function withoutDate(value: CountermeasureInput): number {
+export function withoutDate(value: ActionPlanInput): number {
   return value.items.filter((item) => !(item.implementedOn ?? "").trim()).length;
 }
 
-/** Section terisi begitu ada satu tindakan yang ditulis. */
-export function hasCountermeasure(value: unknown): boolean {
-  return readCountermeasure(value).items.length > 0;
+/** Section terisi begitu ada satu baris yang ditulis. */
+export function hasActionPlan(value: unknown): boolean {
+  return readActionPlan(value).items.length > 0;
 }

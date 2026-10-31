@@ -57,6 +57,9 @@ const FILLED_DATA: Partial<Record<CparSectionKey, unknown>> = {
   PERMANENT_COUNTERMEASURE: {
     items: [{ action: "Mengganti seal regulator", picId: "user-1" }],
   },
+  STANDARDIZATION_HORIZONTAL: {
+    items: [{ action: "WI-PRD-014 direvisi ke rev. 3", picId: "user-1" }],
+  },
 };
 
 function sections(overrides: Partial<Record<CparSectionKey, string | null>> = {}): SectionState[] {
@@ -87,9 +90,9 @@ describe("missingRequiredSections", () => {
 
   it("memperlakukan isi yang hanya spasi sebagai kosong", () => {
     // Pada section paragraf; section tabel terisi lewat barisnya, bukan lewat teks.
-    expect(
-      missingRequiredSections(sections({ STANDARDIZATION_HORIZONTAL: "   \n\t  " })),
-    ).toEqual(["STANDARDIZATION_HORIZONTAL"]);
+    expect(missingRequiredSections(sections({ EFFECTIVENESS_PLAN: "   \n\t  " }))).toEqual([
+      "EFFECTIVENESS_PLAN",
+    ]);
   });
 
   it("mengembalikan section dalam urutan form, bukan urutan masukan", () => {

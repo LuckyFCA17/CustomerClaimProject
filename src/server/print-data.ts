@@ -3,14 +3,14 @@ import "server-only";
 import { forbidden, notFound } from "next/navigation";
 
 import type { DocumentKind } from "@/generated/prisma/enums";
-import { COUNTERMEASURE_ENTITY } from "@/lib/cpar";
+import { ACTION_ITEM_ENTITY } from "@/lib/cpar";
 import { db } from "@/lib/db";
 import { DOCUMENT_ROUTE } from "@/lib/pdf";
 import { canViewClaim } from "@/lib/permissions";
 import { verifyPrintToken } from "@/lib/print-token";
 import { readSessionActor } from "@/lib/session";
 import { storage } from "@/lib/storage";
-import { type CountermeasureInput, itemIds } from "@/schemas/countermeasure";
+import { type ActionPlanInput, itemIds } from "@/schemas/action-plan";
 
 /**
  * Pemuat data bersama untuk halaman /print/*.
@@ -193,21 +193,25 @@ export async function photosForParts(partIds: readonly string[]) {
 }
 
 /**
- * Nama PIC dan jumlah evidence untuk tabel permanent countermeasure.
+ * Nama PIC dan jumlah evidence untuk kedua section yang berisi daftar tindakan.
  *
  * Keduanya hidup di luar kolom Json: PIC disimpan sebagai id, dan evidence sebagai
  * lampiran yang menempel pada penanda baris. Evidence disaring dengan claimId juga,
  * sehingga penanda baris yang keliru tidak dapat menghitung berkas milik klaim lain.
+ *
+ * Kedua section ditanyakan sekaligus — penandanya UUID, jadi hasilnya tidak mungkin
+ * tertukar, dan memisahkannya hanya menggandakan perjalanan ke basis data.
  */
-export async function loadCountermeasureContext(
+export async function loadActionPlanContext(
   claimId: string,
-  value: CountermeasureInput,
+  values: readonly ActionPlanInput[],
 ): Promise<{
   picNames: Record<string, string>;
   evidenceCounts: Record<string, number>;
 }> {
-  const ids = [...itemIds(value)];
-  const picIds = [...new Set(value.items.map((item) => item.picId))];
+  const items = values.flatMap((value) => value.items);
+  const ids = values.flatMap((value) => [...itemIds(value)]);
+  const picIds = [...new Set(items.map((item) => item.picId))];
 
   if (ids.length === 0 && picIds.length === 0) {
     return { picNames: {}, evidenceCounts: {} };
@@ -218,7 +222,7 @@ export async function loadCountermeasureContext(
     ids.length > 0
       ? db.attachment.groupBy({
           by: ["entityId"],
-          where: { entityType: COUNTERMEASURE_ENTITY, entityId: { in: ids }, claimId },
+          where: { entityType: ACTION_ITEM_ENTITY, entityId: { in: ids }, claimId },
           _count: { _all: true },
         })
       : Promise.resolve([]),

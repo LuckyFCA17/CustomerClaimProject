@@ -10,8 +10,10 @@ import type { CparSectionKey } from "@/generated/prisma/enums";
 import { readRequestContext, writeAuditLog } from "@/lib/audit";
 import { assertTransition } from "@/lib/claim-state";
 import {
-  COUNTERMEASURE_ENTITY,
+  ACTION_ITEM_ENTITY,
+  ACTION_PLAN_SECTIONS,
   SECTION_LABEL,
+  isActionPlanSection,
   missingRequiredSections,
   verificationProgress,
   verifierCapacity,
@@ -26,13 +28,13 @@ import {
 import { assertCan, assertCanFillSection, type ClaimContext } from "@/lib/permissions";
 import { requireActor } from "@/lib/session";
 import { claimFolder, saveUpload, storage } from "@/lib/storage";
-import { cparSectionSchema, verifySchema } from "@/schemas/cpar";
 import {
-  type CountermeasureItem,
-  countermeasureSchema,
+  type ActionItem,
+  actionPlanSchema,
   itemIds,
-  readCountermeasure,
-} from "@/schemas/countermeasure";
+  readActionPlan,
+} from "@/schemas/action-plan";
+import { cparSectionSchema, verifySchema } from "@/schemas/cpar";
 import {
   type ProcessStep,
   flowCompleteness,
@@ -133,6 +135,11 @@ const rootCausePayloadSchema = rootCauseSchema.extend({
   sectionKey: z.enum(["ROOT_CAUSE_OCCURRENCE", "ROOT_CAUSE_OUTFLOW"], {
     message: "Section analisis tidak dikenal.",
   }),
+});
+
+/** Begitu pula kedua section yang berisi daftar tindakan bertanggung jawab. */
+const actionPlanPayloadSchema = actionPlanSchema.extend({
+  sectionKey: z.enum(ACTION_PLAN_SECTIONS, { message: "Section tidak dikenal." }),
 });
 
 function revalidateCpar(claimId: string): void {
@@ -528,35 +535,36 @@ export async function saveCparRootCause(claimId: string, input: unknown): Promis
 }
 
 /**
- * Menyimpan daftar perbaikan tetap.
+ * Menyimpan daftar tindakan bertanggung jawab — perbaikan tetap maupun standardisasi.
+ *
+ * Satu action untuk kedua section: isinya sama bentuknya, dan memisahkannya hanya akan
+ * menghasilkan dua salinan kode yang lambat laun berbeda. Section tujuannya ikut
+ * divalidasi, bukan diterima apa adanya dari klien.
  *
  * Dua hal dikerjakan di sini dan tidak boleh diserahkan ke peramban. Pertama, penanda
  * baris diberikan server: evidence menempel pada penanda itu, dan penanda yang datang
  * dari klien dapat menunjuk baris milik klaim lain. Kedua, PIC diperiksa benar-benar ada
  * dan masih aktif — daftar pilihan di layar bisa saja sudah basi.
  */
-export async function saveCparCountermeasure(
-  claimId: string,
-  input: unknown,
-): Promise<ActionResult> {
-  const key: CparSectionKey = "PERMANENT_COUNTERMEASURE";
-
+export async function saveCparActionPlan(claimId: string, input: unknown): Promise<ActionResult> {
   try {
     const actor = await requireActor();
     const cpar = await loadCpar(claimId);
     const context = toContext(cpar);
 
     assertCan(actor, "cpar.section.fill", context);
-    assertCanFillSection(actor, key, context);
 
-    const parsed = countermeasureSchema.safeParse(input);
+    const parsed = actionPlanPayloadSchema.safeParse(input);
     if (!parsed.success) {
       return {
         ok: false,
-        message: "Periksa kembali daftar perbaikan tetap.",
+        message: "Periksa kembali isian section ini.",
         fieldErrors: flattenZodErrors(parsed.error),
       };
     }
+
+    const key = parsed.data.sectionKey;
+    assertCanFillSection(actor, key, context);
 
     const section = cpar.sections.find((entry) => entry.key === key);
     if (!section) throw new NotFoundError(`Section ${SECTION_LABEL[key]} tidak ditemukan.`);
@@ -589,7 +597,7 @@ export async function saveCparCountermeasure(
     }
 
     // Baris lama membawa penandanya sendiri; baris baru mendapat penanda di sini.
-    const previousIds = new Set(itemIds(readCountermeasure(section.data)));
+    const previousIds = new Set(itemIds(readActionPlan(section.data)));
     const items = parsed.data.items.map((item) => ({
       ...item,
       id: item.id && previousIds.has(item.id) ? item.id : randomUUID(),
@@ -612,7 +620,7 @@ export async function saveCparCountermeasure(
         where: { id: section.id },
         data: {
           data: { items, note },
-          content: summarizeCountermeasure(items, nameById, note),
+          content: summarizeActionPlan(items, nameById, note),
           filledById: actor.id,
           filledAt: new Date(),
           revisionNote: null,
@@ -622,7 +630,7 @@ export async function saveCparCountermeasure(
       if (orphaned.length > 0) {
         await tx.attachment.updateMany({
           where: {
-            entityType: COUNTERMEASURE_ENTITY,
+            entityType: ACTION_ITEM_ENTITY,
             entityId: { in: orphaned },
             claimId,
             deletedAt: null,
@@ -665,19 +673,19 @@ export async function saveCparCountermeasure(
       ok: true,
       message:
         items.length === 0
-          ? "Daftar perbaikan tetap dikosongkan."
+          ? `${SECTION_LABEL[key]} dikosongkan.`
           : missingDate === 0
-            ? `${items.length} tindakan tersimpan.`
-            : `${items.length} tindakan tersimpan — ${missingDate} belum punya tanggal implementasi.`,
+            ? `${items.length} baris tersimpan.`
+            : `${items.length} baris tersimpan — ${missingDate} belum punya tanggal implementasi.`,
     };
   } catch (error) {
     return failure(error);
   }
 }
 
-/** Ringkasan daftar perbaikan sebagai teks, untuk kolom `content`. */
-function summarizeCountermeasure(
-  items: readonly CountermeasureItem[],
+/** Ringkasan daftar tindakan sebagai teks, untuk kolom `content`. */
+function summarizeActionPlan(
+  items: readonly ActionItem[],
   nameById: ReadonlyMap<string, string>,
   note: string,
 ): string {
@@ -799,14 +807,18 @@ export async function uploadCparEvidence(formData: FormData): Promise<ActionResu
 }
 
 /**
- * Evidence untuk satu tindakan perbaikan tetap.
+ * Evidence untuk satu baris tindakan, pada section mana pun yang memakainya.
+ *
+ * Section tujuannya tidak diminta dari klien melainkan dicari dari penandanya: penanda
+ * itu UUID yang hanya ada pada satu baris, dan membiarkan klien menyebut sectionnya
+ * sendiri membuka celah melampirkan berkas ke section yang bukan haknya.
  *
  * Hanya baris yang sudah tersimpan dapat menerima berkas, dan itu memang urutan
  * kerjanya: tindakan ditulis saat direncanakan, buktinya menyusul setelah dikerjakan.
  * Menerima unggahan untuk baris yang belum tersimpan akan meninggalkan berkas yang
  * menempel pada tindakan yang mungkin tidak pernah jadi.
  */
-export async function uploadCountermeasureEvidence(formData: FormData): Promise<ActionResult> {
+export async function uploadActionItemEvidence(formData: FormData): Promise<ActionResult> {
   try {
     const actor = await requireActor();
 
@@ -821,16 +833,18 @@ export async function uploadCountermeasureEvidence(formData: FormData): Promise<
     const cpar = await loadCpar(claimId);
     assertCan(actor, "cpar.evidence.upload", toContext(cpar));
 
-    const section = cpar.sections.find((entry) => entry.key === "PERMANENT_COUNTERMEASURE");
-    const known = itemIds(readCountermeasure(section?.data));
+    const section = cpar.sections.find(
+      (entry) =>
+        isActionPlanSection(entry.key) && itemIds(readActionPlan(entry.data)).includes(itemId),
+    );
 
-    if (!known.includes(itemId)) {
-      throw new ValidationError("Simpan dulu tindakannya sebelum melampirkan evidence.");
+    if (!section) {
+      throw new ValidationError("Simpan dulu barisnya sebelum melampirkan evidence.");
     }
 
-    if (section?.lockedAt) {
+    if (section.lockedAt) {
       throw new ForbiddenError(
-        `Section ${SECTION_LABEL.PERMANENT_COUNTERMEASURE} terkunci karena CPAR sedang diverifikasi.`,
+        `Section ${SECTION_LABEL[section.key]} terkunci karena CPAR sedang diverifikasi.`,
         "cpar.evidence.upload",
       );
     }
@@ -838,12 +852,12 @@ export async function uploadCountermeasureEvidence(formData: FormData): Promise<
     const saved = await saveUpload({
       file,
       folder: claimFolder(cpar.claim.claimNo, claimId),
-      entityType: COUNTERMEASURE_ENTITY,
+      entityType: ACTION_ITEM_ENTITY,
     });
 
     await db.attachment.create({
       data: {
-        entityType: COUNTERMEASURE_ENTITY,
+        entityType: ACTION_ITEM_ENTITY,
         entityId: itemId,
         claimId,
         originalName: saved.originalName,
@@ -862,8 +876,8 @@ export async function uploadCountermeasureEvidence(formData: FormData): Promise<
   }
 }
 
-/** Dipakai evidence CPAR maupun evidence per tindakan — keduanya milik klaim yang sama. */
-const EVIDENCE_ENTITIES: readonly string[] = ["Cpar", COUNTERMEASURE_ENTITY];
+/** Dipakai evidence CPAR maupun evidence per baris — keduanya milik klaim yang sama. */
+const EVIDENCE_ENTITIES: readonly string[] = ["Cpar", ACTION_ITEM_ENTITY];
 
 export async function deleteCparEvidence(attachmentId: string): Promise<ActionResult> {
   try {

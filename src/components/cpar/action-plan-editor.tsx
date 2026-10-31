@@ -13,14 +13,15 @@ import { SelectNative } from "@/components/ui/select-native";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate, formatDateTime } from "@/lib/format";
 import {
-  type CountermeasureInput,
-  type CountermeasureItem,
-  blankItem,
-} from "@/schemas/countermeasure";
+  ACTION_PLAN_COPY,
+  type ActionPlanCopy,
+  type ActionPlanSectionKey,
+} from "@/lib/cpar";
+import { type ActionItem, type ActionPlanInput, blankItem } from "@/schemas/action-plan";
 import {
   deleteCparEvidence,
-  saveCparCountermeasure,
-  uploadCountermeasureEvidence,
+  saveCparActionPlan,
+  uploadActionItemEvidence,
 } from "@/server/actions/cpar-filling";
 
 /** Calon PIC, sudah diringkas halaman server menjadi apa yang perlu tampil di pilihan. */
@@ -51,7 +52,7 @@ interface DraftItem {
 
 let rowCounter = 0;
 
-function toDraft(item: CountermeasureItem): DraftItem {
+function toDraft(item: ActionItem): DraftItem {
   rowCounter += 1;
 
   return {
@@ -65,15 +66,19 @@ function toDraft(item: CountermeasureItem): DraftItem {
 }
 
 /**
- * Permanent countermeasure — daftar tindakan yang jumlahnya dapat diatur.
+ * Daftar tindakan bertanggung jawab — dipakai permanent countermeasure maupun
+ * standardization & horizontal deployment.
  *
- * Tiap tindakan membawa tiga hal yang ditanyakan verifier: apa yang dikerjakan, siapa
- * yang diminta mengerjakan, dan kapan diimplementasikan. Evidence menempel pada tindakan,
- * bukan pada section — satu foto jig baru adalah bukti bagi satu tindakan tertentu, dan
+ * Tiap baris membawa tiga hal yang ditanyakan verifier: apa yang dikerjakan, siapa yang
+ * diminta mengerjakan, dan kapan diimplementasikan. Evidence menempel pada baris, bukan
+ * pada section — satu foto jig baru adalah bukti bagi satu tindakan tertentu, dan
  * menumpuknya di daftar evidence umum membuat pembacanya harus menebak milik yang mana.
+ *
+ * Kata-katanya mengikuti sectionnya lewat ACTION_PLAN_COPY; bentuk isiannya sama.
  */
-export function CountermeasureEditor({
+export function ActionPlanEditor({
   claimId,
+  sectionKey,
   value,
   people,
   evidence,
@@ -83,7 +88,8 @@ export function CountermeasureEditor({
   legacyText,
 }: {
   claimId: string;
-  value: CountermeasureInput;
+  sectionKey: ActionPlanSectionKey;
+  value: ActionPlanInput;
   people: readonly PicOption[];
   /** Evidence per penanda baris. */
   evidence: Readonly<Record<string, readonly ItemEvidence[]>>;
@@ -94,6 +100,8 @@ export function CountermeasureEditor({
   legacyText?: string | null;
 }) {
   const router = useRouter();
+  const copy = ACTION_PLAN_COPY[sectionKey];
+  const noteId = useId();
   const [rows, setRows] = useState<DraftItem[]>(() => value.items.map(toDraft));
   const [note, setNote] = useState(value.note ?? "");
   const [editing, setEditing] = useState(false);
@@ -116,7 +124,8 @@ export function CountermeasureEditor({
     setSaving(true);
 
     try {
-      const result = await saveCparCountermeasure(claimId, {
+      const result = await saveCparActionPlan(claimId, {
+        sectionKey,
         items: rows.map((row) => ({
           id: row.id,
           action: row.action,
@@ -133,7 +142,7 @@ export function CountermeasureEditor({
         return;
       }
 
-      toast.success("Perbaikan tetap tersimpan", { description: result.message });
+      toast.success(copy.savedTitle, { description: result.message });
       setEditing(false);
       router.refresh();
     } finally {
@@ -143,8 +152,9 @@ export function CountermeasureEditor({
 
   if (!editing) {
     return (
-      <CountermeasureView
+      <ActionPlanView
         claimId={claimId}
+        sectionKey={sectionKey}
         value={value}
         people={people}
         evidence={evidence}
@@ -160,7 +170,7 @@ export function CountermeasureEditor({
     <div className="space-y-4">
       {rows.length === 0 ? (
         <p className="rounded-lg border border-dashed border-nid-border px-3 py-6 text-center text-sm text-muted-foreground">
-          Belum ada tindakan. Tambahkan baris di bawah.
+          {copy.emptyHint}
         </p>
       ) : (
         <ol className="space-y-3">
@@ -169,6 +179,7 @@ export function CountermeasureEditor({
               <ItemEditor
                 row={row}
                 index={index}
+                copy={copy}
                 people={people}
                 errors={errors}
                 evidenceCount={row.id ? (evidence[row.id]?.length ?? 0) : 0}
@@ -187,17 +198,17 @@ export function CountermeasureEditor({
         onClick={() => setRows((current) => [...current, toDraft(blankItem())])}
       >
         <Plus aria-hidden />
-        Tambah tindakan
+        {copy.addLabel}
       </Button>
 
       <div className="space-y-1.5">
-        <Label htmlFor="cm-note">Catatan tambahan (opsional)</Label>
+        <Label htmlFor={noteId}>Catatan tambahan (opsional)</Label>
         <Textarea
-          id="cm-note"
+          id={noteId}
           rows={3}
           value={note}
           onChange={(event) => setNote(event.target.value)}
-          placeholder="Keterangan yang berlaku untuk seluruh perbaikan, misalnya urutan pelaksanaannya."
+          placeholder={copy.notePlaceholder}
         />
         <FieldError messages={errors.note} />
       </div>
@@ -220,6 +231,7 @@ export function CountermeasureEditor({
 function ItemEditor({
   row,
   index,
+  copy,
   people,
   errors,
   evidenceCount,
@@ -228,6 +240,7 @@ function ItemEditor({
 }: {
   row: DraftItem;
   index: number;
+  copy: ActionPlanCopy;
   people: readonly PicOption[];
   errors: Record<string, string[]>;
   evidenceCount: number;
@@ -242,13 +255,13 @@ function ItemEditor({
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1 space-y-1">
           <Label htmlFor={ids.action} className="text-xs">
-            Tindakan perbaikan {index + 1}
+            {copy.itemLabel} {index + 1}
           </Label>
           <Textarea
             id={ids.action}
             rows={2}
             value={row.action}
-            placeholder="Mis. mengganti seal regulator mesin 4 dan memasukkannya ke jadwal perawatan jam operasi"
+            placeholder={copy.itemPlaceholder}
             onChange={(event) => onChange({ action: event.target.value })}
           />
           <FieldError messages={errorFor("action")} />
@@ -256,7 +269,7 @@ function ItemEditor({
 
         <button
           type="button"
-          aria-label={`Hapus tindakan ${index + 1}`}
+          aria-label={`Hapus baris ${index + 1}`}
           onClick={onRemove}
           className="grid size-9 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary"
         >
@@ -308,7 +321,7 @@ function ItemEditor({
           <Input
             id={ids.note}
             value={row.note}
-            placeholder="Nomor dokumen, biaya, atau catatan lain untuk tindakan ini."
+            placeholder="Nomor dokumen, biaya, atau catatan lain untuk baris ini."
             onChange={(event) => onChange({ note: event.target.value })}
           />
           <FieldError messages={errorFor("note")} />
@@ -336,9 +349,10 @@ function FieldError({ messages }: { messages?: readonly string[] }) {
   );
 }
 
-/** Tampilan baca: satu kartu per tindakan, lengkap dengan evidence-nya. */
-export function CountermeasureView({
+/** Tampilan baca: satu kartu per baris, lengkap dengan evidence-nya. */
+export function ActionPlanView({
   claimId,
+  sectionKey,
   value,
   people,
   evidence,
@@ -348,7 +362,8 @@ export function CountermeasureView({
   onEdit,
 }: {
   claimId: string;
-  value: CountermeasureInput;
+  sectionKey: ActionPlanSectionKey;
+  value: ActionPlanInput;
   people: readonly PicOption[];
   evidence: Readonly<Record<string, readonly ItemEvidence[]>>;
   canEdit: boolean;
@@ -356,6 +371,8 @@ export function CountermeasureView({
   legacyText?: string | null;
   onEdit?: () => void;
 }) {
+  const copy = ACTION_PLAN_COPY[sectionKey];
+
   if (value.items.length === 0) {
     const legacy = (legacyText ?? "").trim();
 
@@ -366,7 +383,7 @@ export function CountermeasureView({
             <p className="whitespace-pre-line break-words text-sm">{legacy}</p>
             <p className="text-xs text-muted-foreground">
               Ditulis sebagai paragraf sebelum section ini menjadi daftar. Isi ulang sebagai
-              tindakan agar PIC, tanggal implementasi, dan evidence-nya dapat ditelusuri.
+              baris agar PIC, tanggal implementasi, dan evidence-nya dapat ditelusuri.
             </p>
           </>
         ) : (
@@ -376,7 +393,7 @@ export function CountermeasureView({
         {canEdit && onEdit ? (
           <Button type="button" size="sm" variant="outline" onClick={onEdit}>
             <Plus aria-hidden />
-            {legacy ? "Isi sebagai daftar" : "Isi perbaikan tetap"}
+            {legacy ? "Isi sebagai daftar" : copy.startLabel}
           </Button>
         ) : null}
       </div>
@@ -451,7 +468,7 @@ export function CountermeasureView({
 
       {undated > 0 ? (
         <p className="text-xs text-[var(--status-pending)]">
-          {undated} tindakan belum punya tanggal implementasi.
+          {undated} baris belum punya tanggal implementasi.
         </p>
       ) : null}
 
@@ -499,7 +516,7 @@ function ItemEvidencePanel({
           formData.set("file", chosen);
           return formData;
         },
-        uploadCountermeasureEvidence,
+        uploadActionItemEvidence,
       );
 
       if (sent) router.refresh();
@@ -570,7 +587,7 @@ function ItemEvidencePanel({
             variant="ghost"
             size="sm"
             disabled={uploading}
-            aria-label={`Upload evidence untuk tindakan ${index + 1}`}
+            aria-label={`Upload evidence untuk baris ${index + 1}`}
             onClick={() => fileRef.current?.click()}
           >
             {uploading ? <Loader2 aria-hidden className="animate-spin" /> : <FileUp aria-hidden />}

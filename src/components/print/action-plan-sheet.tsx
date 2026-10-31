@@ -1,8 +1,9 @@
+import { ACTION_PLAN_COPY, type ActionPlanSectionKey } from "@/lib/cpar";
 import { formatDate } from "@/lib/format";
-import type { CountermeasureInput } from "@/schemas/countermeasure";
+import type { ActionPlanInput } from "@/schemas/action-plan";
 
 /**
- * Permanent countermeasure pada lembar CPAR (§9).
+ * Daftar tindakan bertanggung jawab pada lembar CPAR (§9) — section 6 maupun 7.
  *
  * Satu baris per tindakan, dengan PIC dan tanggal implementasi sebagai kolom sendiri —
  * bukan terselip di dalam kalimat. Pada lembar yang ditandatangani empat kapasitas,
@@ -12,12 +13,14 @@ import type { CountermeasureInput } from "@/schemas/countermeasure";
  * ditandatangani, sedangkan bukti yang sebenarnya dibuka di portal. Angka itu yang
  * memberi tahu pembaca bahwa ada sesuatu untuk dibuka.
  */
-export function CountermeasureSheet({
+export function ActionPlanSheet({
+  sectionKey,
   value,
   picNames,
   evidenceCounts,
 }: {
-  value: CountermeasureInput;
+  sectionKey: ActionPlanSectionKey;
+  value: ActionPlanInput;
   /** Nama PIC per id; yang tidak ada lagi dicetak sebagai tanda hubung. */
   picNames: Readonly<Record<string, string>>;
   evidenceCounts: Readonly<Record<string, number>>;
@@ -33,7 +36,7 @@ export function CountermeasureSheet({
           <tr className="bg-[#f4f5f7]">
             <th className="w-[6mm] border border-[#e4e7eb] px-[1.5mm] py-[1mm] text-left">No</th>
             <th className="border border-[#e4e7eb] px-[1.5mm] py-[1mm] text-left">
-              Tindakan perbaikan
+              {ACTION_PLAN_COPY[sectionKey].itemLabel}
             </th>
             <th className="w-[32mm] border border-[#e4e7eb] px-[1.5mm] py-[1mm] text-left">PIC</th>
             <th className="w-[24mm] border border-[#e4e7eb] px-[1.5mm] py-[1mm] text-left">
