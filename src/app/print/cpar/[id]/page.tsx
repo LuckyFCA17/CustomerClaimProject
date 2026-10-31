@@ -33,7 +33,7 @@ export const dynamic = "force-dynamic";
 /**
  * Corrective & Preventive Action Request (§9).
  *
- * Isi tujuh section dicetak apa adanya dalam urutan form, masing-masing dengan nama
+ * Isi delapan section dicetak apa adanya dalam urutan form, masing-masing dengan nama
  * pengisi dan waktunya — itulah yang membedakan lembar ini dari sekadar ringkasan:
  * auditor perlu tahu siapa yang menyatakan apa, bukan hanya apa yang dinyatakan.
  *

@@ -335,7 +335,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
         <CardHeader>
           <CardTitle>Section CPAR</CardTitle>
           <CardDescription>
-            Tujuh section, masing-masing dapat diisi oleh role tertentu. Section yang bukan bagian
+            Delapan section, masing-masing dapat diisi oleh role tertentu. Section yang bukan bagian
             Anda tetap terbaca agar pengisian saling nyambung.
           </CardDescription>
         </CardHeader>

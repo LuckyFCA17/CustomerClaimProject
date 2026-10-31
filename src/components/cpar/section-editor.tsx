@@ -47,7 +47,7 @@ const LOCK_TEXT: Record<LockReason, { badge: string; body: string }> = {
 };
 
 /**
- * Tujuh section CPAR (§6 Modul 3).
+ * Delapan section CPAR (§6 Modul 3).
  *
  * Section yang bukan hak pengguna tampil read-only, bukan disembunyikan: pengisi satu
  * bagian perlu membaca bagian lain untuk menulis bagiannya sendiri — root cause outflow

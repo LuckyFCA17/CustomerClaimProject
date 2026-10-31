@@ -130,6 +130,27 @@ describe("Modul 3 — pengisian dan verifikasi CPAR", () => {
     expect(canFillSection(prodStaff, "PROBLEM_DESCRIPTION", target)).toBe(false);
     expect(canFillSection(qa, "PROBLEM_DESCRIPTION", target)).toBe(true);
     expect(canFillSection(prodHead, "EFFECTIVENESS_PLAN", target)).toBe(true);
+    expect(canFillSection(prodStaff, "EFFECTIVENESS_PLAN", target)).toBe(false);
+  });
+
+  it("memberi QA Staff kewenangan melengkapi analisis dan tindak lanjutnya", () => {
+    const target = cparClaim("CPAR_IN_PROGRESS");
+
+    for (const section of [
+      "ROOT_CAUSE_OCCURRENCE",
+      "ROOT_CAUSE_OUTFLOW",
+      "PERMANENT_COUNTERMEASURE",
+      "STANDARDIZATION_HORIZONTAL",
+    ] as const) {
+      expect(canFillSection(qa, section, target), section).toBe(true);
+      // Kewenangan QA menambah, bukan menggeser: departemen pelaksana tetap berhak.
+      expect(canFillSection(prodStaff, section, target), section).toBe(true);
+    }
+  });
+
+  it("tidak menjadikan QA Staff verifier walau ikut mengisi", () => {
+    // Kalau tidak, orang yang sama dapat menulis analisis lalu menyetujuinya sendiri.
+    expect(can(qa, "cpar.verify", cparClaim("CPAR_UNDER_VERIFICATION"))).toBe(false);
   });
 
   it("tidak memberi Factory Manager maupun PresDir section untuk diisi", () => {

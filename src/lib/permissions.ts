@@ -217,10 +217,15 @@ export const CPAR_SECTION_OWNERS: Record<CparSectionKey, readonly RoleCode[]> = 
   // Diagram alur proses digambar departemen pelaksana; QA ikut karena merekalah yang
   // memetakan proses lintas departemen saat penanganannya bertipe CFT.
   PROCESS_FLOW: ["USER_DEPT", "QA"],
-  ROOT_CAUSE_OCCURRENCE: ["USER_DEPT"],
-  ROOT_CAUSE_OUTFLOW: ["USER_DEPT"],
-  PERMANENT_COUNTERMEASURE: ["USER_DEPT"],
-  STANDARDIZATION_HORIZONTAL: ["USER_DEPT", "USER_HEAD"],
+  // QA ikut melengkapi analisis dan tindak lanjutnya, bukan menggantikan departemen
+  // pelaksana: merekalah yang mendampingi penelusuran akar masalah dan yang tahu part
+  // atau line lain pernah mengalami cacat serupa. Keputusan verifikasi tetap terpisah —
+  // QA Staff tidak termasuk kapasitas verifier mana pun, jadi tidak ada yang menilai
+  // pekerjaannya sendiri.
+  ROOT_CAUSE_OCCURRENCE: ["USER_DEPT", "QA"],
+  ROOT_CAUSE_OUTFLOW: ["USER_DEPT", "QA"],
+  PERMANENT_COUNTERMEASURE: ["USER_DEPT", "QA"],
+  STANDARDIZATION_HORIZONTAL: ["USER_DEPT", "USER_HEAD", "QA"],
   EFFECTIVENESS_PLAN: ["USER_HEAD", "QA"],
 };
 
