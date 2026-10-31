@@ -111,6 +111,16 @@ export function isStructuredSection(key: CparSectionKey): boolean {
 export const ACTION_ITEM_ENTITY = "CparActionItem";
 
 /**
+ * `Attachment.entityType` untuk dokumen yang dilampirkan atas Initial Document Request.
+ *
+ * `entityId` memakai id dokumen yang diminta, bukan id baris permintaannya: barisnya
+ * berkunci gabungan (cparId, initialDocumentId) dan tidak punya id tunggal. Pemanggilan
+ * berkasnya selalu disaring dengan claimId juga, sehingga satu id dokumen yang sama
+ * pada klaim lain tidak ikut terbawa.
+ */
+export const INITIAL_DOCUMENT_ENTITY = "CparInitialDocument";
+
+/**
  * Section yang isinya daftar tindakan bertanggung jawab (PIC, tanggal, evidence).
  *
  * Permanent countermeasure memperbaiki akar masalahnya; standardization & horizontal

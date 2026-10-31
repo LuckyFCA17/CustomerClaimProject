@@ -200,6 +200,7 @@ model User {
   auditLogs       AuditLog[]
   attachments     Attachment[]
   sections        CparSection[]
+  documentRequests CparInitialDocument[] @relation("InitialDocumentPic")
   monitoringFills MonitoringPeriod[]  @relation("MonitoringFilledBy")
   reports         ImprovementReport[] @relation("ReportSubmittedBy")
 
@@ -481,11 +482,15 @@ model CparInitialDocument {
   initialDocumentId String
   /// Terisi saat dokumen yang diminta benar-benar dilampirkan.
   fulfilledAt       DateTime?
+  /// Pengguna yang diminta melengkapi dokumen ini; boleh kosong sampai ditunjuk.
+  picId             String?
+  pic               User?           @relation("InitialDocumentPic", fields: [picId], references: [id])
   cpar              Cpar            @relation(fields: [cparId], references: [id], onDelete: Cascade)
   initialDocument   InitialDocument @relation(fields: [initialDocumentId], references: [id])
 
   @@id([cparId, initialDocumentId])
   @@index([initialDocumentId])
+  @@index([picId])
 }
 
 model CparSection {

@@ -12,6 +12,7 @@ import { assertTransition } from "@/lib/claim-state";
 import {
   ACTION_ITEM_ENTITY,
   ACTION_PLAN_SECTIONS,
+  INITIAL_DOCUMENT_ENTITY,
   SECTION_LABEL,
   isActionPlanSection,
   missingRequiredSections,
@@ -876,8 +877,175 @@ export async function uploadActionItemEvidence(formData: FormData): Promise<Acti
   }
 }
 
-/** Dipakai evidence CPAR maupun evidence per baris — keduanya milik klaim yang sama. */
-const EVIDENCE_ENTITIES: readonly string[] = ["Cpar", ACTION_ITEM_ENTITY];
+// ─────────────────────── Initial Document Request ───────────────────────
+
+/**
+ * Menunjuk pengguna yang diminta melengkapi satu dokumen.
+ *
+ * Dijaga izin pengisian section, bukan izin unggah: menunjuk orang adalah pembagian
+ * pekerjaan di dalam CPAR, dan itu urusan QA bersama departemen penanggung jawab —
+ * bukan siapa saja yang kebetulan boleh melampirkan berkas.
+ */
+export async function assignInitialDocumentPic(
+  claimId: string,
+  initialDocumentId: string,
+  picId: string | null,
+): Promise<ActionResult> {
+  try {
+    const actor = await requireActor();
+    const cpar = await loadCpar(claimId);
+
+    assertCan(actor, "cpar.section.fill", toContext(cpar));
+
+    const request = await db.cparInitialDocument.findUnique({
+      where: { cparId_initialDocumentId: { cparId: cpar.id, initialDocumentId } },
+      include: { initialDocument: { select: { name: true } } },
+    });
+
+    if (!request) throw new NotFoundError("Dokumen ini tidak diminta pada CPAR ini.");
+
+    // Daftar pilihan di layar bisa saja sudah basi; orangnya diperiksa ulang di sini.
+    let picName: string | null = null;
+
+    if (picId) {
+      const pic = await db.user.findFirst({
+        where: { id: picId, isActive: true },
+        select: { name: true },
+      });
+
+      if (!pic) throw new ValidationError("PIC tidak ditemukan atau sudah tidak aktif.");
+      picName = pic.name;
+    }
+
+    const requestContext = await readRequestContext();
+
+    await db.$transaction(async (tx) => {
+      await tx.cparInitialDocument.update({
+        where: { cparId_initialDocumentId: { cparId: cpar.id, initialDocumentId } },
+        data: { picId },
+      });
+
+      await writeAuditLog(
+        tx,
+        {
+          actorId: actor.id,
+          entityType: "CparInitialDocument",
+          entityId: initialDocumentId,
+          claimId,
+          action: "cpar.section.fill",
+          payloadDiff: {
+            initialDocument: request.initialDocument.name,
+            cycle: cpar.cycle,
+            picId,
+          },
+        },
+        requestContext,
+      );
+    });
+
+    revalidateCpar(claimId);
+
+    return {
+      ok: true,
+      message: picName
+        ? `${request.initialDocument.name} diminta kepada ${picName}.`
+        : `PIC untuk ${request.initialDocument.name} dikosongkan.`,
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * Melampirkan dokumen yang diminta.
+ *
+ * Unggahan yang berhasil sekaligus menandai permintaannya terpenuhi, dalam satu
+ * transaksi: dua penulisan terpisah dapat berhenti di tengah dan meninggalkan berkas
+ * yang ada tetapi permintaan yang terbaca masih kosong.
+ */
+export async function uploadInitialDocument(formData: FormData): Promise<ActionResult> {
+  try {
+    const actor = await requireActor();
+
+    const claimId = String(formData.get("claimId") ?? "");
+    const initialDocumentId = String(formData.get("initialDocumentId") ?? "");
+    const file = formData.get("file");
+
+    if (!(file instanceof File) || file.size === 0) {
+      throw new ValidationError("Pilih berkas yang akan diunggah.");
+    }
+
+    const cpar = await loadCpar(claimId);
+    assertCan(actor, "cpar.evidence.upload", toContext(cpar));
+
+    const request = await db.cparInitialDocument.findUnique({
+      where: { cparId_initialDocumentId: { cparId: cpar.id, initialDocumentId } },
+      include: { initialDocument: { select: { name: true } } },
+    });
+
+    if (!request) throw new NotFoundError("Dokumen ini tidak diminta pada CPAR ini.");
+
+    const saved = await saveUpload({
+      file,
+      folder: claimFolder(cpar.claim.claimNo, claimId),
+      entityType: INITIAL_DOCUMENT_ENTITY,
+    });
+
+    const requestContext = await readRequestContext();
+
+    await db.$transaction(async (tx) => {
+      await tx.attachment.create({
+        data: {
+          entityType: INITIAL_DOCUMENT_ENTITY,
+          entityId: initialDocumentId,
+          claimId,
+          originalName: saved.originalName,
+          mimeType: saved.mimeType,
+          size: saved.size,
+          path: saved.path,
+          uploadedById: actor.id,
+        },
+      });
+
+      await tx.cparInitialDocument.update({
+        where: { cparId_initialDocumentId: { cparId: cpar.id, initialDocumentId } },
+        data: { fulfilledAt: request.fulfilledAt ?? new Date() },
+      });
+
+      await writeAuditLog(
+        tx,
+        {
+          actorId: actor.id,
+          entityType: "CparInitialDocument",
+          entityId: initialDocumentId,
+          claimId,
+          action: "cpar.evidence.upload",
+          payloadDiff: {
+            initialDocument: request.initialDocument.name,
+            cycle: cpar.cycle,
+            file: saved.originalName,
+          },
+        },
+        requestContext,
+      );
+    });
+
+    revalidateCpar(claimId);
+
+    return { ok: true, message: `${request.initialDocument.name} dilampirkan.` };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+// ─────────────────────── Penghapusan berkas ───────────────────────
+
+/** Ketiganya menempel pada klaim yang sama dan dijaga izin unggah yang sama. */
+const EVIDENCE_ENTITIES: readonly string[] = [
+  "Cpar",
+  ACTION_ITEM_ENTITY,
+  INITIAL_DOCUMENT_ENTITY,
+];
 
 export async function deleteCparEvidence(attachmentId: string): Promise<ActionResult> {
   try {
@@ -888,15 +1056,38 @@ export async function deleteCparEvidence(attachmentId: string): Promise<ActionRe
       throw new NotFoundError("Evidence tidak ditemukan.");
     }
 
-    const cpar = await loadCpar(attachment.claimId);
+    const claimId = attachment.claimId;
+    const cpar = await loadCpar(claimId);
     assertCan(actor, "cpar.evidence.upload", toContext(cpar));
 
     await db.attachment.update({ where: { id: attachmentId }, data: { deletedAt: new Date() } });
     await storage.remove(attachment.path).catch(() => undefined);
 
-    revalidateCpar(attachment.claimId);
+    // Permintaan dokumen yang berkasnya habis dihapus kembali menjadi belum terpenuhi.
+    // Membiarkan tanda "dilampirkan" tetap menyala akan menyatakan dokumen yang tidak
+    // ada — dan itulah tanda yang dibaca orang saat memutuskan CPAR boleh dikirim.
+    if (attachment.entityType === INITIAL_DOCUMENT_ENTITY) {
+      const remaining = await db.attachment.count({
+        where: {
+          entityType: INITIAL_DOCUMENT_ENTITY,
+          entityId: attachment.entityId,
+          claimId,
+        },
+      });
 
-    return { ok: true, message: "Evidence dihapus." };
+      if (remaining === 0) {
+        await db.cparInitialDocument.update({
+          where: {
+            cparId_initialDocumentId: { cparId: cpar.id, initialDocumentId: attachment.entityId },
+          },
+          data: { fulfilledAt: null },
+        });
+      }
+    }
+
+    revalidateCpar(claimId);
+
+    return { ok: true, message: "Berkas dihapus." };
   } catch (error) {
     return failure(error);
   }

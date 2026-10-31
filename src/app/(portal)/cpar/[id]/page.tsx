@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { forbidden, notFound } from "next/navigation";
-import { CalendarClock, CircleDashed, FileText } from "lucide-react";
+import { CalendarClock, FileText } from "lucide-react";
 
 import {
   ActionPlanEditor,
@@ -9,6 +9,11 @@ import {
   type PicOption,
 } from "@/components/cpar/action-plan-editor";
 import { CparEvidence } from "@/components/cpar/cpar-evidence";
+import {
+  InitialDocuments,
+  type RequestedDocument,
+  type RequestedDocumentFile,
+} from "@/components/cpar/initial-documents";
 import { ProblemDescriptionPanel } from "@/components/cpar/problem-description";
 import { ProcessFlowEditor } from "@/components/cpar/process-flow-editor";
 import { RootCauseEditor } from "@/components/cpar/root-cause-editor";
@@ -26,6 +31,7 @@ import { StatusRail } from "@/components/shared/status-rail";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ACTION_ITEM_ENTITY,
+  INITIAL_DOCUMENT_ENTITY,
   SECTION_ORDER,
   type ActionPlanSectionKey,
   missingSectionLabels,
@@ -148,7 +154,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
 
   // Evidence per baris disaring juga dengan claimId: penanda baris datang dari kolom
   // Json, dan penanda milik klaim lain tidak boleh memanggil berkas klaim itu ke sini.
-  const [people, actionItemFiles] = await Promise.all([
+  const [people, actionItemFiles, documentFiles] = await Promise.all([
     db.user.findMany({
       where: { isActive: true },
       select: {
@@ -163,6 +169,15 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
       where: {
         entityType: ACTION_ITEM_ENTITY,
         entityId: { in: Object.values(actionPlans).flatMap((plan) => [...itemIds(plan)]) },
+        claimId: id,
+      },
+      include: { uploadedBy: { select: { name: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    db.attachment.findMany({
+      where: {
+        entityType: INITIAL_DOCUMENT_ENTITY,
+        entityId: { in: cpar.initialDocuments.map((entry) => entry.initialDocumentId) },
         claimId: id,
       },
       include: { uploadedBy: { select: { name: true } } },
@@ -187,6 +202,25 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
       uploadedAt: file.createdAt,
     });
   }
+
+  const documentFilesById: Record<string, RequestedDocumentFile[]> = {};
+  for (const file of documentFiles) {
+    (documentFilesById[file.entityId] ??= []).push({
+      id: file.id,
+      originalName: file.originalName,
+      url: `/api/files/${file.path}`,
+      uploadedByName: file.uploadedBy.name,
+      uploadedAt: file.createdAt,
+    });
+  }
+
+  const requestedDocuments: RequestedDocument[] = cpar.initialDocuments.map((entry) => ({
+    initialDocumentId: entry.initialDocumentId,
+    name: entry.initialDocument.name,
+    picId: entry.picId,
+    fulfilledAt: entry.fulfilledAt,
+    files: documentFilesById[entry.initialDocumentId] ?? [],
+  }));
 
   const temporaryAction = readTemporaryAction(sectionRow("TEMPORARY_ACTION")?.data);
   const processFlow = readProcessFlow(sectionRow("PROCESS_FLOW")?.data);
@@ -325,33 +359,19 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
       <Card>
         <CardHeader>
           <CardTitle>Initial Document Request</CardTitle>
-          <CardDescription>Dokumen yang diminta dilampirkan bersama CPAR.</CardDescription>
+          <CardDescription>
+            Dokumen yang diminta dilampirkan bersama CPAR, beserta orang yang diminta
+            melengkapinya.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {cpar.initialDocuments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Tidak ada dokumen yang diminta.</p>
-          ) : (
-            <ul className="space-y-2">
-              {cpar.initialDocuments.map((entry) => (
-                <li key={entry.initialDocumentId} className="flex items-center gap-2.5 text-sm">
-                  <CircleDashed
-                    aria-hidden
-                    className={
-                      entry.fulfilledAt
-                        ? "size-4 text-[var(--status-closed)]"
-                        : "size-4 text-muted-foreground"
-                    }
-                  />
-                  {entry.initialDocument.name}
-                  {entry.fulfilledAt ? (
-                    <span className="text-xs text-muted-foreground">
-                      · dilampirkan {formatDate(entry.fulfilledAt)}
-                    </span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
+          <InitialDocuments
+            claimId={id}
+            documents={requestedDocuments}
+            people={picOptions}
+            canAssign={can(user, "cpar.section.fill", context)}
+            canUpload={can(user, "cpar.evidence.upload", context)}
+          />
         </CardContent>
       </Card>
 
