@@ -68,6 +68,8 @@ type PayloadExtras = Partial<
     | "cparUrl"
     | "verifierCapacities"
     | "targetSections"
+    | "picName"
+    | "requestedItems"
     | "periods"
     | "periodNo"
   >
@@ -115,6 +117,8 @@ async function buildPayload(
     cparUrl: extra.cparUrl ?? null,
     verifierCapacities: extra.verifierCapacities,
     targetSections: extra.targetSections,
+    picName: extra.picName ?? null,
+    requestedItems: extra.requestedItems,
     periods: extra.periods,
     periodNo: extra.periodNo ?? null,
   };
@@ -439,6 +443,64 @@ async function cparParticipants(claimId: string): Promise<readonly string[]> {
   const people = (await Promise.all(departmentIds.map((id) => emailsForDepartment(id)))).flat();
 
   return unique([...people, ...(await emailsForRoles(["QA", "QA_HEAD"]))]);
+}
+
+/**
+ * Permintaan evidence kepada satu orang.
+ *
+ * Dipakai dua tempat: PIC yang diminta melengkapi Initial Document Request, dan PIC yang
+ * diminta mengerjakan tindakan pada permanent countermeasure atau standardization &
+ * horizontal deployment. Keduanya peristiwa yang sama bentuknya — seseorang ditugaskan
+ * dan perlu tahu — jadi satu jenis notifikasi, bukan dua.
+ *
+ * Dikirim hanya kepada orangnya. Menembuskannya ke QA Head pada tiap penunjukan akan
+ * mengubah kotak masuk beliau menjadi catatan pembagian tugas harian, dan notifikasi yang
+ * terlalu sering datang berhenti dibaca.
+ *
+ * Penerima yang tidak punya alamat email tidak menggagalkan apa pun: penunjukannya sudah
+ * tersimpan, dan yang hilang hanya kabarnya.
+ */
+export async function notifyEvidenceRequested(
+  claimId: string,
+  actor: { id: string; name: string; jobTitle: string },
+  request: {
+    readonly picId: string;
+    readonly items: readonly string[];
+    readonly dedupeKey: string;
+    readonly dueDate?: string | null;
+  },
+): Promise<void> {
+  if (request.items.length === 0) return;
+
+  const pic = await db.user.findFirst({
+    where: { id: request.picId, isActive: true },
+    select: { name: true, email: true },
+  });
+
+  if (!pic?.email) return;
+
+  const cpar = await db.cpar.findUnique({
+    where: { claimId },
+    include: { responsibleDept: { select: { name: true } } },
+  });
+
+  const payload = await buildPayload(claimId, actor, {
+    cparNo: cpar?.cparNo ?? null,
+    responsibleDept: cpar?.responsibleDept.name ?? null,
+    cycle: cpar?.cycle ?? null,
+    cparUrl: cparUrl(claimId),
+    dueDate: request.dueDate ?? (cpar ? formatDate(cpar.dueDate) : null),
+    picName: pic.name,
+    requestedItems: request.items,
+  });
+
+  await queueAndSend({
+    type: "CPAR_EVIDENCE_REQUEST",
+    claimId,
+    dedupeKey: request.dedupeKey,
+    to: [pic.email],
+    payload,
+  });
 }
 
 /** §8 #11 — periode pemantauan dibuka; departemen pelaksana diminta mengumpulkan bukti. */

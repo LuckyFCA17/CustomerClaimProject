@@ -50,6 +50,7 @@ import {
   notifyCparApproved,
   notifyCparRevisionRequested,
   notifyCparUnderVerification,
+  notifyEvidenceRequested,
 } from "@/server/claim-notifications";
 
 /**
@@ -598,12 +599,22 @@ export async function saveCparActionPlan(claimId: string, input: unknown): Promi
     }
 
     // Baris lama membawa penandanya sendiri; baris baru mendapat penanda di sini.
-    const previousIds = new Set(itemIds(readActionPlan(section.data)));
+    const previous = readActionPlan(section.data);
+    const previousIds = new Set(itemIds(previous));
+    const picBefore = new Map(
+      previous.items.filter((item) => item.id).map((item) => [item.id as string, item.picId]),
+    );
+
     const items = parsed.data.items.map((item) => ({
       ...item,
       id: item.id && previousIds.has(item.id) ? item.id : randomUUID(),
     }));
     const survivingIds = new Set(items.map((item) => item.id));
+
+    // Yang dikabarkan hanya penugasan yang berubah: baris baru, atau baris lama yang
+    // berpindah orang. Menyimpan ulang daftar yang sama tidak boleh mengirim email kedua
+    // kepada orang yang sudah tahu — dan daftar ini disimpan berkali-kali.
+    const newlyAssigned = items.filter((item) => picBefore.get(item.id) !== item.picId);
 
     // Evidence milik baris yang dihapus ikut dilepas, supaya berkasnya tidak tertinggal
     // menempel pada tindakan yang tidak ada lagi di lembar mana pun.
@@ -665,6 +676,30 @@ export async function saveCparActionPlan(claimId: string, input: unknown): Promi
         requestContext,
       );
     });
+
+    // Satu email per orang, bukan per baris: seseorang yang diberi tiga tindakan
+    // sekaligus perlu satu daftar, bukan tiga pesan yang datang berbarengan.
+    const byPic = new Map<string, typeof newlyAssigned>();
+    for (const item of newlyAssigned) {
+      byPic.set(item.picId, [...(byPic.get(item.picId) ?? []), item]);
+    }
+
+    if (byPic.size > 0) {
+      const actorSummary = { id: actor.id, name: actor.name, jobTitle: actor.jobTitle };
+
+      after(async () => {
+        for (const [picId, assigned] of byPic) {
+          await notifyEvidenceRequested(claimId, actorSummary, {
+            picId,
+            items: assigned.map((item) => item.action),
+            // Baris pertama yang berubah sudah cukup membedakan satu permintaan dari
+            // permintaan berikutnya kepada orang yang sama; penandanya UUID.
+            dedupeKey: `CPAR_EVIDENCE_REQUEST:${picId}:${assigned[0].id}`,
+            dueDate: assigned[0].implementedOn || null,
+          });
+        }
+      });
+    }
 
     revalidateCpar(claimId);
 
@@ -942,6 +977,23 @@ export async function assignInitialDocumentPic(
         requestContext,
       );
     });
+
+    // Hanya penunjukan yang benar-benar berubah yang dikabarkan. Menyimpan ulang nama
+    // yang sama — yang terjadi tiap kali orang menyentuh daftar ini — tidak boleh
+    // mengirim email kedua kepada orang yang sudah tahu.
+    if (picId && picId !== request.picId) {
+      after(async () => {
+        await notifyEvidenceRequested(
+          claimId,
+          { id: actor.id, name: actor.name, jobTitle: actor.jobTitle },
+          {
+            picId,
+            items: [request.initialDocument.name],
+            dedupeKey: `CPAR_EVIDENCE_REQUEST:${cpar.id}:${initialDocumentId}:${picId}`,
+          },
+        );
+      });
+    }
 
     revalidateCpar(claimId);
 

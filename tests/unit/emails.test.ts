@@ -34,7 +34,12 @@ const FASE_3_TYPES = [
 
 const MODUL_2_TYPES = ["CPAR_REQUEST", "CLAIM_IGNORATION"] as const;
 
-const MODUL_3_TYPES = ["CPAR_REVIEW_REQUEST", "CPAR_REVISION_REQUEST", "CPAR_APPROVED"] as const;
+const MODUL_3_TYPES = [
+  "CPAR_REVIEW_REQUEST",
+  "CPAR_REVISION_REQUEST",
+  "CPAR_APPROVED",
+  "CPAR_EVIDENCE_REQUEST",
+] as const;
 
 const MODUL_4_TYPES = [
   "MONITORING_EVIDENCE_REQUEST",
@@ -50,10 +55,10 @@ const BELUM_DIBANGUN = [
 ] as const;
 
 describe("kelengkapan template", () => {
-  it("memberi label untuk keempat belas jenis notifikasi §8", () => {
+  it("memberi label untuk setiap jenis notifikasi", () => {
     const types = Object.values(NotificationType);
 
-    expect(types).toHaveLength(14);
+    expect(types).toHaveLength(15);
     for (const type of types) {
       expect(NOTIFICATION_LABEL[type], type).toBeTruthy();
     }
@@ -322,5 +327,47 @@ describe("notifikasi Modul 4", () => {
       expect(html, type).not.toContain("undefined");
       expect(text, type).not.toContain("undefined");
     }
+  });
+});
+
+describe("permintaan evidence kepada PIC", () => {
+  const requestPayload = {
+    ...payload,
+    cparNo: "NID/CPAR/26/0002",
+    responsibleDept: "Production",
+    cycle: 1,
+    cparUrl: "https://ncc.nifco.co.id/cpar/cmvkl07fv000lsh7d7wa638ny",
+    picName: "Yusuf Ramadhan",
+    requestedItems: ["4M Change Sheet", "Mengganti seal regulator mesin 4"],
+    dueDate: "14 Nov 2026",
+  };
+
+  it("menyebut orangnya, apa yang diminta, dan tenggatnya", async () => {
+    const { html, subject } = await renderClaimEmail("CPAR_EVIDENCE_REQUEST", requestPayload);
+
+    expect(subject).toContain("NID/CPAR/26/0002");
+    expect(html).toContain("Yusuf Ramadhan");
+    expect(html).toContain("4M Change Sheet");
+    expect(html).toContain("Mengganti seal regulator mesin 4");
+    expect(html).toContain("14 Nov 2026");
+  });
+
+  it("tetap terkirim walau yang diminta hanya satu hal dan tenggatnya belum ada", async () => {
+    // Tanggal implementasi kerap disepakati belakangan; email yang menunggunya tidak
+    // akan pernah terkirim pada saat orangnya justru perlu tahu.
+    const { html } = await renderClaimEmail("CPAR_EVIDENCE_REQUEST", {
+      ...requestPayload,
+      requestedItems: ["Inspection Standard"],
+      dueDate: null,
+    });
+
+    expect(html).toContain("Inspection Standard");
+    expect(html).not.toContain("Tenggat:");
+  });
+
+  it("memakai nomor klaim ketika CPAR belum punya nomor", () => {
+    expect(renderSubject("CPAR_EVIDENCE_REQUEST", { ...requestPayload, cparNo: null })).toContain(
+      "NID/CC/26/10/0005",
+    );
   });
 });

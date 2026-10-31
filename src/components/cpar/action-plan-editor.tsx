@@ -108,6 +108,26 @@ export function ActionPlanEditor({
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [saving, setSaving] = useState(false);
 
+  /**
+   * Draft disegarkan setiap data dari server berganti.
+   *
+   * `useState` hanya membaca nilai awalnya sekali, sedangkan `router.refresh()` mengganti
+   * prop tanpa melepas komponennya. Tanpa penyegaran ini, baris yang baru ditambahkan
+   * tetap memegang draft tanpa penanda walau server sudah memberinya satu — dan
+   * penyimpanan berikutnya akan dianggap baris baru lagi: penandanya berganti, evidence
+   * yang menempel padanya terlepas, dan PIC-nya dikabari untuk kedua kalinya.
+   *
+   * Penyegaran ditahan selama editor terbuka, supaya ketikan yang belum disimpan tidak
+   * hilang ketika halaman kebetulan menyegarkan dirinya.
+   */
+  const [serverValue, setServerValue] = useState(value);
+
+  if (serverValue !== value && !editing) {
+    setServerValue(value);
+    setRows(value.items.map(toDraft));
+    setNote(value.note ?? "");
+  }
+
   function update(key: string, patch: Partial<DraftItem>) {
     setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   }

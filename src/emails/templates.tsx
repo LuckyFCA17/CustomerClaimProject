@@ -282,6 +282,30 @@ function MonitoringEvidenceRequest({ payload }: { payload: ClaimEmailPayload }) 
   );
 }
 
+function CparEvidenceRequest({ payload }: { payload: ClaimEmailPayload }) {
+  return (
+    <EmailShell
+      preview={`Anda diminta melengkapi ${payload.cparNo ?? payload.claimNo}`}
+      heading="Permintaan evidence"
+    >
+      <Paragraph>
+        {payload.picName ? `${payload.picName}, ` : ""}
+        {payload.actorName} ({payload.actorJobTitle}) meminta Anda melengkapi bagian berikut pada
+        CPAR di bawah ini. Unggah berkasnya melalui portal; selama belum terlampir, bagian ini
+        terbaca belum terpenuhi dan menahan pengiriman CPAR.
+      </Paragraph>
+
+      {payload.requestedItems?.length ? <BulletList items={payload.requestedItems} /> : null}
+
+      <SummaryTable rows={cparRows(payload)} />
+
+      {payload.dueDate ? <Note>Tenggat: {payload.dueDate}</Note> : null}
+
+      <ActionButton href={payload.cparUrl ?? payload.portalUrl} label="Open in portal" />
+    </EmailShell>
+  );
+}
+
 function CapaNotEffective({ payload }: { payload: ClaimEmailPayload }) {
   return (
     <EmailShell
@@ -343,6 +367,8 @@ const SUBJECTS: Partial<Record<NotificationType, (payload: ClaimEmailPayload) =>
   CPAR_REVISION_REQUEST: (p) =>
     `[NCC] CPAR perlu perbaikan — ${p.cparNo ?? p.claimNo} (${p.partName})`,
   CPAR_APPROVED: (p) => `[NCC] CPAR disetujui — ${p.cparNo ?? p.claimNo} (${p.partName})`,
+  CPAR_EVIDENCE_REQUEST: (p) =>
+    `[NCC] Permintaan evidence — ${p.cparNo ?? p.claimNo} (${p.partName})`,
   MONITORING_EVIDENCE_REQUEST: (p) =>
     `[NCC] Pemantauan CAPA dimulai — ${p.cparNo ?? p.claimNo} (${p.partName})`,
   CAPA_NOT_EFFECTIVE: (p) =>
@@ -361,6 +387,7 @@ const TEMPLATES: Partial<
   CPAR_REVIEW_REQUEST: CparReviewRequest,
   CPAR_REVISION_REQUEST: CparRevisionRequest,
   CPAR_APPROVED: CparApproved,
+  CPAR_EVIDENCE_REQUEST: CparEvidenceRequest,
   MONITORING_EVIDENCE_REQUEST: MonitoringEvidenceRequest,
   CAPA_NOT_EFFECTIVE: CapaNotEffective,
   MONITORING_FINISHED: MonitoringFinished,

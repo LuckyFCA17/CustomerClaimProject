@@ -44,6 +44,11 @@ export interface ClaimEmailPayload {
   /** Section yang ditandai bermasalah oleh verifier. */
   readonly targetSections?: readonly string[];
 
+  /** Terisi pada permintaan evidence kepada satu orang (PIC). */
+  readonly picName?: string | null;
+  /** Apa yang diminta kepadanya — nama dokumen, atau tindakan yang harus dikerjakan. */
+  readonly requestedItems?: readonly string[];
+
   /** Terisi pada notifikasi pemantauan CAPA (§8 #11, #13, #14). */
   readonly periods?: readonly string[];
   readonly periodNo?: number | null;
@@ -66,6 +71,7 @@ export const NOTIFICATION_LABEL: Record<NotificationType, string> = {
   CPAR_REVIEW_REMINDER: "CPAR Review Reminder",
   CPAR_REVISION_REQUEST: "CPAR Revision Request",
   CPAR_APPROVED: "CPAR Approved & Monitoring Started",
+  CPAR_EVIDENCE_REQUEST: "CPAR Evidence Request",
   MONITORING_EVIDENCE_REQUEST: "Monitoring Evidence Request",
   MONITORING_WEEKLY_REMINDER: "Weekly Monitoring Reminder",
   CAPA_NOT_EFFECTIVE: "CAPA Not Effective — Revision Required",
