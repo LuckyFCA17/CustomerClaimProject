@@ -183,6 +183,17 @@ export function claimOrderBy(sort: ClaimSortKey): Prisma.ClaimOrderByWithRelatio
 }
 
 /**
+ * Urutan yang sama, dipakai dari sisi CPAR.
+ *
+ * Dasbor CPAR menyaring dan mengurutkan menurut klaimnya — tanggal kejadian, jenis,
+ * part, customer, status semuanya milik klaim. Menyalin daftar urutannya ke bentuk
+ * kedua akan membuat dua daftar yang lambat laun berbeda, jadi yang ada dibungkus saja.
+ */
+export function cparOrderBy(sort: ClaimSortKey): Prisma.CparOrderByWithRelationInput[] {
+  return claimOrderBy(sort).map((entry) => ({ claim: entry }));
+}
+
+/**
  * Query string untuk tautan halaman berikutnya dan sejenisnya.
  *
  * Nilai bawaan tidak ikut ditulis, sehingga alamat daftar yang belum disaring tetap
@@ -225,7 +236,10 @@ export interface PageRange {
  * halaman yang sudah tidak ada. Menampilkan halaman kosong di situ terbaca seperti
  * "tidak ada hasil", padahal hasilnya ada di halaman pertama.
  */
-export function pageRange(total: number, query: ClaimQuery): PageRange {
+export function pageRange(
+  total: number,
+  query: Pick<ClaimQuery, "perPage" | "page">,
+): PageRange {
   const pageCount = Math.max(1, Math.ceil(total / query.perPage));
   const page = Math.min(Math.max(1, query.page), pageCount);
   const skip = (page - 1) * query.perPage;

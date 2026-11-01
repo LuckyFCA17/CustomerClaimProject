@@ -45,9 +45,20 @@ const TYPE_LABEL: Record<string, string> = {
 export function ClaimFilters({
   query,
   customers,
+  action = "/claims",
+  hidden = {},
 }: {
   query: ClaimQuery;
   customers: readonly CustomerOption[];
+  /** Halaman tujuan; dasbor CPAR memakai penyaring yang sama untuk daftarnya sendiri. */
+  action?: string;
+  /**
+   * Parameter milik tabel lain di halaman yang sama.
+   *
+   * Form GET hanya mengirim kolomnya sendiri, jadi tanpa titipan ini menyaring satu
+   * tabel akan menghapus penyaring tabel di sebelahnya.
+   */
+  hidden?: Readonly<Record<string, string>>;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const ids = {
@@ -91,7 +102,11 @@ export function ClaimFilters({
   }
 
   return (
-    <form ref={formRef} method="get" onSubmit={pruneEmpty} className="space-y-3">
+    <form ref={formRef} action={action} method="get" onSubmit={pruneEmpty} className="space-y-3">
+      {Object.entries(hidden).map(([name, value]) => (
+        <input key={name} type="hidden" name={name} value={value} />
+      ))}
+
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-0 flex-1 space-y-1 sm:min-w-[18rem]">
           <Label htmlFor={ids.q} className="text-xs">
@@ -121,7 +136,7 @@ export function ClaimFilters({
 
         {hasActiveFilter(query) ? (
           <Button type="button" variant="ghost" asChild>
-            <Link href="/claims">
+            <Link href={{ pathname: action, query: hidden }}>
               <RotateCcw aria-hidden />
               Reset
             </Link>
