@@ -8,7 +8,7 @@ import {
   type ItemEvidence,
   type PicOption,
 } from "@/components/cpar/action-plan-editor";
-import { CparEvidence } from "@/components/cpar/cpar-evidence";
+import { LegacyEvidence } from "@/components/cpar/legacy-evidence";
 import {
   InitialDocuments,
   type RequestedDocument,
@@ -105,7 +105,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
 
   if (!canViewClaim(user, context)) forbidden();
 
-  const [problem, evidence, documents] = await Promise.all([
+  const [problem, legacyEvidence, documents] = await Promise.all([
     loadProblemDescription(id),
     db.attachment.findMany({
       where: { entityType: "Cpar", entityId: cpar.id },
@@ -431,28 +431,35 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Evidence</CardTitle>
-          <CardDescription>
-            Berkas pendukung untuk seluruh CPAR — foto perbaikan, standar kerja yang diperbarui,
-            atau data pengukuran.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <CparEvidence
-            claimId={id}
-            canUpload={can(user, "cpar.evidence.upload", context)}
-            files={evidence.map((file) => ({
-              id: file.id,
-              originalName: file.originalName,
-              url: `/api/files/${file.path}`,
-              uploadedByName: file.uploadedBy.name,
-              uploadedAt: file.createdAt,
-            }))}
-          />
-        </CardContent>
-      </Card>
+      {/*
+        Tidak ada lagi daftar evidence umum: tiap berkas kini menempel pada bagian yang
+        memintanya. Kartu di bawah hanya muncul selama masih ada berkas lama yang
+        terlanjur diunggah ke daftar itu, dan hilang sendiri begitu habis dipindahkan.
+      */}
+      {legacyEvidence.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Evidence lama</CardTitle>
+            <CardDescription>
+              Diunggah sebelum evidence menempel pada bagiannya masing-masing. Lampirkan ulang
+              pada Initial Document Request atau tindakan yang bersangkutan, lalu hapus dari
+              sini.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <LegacyEvidence
+              canDelete={can(user, "cpar.evidence.upload", context)}
+              files={legacyEvidence.map((file) => ({
+                id: file.id,
+                originalName: file.originalName,
+                url: `/api/files/${file.path}`,
+                uploadedByName: file.uploadedBy.name,
+                uploadedAt: file.createdAt,
+              }))}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
       {canSubmit ? (
         <Card>

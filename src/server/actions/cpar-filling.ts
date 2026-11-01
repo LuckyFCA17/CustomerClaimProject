@@ -799,48 +799,13 @@ function summarizeEntries(entries: readonly TemporaryActionEntry[], note: string
 
 // ─────────────────────── Evidence CPAR ───────────────────────
 
-export async function uploadCparEvidence(formData: FormData): Promise<ActionResult> {
-  try {
-    const actor = await requireActor();
-
-    const claimId = String(formData.get("claimId") ?? "");
-    const caption = String(formData.get("caption") ?? "").trim();
-    const file = formData.get("file");
-
-    if (!(file instanceof File) || file.size === 0) {
-      throw new ValidationError("Pilih berkas yang akan diunggah.");
-    }
-
-    const cpar = await loadCpar(claimId);
-    assertCan(actor, "cpar.evidence.upload", toContext(cpar));
-
-    const saved = await saveUpload({
-      file,
-      folder: claimFolder(cpar.claim.claimNo, claimId),
-      entityType: "Cpar",
-    });
-
-    await db.attachment.create({
-      data: {
-        entityType: "Cpar",
-        entityId: cpar.id,
-        claimId,
-        originalName: saved.originalName,
-        mimeType: saved.mimeType,
-        size: saved.size,
-        path: saved.path,
-        caption: caption || null,
-        uploadedById: actor.id,
-      },
-    });
-
-    revalidateCpar(claimId);
-
-    return { ok: true, message: "Evidence terunggah." };
-  } catch (error) {
-    return failure(error);
-  }
-}
+/*
+ * Tidak ada lagi unggahan ke daftar evidence umum CPAR.
+ *
+ * Tiap berkas sekarang menempel pada bagian yang memintanya, sehingga pembacanya tidak
+ * perlu menebak satu berkas milik bagian yang mana. Entity type "Cpar" tetap dikenali
+ * penghapusan di bawah — berkas lama harus tetap dapat dibuka dan dibuang.
+ */
 
 /**
  * Evidence untuk satu baris tindakan, pada section mana pun yang memakainya.
@@ -1092,7 +1057,12 @@ export async function uploadInitialDocument(formData: FormData): Promise<ActionR
 
 // ─────────────────────── Penghapusan berkas ───────────────────────
 
-/** Ketiganya menempel pada klaim yang sama dan dijaga izin unggah yang sama. */
+/**
+ * Ketiganya menempel pada klaim yang sama dan dijaga izin unggah yang sama.
+ *
+ * "Cpar" tidak lagi dapat ditambah, hanya dihapus: itulah berkas lama dari daftar
+ * evidence umum yang sudah ditiadakan.
+ */
 const EVIDENCE_ENTITIES: readonly string[] = [
   "Cpar",
   ACTION_ITEM_ENTITY,
