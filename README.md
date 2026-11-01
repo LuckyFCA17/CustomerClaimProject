@@ -319,6 +319,43 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm doctor` | Memeriksa folder, umur build, `.env`, basis data, migrasi, seed, dan SMTP |
 | `pnpm serve` | `prisma generate` → migrasi → `build` → `start`; mode produksi, dipakai di Termux |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 bila MailHog tidak tersedia |
+| `pnpm reminders` | Menjalankan tiga pengingat terjadwal lewat portal yang sedang hidup |
+
+### Pengingat terjadwal
+
+Tiga notifikasi tidak dipicu perpindahan status, melainkan berlalunya waktu (§8 #6, #8, #12):
+
+| Pengingat | Kapan | Penerima |
+|---|---|---|
+| CPAR lewat tenggat | tiap hari, `dueDate` terlewat dan CPAR belum dikirim | departemen penanggung jawab + CFT, cc QA |
+| CPAR menunggu keputusan | tiap hari, siklus verifikasi terbuka ≥ 2 hari | kapasitas verifier yang belum memutuskan |
+| Periode jatuh tempo besok | tiap hari, periode pemantauan jatuh tempo H+1 | departemen penanggung jawab, cc Factory Manager |
+
+Pemicunya sebuah route, bukan proses worker tersendiri: yang pasti berjalan di lingkungan sasaran
+hanyalah server portalnya, dan proses kedua hanya menambah satu hal lagi yang bisa mati diam-diam.
+
+```bash
+pnpm env:init          # mengisi REMINDER_TOKEN bila masih kosong
+pnpm reminders         # jalankan sekarang
+```
+
+Untuk menjadwalkannya, panggil alamatnya sekali sehari. Pada Linux dengan `crontab -e`:
+
+```cron
+0 8 * * * cd /path/ke/CustomerClaimProject && /usr/bin/pnpm reminders >> /tmp/ncc-reminders.log 2>&1
+```
+
+Pada Termux, `termux-job-scheduler` hanya dapat memanggil sebuah URL, jadi tokennya ikut di alamat:
+
+```bash
+termux-job-scheduler --period-ms 86400000 \
+  --script "$PREFIX/bin/curl -fsS -X POST 'http://127.0.0.1:3000/api/reminders?token=TOKEN_ANDA'"
+```
+
+Dijalankan berapa kali pun hasilnya sama. `dedupeKey` tiap pengingat memuat tanggal hari ini, jadi
+email kedua pada hari yang sama tidak pernah diantrekan — menjalankannya tiga kali tetap satu email
+(§8 kriteria penerimaan #5). Tanpa `REMINDER_TOKEN` alamat itu menolak semua panggilan: token yang
+lupa diisi tidak boleh berarti siapa pun boleh memicunya.
 
 ### Catatan komponen UI
 
@@ -470,4 +507,8 @@ DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
 - [x] **Fase 5** — Modul 3 (CPAR form, verifikasi, siklus revisi)
 - [x] **Fase 6** — Modul 4 (monitoring, Not Effective, Verified Closed)
 - [ ] **Fase 7** — Worker cron, dashboard, claim list, master data
+  - [x] Claim list server-side: pencarian, filter, urutan, paginasi
+  - [x] Dasbor CPAR: daftar tersaring + tabel action/evidence pending
+  - [x] Pengingat terjadwal (§8 #6, #8, #12)
+  - [ ] Dashboard + grafik, ekspor Excel, master data CRUD
 - [ ] **Fase 8** — E2E Playwright, README final

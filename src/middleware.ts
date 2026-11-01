@@ -23,13 +23,25 @@ function isPrintPath(pathname: string): boolean {
   return pathname.startsWith("/print/");
 }
 
+/**
+ * Pemicu pengingat juga memeriksa izinnya sendiri, lewat REMINDER_TOKEN.
+ *
+ * Penjadwal — cron, termux-job-scheduler — tidak punya sesi dan tidak akan pernah
+ * punya. Tanpa pengecualian ini, panggilannya dibelokkan ke halaman login dan
+ * membalas HTTP 200 berisi formulir masuk: pengingat tidak pernah jalan, dan tidak
+ * ada satu pun yang terlihat gagal. Lihat app/api/reminders/route.ts.
+ */
+function isSelfGuardedApi(pathname: string): boolean {
+  return pathname === "/api/reminders";
+}
+
 export default auth((req) => {
   const { nextUrl } = req;
   const pathname = nextUrl.pathname;
   const session = req.auth;
   const isPublic = PUBLIC_PATHS.includes(pathname);
 
-  if (isPrintPath(pathname)) return NextResponse.next();
+  if (isPrintPath(pathname) || isSelfGuardedApi(pathname)) return NextResponse.next();
 
   if (!session?.user) {
     if (isPublic) return NextResponse.next();

@@ -306,6 +306,73 @@ function CparEvidenceRequest({ payload }: { payload: ClaimEmailPayload }) {
   );
 }
 
+function CparDailyReminder({ payload }: { payload: ClaimEmailPayload }) {
+  return (
+    <EmailShell
+      preview={`${payload.cparNo ?? payload.claimNo} lewat tenggat dan belum dikirim`}
+      heading="CPAR lewat tenggat"
+    >
+      <Paragraph>
+        CPAR di bawah ini sudah melewati tanggal jatuh temponya dan belum dikirim ke rantai
+        verifikasi. Mohon lengkapi section yang masih kosong, lalu tekan Submit final report pada
+        portal.
+      </Paragraph>
+
+      <SummaryTable rows={cparRows(payload)} />
+
+      {payload.dueDate ? <Note>Tenggat pengisian: {payload.dueDate}</Note> : null}
+
+      <ActionButton href={payload.cparUrl ?? payload.portalUrl} label="Open in portal" />
+    </EmailShell>
+  );
+}
+
+function CparReviewReminder({ payload }: { payload: ClaimEmailPayload }) {
+  return (
+    <EmailShell
+      preview={`${payload.cparNo ?? payload.claimNo} menunggu keputusan verifikasi Anda`}
+      heading="CPAR menunggu keputusan Anda"
+    >
+      <Paragraph>
+        CPAR di bawah ini sudah dikirim dan masih menunggu keputusan. Selama belum seluruh
+        kapasitas memutuskan, klaimnya tidak dapat maju ke pemantauan CAPA.
+      </Paragraph>
+
+      {payload.verifierCapacities?.length ? (
+        <>
+          <Paragraph>Kapasitas yang belum memutuskan:</Paragraph>
+          <BulletList items={payload.verifierCapacities} />
+        </>
+      ) : null}
+
+      <SummaryTable rows={cparRows(payload)} />
+
+      <ActionButton href={payload.cparUrl ?? payload.portalUrl} label="Open in portal" />
+    </EmailShell>
+  );
+}
+
+function MonitoringWeeklyReminder({ payload }: { payload: ClaimEmailPayload }) {
+  return (
+    <EmailShell
+      preview={`Periode ${payload.periodNo ?? ""} jatuh tempo besok`}
+      heading="Periode pemantauan jatuh tempo besok"
+    >
+      <Paragraph>
+        Periode {payload.periodNo ?? "pemantauan"} pada klaim di bawah ini jatuh tempo besok dan
+        belum dinilai. Mohon lengkapi evidence periode ini melalui portal supaya Factory Manager
+        atau President Director dapat menilai efektivitasnya tepat waktu.
+      </Paragraph>
+
+      <SummaryTable rows={cparRows(payload)} />
+
+      {payload.dueDate ? <Note>Jatuh tempo: {payload.dueDate}</Note> : null}
+
+      <ActionButton href={payload.cparUrl ?? payload.portalUrl} label="Open in portal" />
+    </EmailShell>
+  );
+}
+
 function CapaNotEffective({ payload }: { payload: ClaimEmailPayload }) {
   return (
     <EmailShell
@@ -369,6 +436,12 @@ const SUBJECTS: Partial<Record<NotificationType, (payload: ClaimEmailPayload) =>
   CPAR_APPROVED: (p) => `[NCC] CPAR disetujui — ${p.cparNo ?? p.claimNo} (${p.partName})`,
   CPAR_EVIDENCE_REQUEST: (p) =>
     `[NCC] Permintaan evidence — ${p.cparNo ?? p.claimNo} (${p.partName})`,
+  CPAR_DAILY_REMINDER: (p) =>
+    `[NCC] Pengingat: CPAR lewat tenggat — ${p.cparNo ?? p.claimNo} (${p.partName})`,
+  CPAR_REVIEW_REMINDER: (p) =>
+    `[NCC] Pengingat: CPAR menunggu keputusan — ${p.cparNo ?? p.claimNo} (${p.partName})`,
+  MONITORING_WEEKLY_REMINDER: (p) =>
+    `[NCC] Pengingat: periode ${p.periodNo ?? "?"} jatuh tempo besok — ${p.cparNo ?? p.claimNo} (${p.partName})`,
   MONITORING_EVIDENCE_REQUEST: (p) =>
     `[NCC] Pemantauan CAPA dimulai — ${p.cparNo ?? p.claimNo} (${p.partName})`,
   CAPA_NOT_EFFECTIVE: (p) =>
@@ -388,6 +461,9 @@ const TEMPLATES: Partial<
   CPAR_REVISION_REQUEST: CparRevisionRequest,
   CPAR_APPROVED: CparApproved,
   CPAR_EVIDENCE_REQUEST: CparEvidenceRequest,
+  CPAR_DAILY_REMINDER: CparDailyReminder,
+  CPAR_REVIEW_REMINDER: CparReviewReminder,
+  MONITORING_WEEKLY_REMINDER: MonitoringWeeklyReminder,
   MONITORING_EVIDENCE_REQUEST: MonitoringEvidenceRequest,
   CAPA_NOT_EFFECTIVE: CapaNotEffective,
   MONITORING_FINISHED: MonitoringFinished,

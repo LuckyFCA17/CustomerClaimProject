@@ -70,6 +70,22 @@ async function main() {
     console.log(force ? "  · AUTH_SECRET diganti dengan nilai baru" : "  · AUTH_SECRET diisi");
   }
 
+  // Token pengingat diperlakukan sama: kosong berarti pengingat tidak dapat dipicu,
+  // dan itu kegagalan yang diam — jadi diisikan sekalian di sini.
+  content = await readFile(ENV, "utf8");
+  const reminder = readValue(content, "REMINDER_TOKEN");
+
+  if (reminder && !force) {
+    console.log("  · REMINDER_TOKEN sudah terisi");
+  } else if (reminder === null) {
+    content += `${content.endsWith("\n") ? "" : "\n"}REMINDER_TOKEN="${randomBytes(24).toString("hex")}"\n`;
+    await writeFile(ENV, content);
+    console.log("  · REMINDER_TOKEN ditambahkan");
+  } else {
+    await writeFile(ENV, writeValue(content, "REMINDER_TOKEN", randomBytes(24).toString("hex")));
+    console.log(force ? "  · REMINDER_TOKEN diganti dengan nilai baru" : "  · REMINDER_TOKEN diisi");
+  }
+
   console.log("Selesai. Periksa DATABASE_URL di .env sebelum menjalankan pnpm db:migrate.");
 }
 

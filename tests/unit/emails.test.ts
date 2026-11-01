@@ -32,8 +32,6 @@ const FASE_3_TYPES = [
   "NEW_CUSTOMER_CLAIM",
 ] as const;
 
-const MODUL_2_TYPES = ["CPAR_REQUEST", "CLAIM_IGNORATION"] as const;
-
 const MODUL_3_TYPES = [
   "CPAR_REVIEW_REQUEST",
   "CPAR_REVISION_REQUEST",
@@ -47,8 +45,8 @@ const MODUL_4_TYPES = [
   "MONITORING_FINISHED",
 ] as const;
 
-/** Ketiganya dipicu cron, bukan tindakan pengguna; template-nya menyusul pada Fase 7. */
-const BELUM_DIBANGUN = [
+/** Ketiganya dipicu penjadwal, bukan tindakan pengguna (§8 #6, #8, #12). */
+const PENGINGAT_TYPES = [
   "CPAR_DAILY_REMINDER",
   "CPAR_REVIEW_REMINDER",
   "MONITORING_WEEKLY_REMINDER",
@@ -64,18 +62,17 @@ describe("kelengkapan template", () => {
     }
   });
 
-  it("baru menyediakan template untuk jenis yang modulnya sudah dibangun", () => {
-    for (const type of [...FASE_3_TYPES, ...MODUL_2_TYPES, ...MODUL_3_TYPES, ...MODUL_4_TYPES]) {
+  it("menyediakan template untuk setiap jenis notifikasi §8", () => {
+    for (const type of Object.values(NotificationType)) {
       expect(hasTemplate(type), type).toBe(true);
-    }
-
-    for (const type of BELUM_DIBANGUN) {
-      expect(hasTemplate(type), type).toBe(false);
     }
   });
 
   it("menolak merender jenis yang templatenya belum ada, alih-alih mengirim email kosong", async () => {
-    await expect(renderClaimEmail("CPAR_REVIEW_REMINDER", payload)).rejects.toThrow(/belum dibuat/);
+    // Penjaga bagi jenis yang ditambahkan ke enum tetapi templatenya belum dibuat.
+    await expect(
+      renderClaimEmail("BELUM_ADA" as (typeof NotificationType)[keyof typeof NotificationType], payload),
+    ).rejects.toThrow(/belum dibuat/);
   });
 });
 
@@ -369,5 +366,48 @@ describe("permintaan evidence kepada PIC", () => {
     expect(renderSubject("CPAR_EVIDENCE_REQUEST", { ...requestPayload, cparNo: null })).toContain(
       "NID/CC/26/10/0005",
     );
+  });
+});
+
+describe("pengingat terjadwal", () => {
+  const reminderPayload = {
+    ...payload,
+    cparNo: "NID/CPAR/26/0002",
+    responsibleDept: "Production",
+    cycle: 1,
+    cparUrl: "https://ncc.nifco.co.id/cpar/cmvkl07fv000lsh7d7wa638ny",
+    dueDate: "26 Okt 2026",
+    verifierCapacities: ["Factory Manager", "President Director"],
+    periodNo: 2,
+  };
+
+  it("menyebut nomor CPAR dan tenggat pada pengingat harian", async () => {
+    const { html, subject } = await renderClaimEmail("CPAR_DAILY_REMINDER", reminderPayload);
+
+    expect(subject).toContain("NID/CPAR/26/0002");
+    expect(html).toContain("26 Okt 2026");
+  });
+
+  it("menyebut kapasitas yang belum memutuskan pada pengingat verifikasi", async () => {
+    const { html } = await renderClaimEmail("CPAR_REVIEW_REMINDER", reminderPayload);
+
+    expect(html).toContain("Factory Manager");
+    expect(html).toContain("President Director");
+  });
+
+  it("menyebut nomor periode pada pengingat pemantauan", async () => {
+    const { subject, html } = await renderClaimEmail(
+      "MONITORING_WEEKLY_REMINDER",
+      reminderPayload,
+    );
+
+    expect(subject).toContain("periode 2");
+    expect(html).toContain("26 Okt 2026");
+  });
+
+  it("ketiganya punya subject yang berbeda satu sama lain", () => {
+    const subjects = PENGINGAT_TYPES.map((type) => renderSubject(type, reminderPayload));
+
+    expect(new Set(subjects).size).toBe(3);
   });
 });

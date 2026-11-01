@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { NotificationType } from "@/generated/prisma/enums";
+import type { NotificationType, RoleCode } from "@/generated/prisma/enums";
 import { statusMeta } from "@/config/claim-status";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
@@ -14,7 +14,12 @@ import {
   unique,
   withoutDuplicates,
 } from "@/lib/notifications";
-import { SECTION_LABEL, VERIFIER_CAPACITY_LABEL, requiredVerifiers } from "@/lib/cpar";
+import {
+  SECTION_LABEL,
+  VERIFIER_CAPACITY_LABEL,
+  requiredVerifiers,
+  verificationProgress,
+} from "@/lib/cpar";
 import { renderSubject } from "@/emails/templates";
 import type { ClaimEmailPayload } from "@/emails/types";
 import {
@@ -31,6 +36,14 @@ import {
  * membatalkan perubahan status yang sudah terjadi; yang gagal tercatat di tabel
  * Notification dan terlihat di halaman log.
  */
+
+/**
+ * Pelaku pada pengingat terjadwal.
+ *
+ * Pengingat tidak punya pelaku manusia — tidak seorang pun menekan tombol. Menuliskan
+ * nama orang terakhir yang menyentuh klaim akan terbaca seolah ia yang menagih.
+ */
+const SCHEDULER = { id: "system", name: "NCC Portal", jobTitle: "Pengingat otomatis" };
 
 const TYPE_LABEL: Record<string, string> = {
   OFFICIAL: "Official",
@@ -648,4 +661,233 @@ export async function notifyClaimIgnored(
     payload,
     attachmentPaths: evidence.map((item) => item.path),
   });
+}
+
+// ─────────────────────── Pengingat terjadwal (§8 #6, #8, #12) ───────────────────────
+
+/**
+ * Tiga pengingat yang tidak dipicu perpindahan status, melainkan oleh berlalunya waktu.
+ *
+ * Idempotensinya ada pada `dedupeKey` yang memuat tanggal hari ini: menjalankan
+ * penjadwalnya tiga kali sehari tetap menghasilkan satu email per hari per sasaran
+ * (§8 kriteria penerimaan #5). Itu juga yang membuat penjadwalnya boleh sederhana —
+ * tidak perlu mengingat apa yang sudah dikirim, cukup dijalankan ulang.
+ */
+
+/** Tanggal hari ini di zona Jakarta, dipakai sebagai bagian kunci idempotensi. */
+function todayKey(now: Date): string {
+  return now.toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+}
+
+/** Siapa yang memegang kapasitas verifier tertentu pada sebuah CPAR. */
+async function emailsForCapacity(
+  role: RoleCode,
+  responsibleDeptId: string,
+): Promise<readonly string[]> {
+  // USER_HEAD hanya berlaku bagi head departemen yang ditunjuk; head departemen lain
+  // bukan verifier wajib CPAR ini, dan menagih mereka hanya menambah email yang salah.
+  if (role === "USER_HEAD") return emailsForDepartment(responsibleDeptId, ["USER_HEAD"]);
+
+  return emailsForRoles([role]);
+}
+
+export interface ReminderRun {
+  readonly cparDaily: number;
+  readonly cparReview: number;
+  readonly monitoringWeekly: number;
+}
+
+/** §8 #6 — CPAR lewat tenggat dan belum dikirim; departemen penanggung jawab ditagih. */
+export async function runCparDailyReminders(now = new Date()): Promise<number> {
+  const overdue = await db.cpar.findMany({
+    where: {
+      submittedAt: null,
+      dueDate: { lt: now },
+      claim: { status: { in: ["CPAR_ISSUED", "CPAR_IN_PROGRESS", "CPAR_REVISION"] } },
+    },
+    select: {
+      id: true,
+      cparNo: true,
+      cycle: true,
+      dueDate: true,
+      claimId: true,
+      responsibleDeptId: true,
+      responsibleDept: { select: { name: true } },
+      cftMembers: { select: { departmentId: true } },
+    },
+  });
+
+  const day = todayKey(now);
+  let queued = 0;
+
+  for (const cpar of overdue) {
+    const departmentIds = [
+      cpar.responsibleDeptId,
+      ...cpar.cftMembers.map((member) => member.departmentId),
+    ];
+    const to = unique(
+      (await Promise.all(departmentIds.map((id) => emailsForDepartment(id)))).flat(),
+    );
+
+    const payload = await buildPayload(cpar.claimId, SCHEDULER, {
+      cparNo: cpar.cparNo,
+      responsibleDept: cpar.responsibleDept.name,
+      cycle: cpar.cycle,
+      cparUrl: cparUrl(cpar.claimId),
+      dueDate: formatDate(cpar.dueDate),
+    });
+
+    await queueAndSend({
+      type: "CPAR_DAILY_REMINDER",
+      claimId: cpar.claimId,
+      dedupeKey: `CPAR_DAILY_REMINDER:${cpar.claimId}:${day}`,
+      to,
+      cc: await emailsForRoles(["QA", "QA_HEAD"]),
+      payload,
+    });
+
+    queued += 1;
+  }
+
+  return queued;
+}
+
+/** Siklus verifikasi dianggap menggantung setelah dua hari tanpa keputusan. */
+const REVIEW_GRACE_DAYS = 2;
+
+/** §8 #8 — siklus verifikasi terbuka ≥2 hari; hanya kapasitas yang belum memutuskan. */
+export async function runCparReviewReminders(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - REVIEW_GRACE_DAYS * 24 * 60 * 60 * 1000);
+
+  const waiting = await db.cpar.findMany({
+    where: {
+      submittedAt: { lte: cutoff },
+      claim: { status: "CPAR_UNDER_VERIFICATION" },
+    },
+    select: {
+      id: true,
+      cparNo: true,
+      cycle: true,
+      dueDate: true,
+      claimId: true,
+      responsibleDeptId: true,
+      responsibleDept: { select: { name: true } },
+      verifications: { select: { role: true, decision: true, cycle: true } },
+    },
+  });
+
+  const day = todayKey(now);
+  let queued = 0;
+
+  for (const cpar of waiting) {
+    const { pending } = verificationProgress(cpar.verifications, cpar.cycle);
+    if (pending.length === 0) continue;
+
+    const to = unique(
+      (
+        await Promise.all(
+          pending.map((role) => emailsForCapacity(role, cpar.responsibleDeptId)),
+        )
+      ).flat(),
+    );
+
+    const payload = await buildPayload(cpar.claimId, SCHEDULER, {
+      cparNo: cpar.cparNo,
+      responsibleDept: cpar.responsibleDept.name,
+      cycle: cpar.cycle,
+      cparUrl: cparUrl(cpar.claimId),
+      dueDate: formatDate(cpar.dueDate),
+      verifierCapacities: pending.map((role) => VERIFIER_CAPACITY_LABEL[role] ?? role),
+    });
+
+    await queueAndSend({
+      type: "CPAR_REVIEW_REMINDER",
+      claimId: cpar.claimId,
+      dedupeKey: `CPAR_REVIEW_REMINDER:${cpar.id}:${cpar.cycle}:${day}`,
+      to,
+      payload,
+    });
+
+    queued += 1;
+  }
+
+  return queued;
+}
+
+/** §8 #12 — periode pemantauan jatuh tempo besok dan belum dinilai. */
+export async function runMonitoringWeeklyReminders(now = new Date()): Promise<number> {
+  // Rentang satu hari penuh: periode yang jatuh tempo besok, berapa pun jamnya.
+  const from = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  from.setUTCHours(0, 0, 0, 0);
+  const to = new Date(from.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+  const periods = await db.monitoringPeriod.findMany({
+    where: {
+      status: "PENDING",
+      dueDate: { gte: from, lte: to },
+      claim: { status: "CAPA_MONITORING" },
+    },
+    select: {
+      id: true,
+      periodNo: true,
+      dueDate: true,
+      cycle: true,
+      claimId: true,
+      claim: { select: { cpar: { select: { cparNo: true, responsibleDeptId: true, responsibleDept: { select: { name: true } } } } } },
+    },
+  });
+
+  const day = todayKey(now);
+  let queued = 0;
+
+  for (const period of periods) {
+    const cpar = period.claim.cpar;
+    if (!cpar) continue;
+
+    const payload = await buildPayload(period.claimId, SCHEDULER, {
+      cparNo: cpar.cparNo,
+      responsibleDept: cpar.responsibleDept.name,
+      cycle: period.cycle,
+      cparUrl: monitoringUrl(period.claimId),
+      dueDate: formatDate(period.dueDate),
+      periodNo: period.periodNo,
+    });
+
+    await queueAndSend({
+      type: "MONITORING_WEEKLY_REMINDER",
+      claimId: period.claimId,
+      dedupeKey: `MONITORING_WEEKLY_REMINDER:${period.id}:${day}`,
+      to: await emailsForDepartment(cpar.responsibleDeptId, ["USER_DEPT", "USER_HEAD"]),
+      cc: await emailsForRoles(["FACTORY_MGR"]),
+      payload,
+    });
+
+    queued += 1;
+  }
+
+  return queued;
+}
+
+/**
+ * Menjalankan ketiganya.
+ *
+ * Satu gagal tidak menghentikan dua lainnya: pengingat yang tidak terkirim hari ini
+ * akan dicoba lagi besok, sedangkan menghentikan seluruh penjadwal karena satu klaim
+ * bermasalah membuat semua orang kehilangan pengingatnya.
+ */
+export async function runReminders(now = new Date()): Promise<ReminderRun> {
+  const [cparDaily, cparReview, monitoringWeekly] = await Promise.all([
+    runCparDailyReminders(now).catch(reminderFailure("CPAR_DAILY_REMINDER")),
+    runCparReviewReminders(now).catch(reminderFailure("CPAR_REVIEW_REMINDER")),
+    runMonitoringWeeklyReminders(now).catch(reminderFailure("MONITORING_WEEKLY_REMINDER")),
+  ]);
+
+  return { cparDaily, cparReview, monitoringWeekly };
+}
+
+function reminderFailure(type: string) {
+  return (error: unknown) => {
+    console.error(`Pengingat ${type} gagal dijalankan:`, error);
+    return 0;
+  };
 }
