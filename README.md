@@ -411,6 +411,7 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm typecheck` | `tsc --noEmit` (TypeScript strict, tanpa `any`) |
 | `pnpm lint` | ESLint |
 | `pnpm test` | Unit test Vitest |
+| `pnpm test:e2e` | E2E Playwright — basis data `*_e2e` sendiri, server mode produksi di port 3100 |
 | `pnpm db:up` / `pnpm db:down` | Menyalakan/mematikan Postgres + MailHog |
 | `pnpm db:migrate` | `prisma migrate dev` |
 | `pnpm db:seed` | Mengisi data awal (idempotent) |
@@ -668,3 +669,8 @@ DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
   - [x] Ekspor Excel daftar klaim (membawa penyaring yang sedang berlaku)
   - [x] Dashboard + grafik (kartu ringkas, klaim per bulan, pareto NC detail, tabel tindakan)
 - [ ] **Fase 8** — E2E Playwright, README final
+  - [x] Harness E2E: basis data + penyimpanan sendiri, server mode produksi di port 3100
+  - [x] Happy path sampai CPAR terbit (buat klaim → review → terbit → Follow Up)
+  - [ ] Pengisian 8 section CPAR → rantai verifikasi → monitoring → Verified Closed
+  - [ ] Skenario Not Effective
+  - [ ] README final + diagram

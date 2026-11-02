@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { ValidationError } from "@/lib/errors";
@@ -95,15 +95,44 @@ const localDriver: StorageDriver = {
     await rm(resolveInsideRoot(relativePath), { force: true });
   },
 
+  /**
+   * Memindahkan lampiran draft ke folder bernomor klaim.
+   *
+   * `rename` dicoba lebih dulu karena ia satu operasi dan murah. Ia gagal dengan
+   * ENOTEMPTY bila folder tujuan sudah ada dan berisi — keadaan yang tidak seharusnya
+   * terjadi, tetapi nyata: nomor klaim berasal dari basis data, sedangkan folder ini ada
+   * di disk, dan keduanya dapat terpisah begitu basis data dipulihkan dari cadangan atau
+   * dipasang ulang sementara berkas lama tertinggal.
+   *
+   * Dibiarkan melempar, kegagalan itu membatalkan pengiriman klaim — pengguna melihat
+   * klaimnya menolak terkirim tanpa alasan yang bisa ia perbaiki, karena sebabnya ada di
+   * disk server. Jadi isinya dipindahkan satu per satu ke folder yang sudah ada, bukan
+   * ditimpa: berkas lama milik nomor itu tetap utuh.
+   */
   async moveFolder(from, to) {
     const source = resolveInsideRoot(from);
     const target = resolveInsideRoot(to);
 
     await mkdir(path.dirname(target), { recursive: true });
-    await rename(source, target).catch((error: NodeJS.ErrnoException) => {
-      // Folder belum ada berarti draft tidak punya lampiran — bukan kegagalan.
-      if (error.code !== "ENOENT") throw error;
-    });
+
+    try {
+      await rename(source, target);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+
+      // Folder asal belum ada berarti draft tidak punya lampiran — bukan kegagalan.
+      if (code === "ENOENT") return;
+      if (code !== "ENOTEMPTY" && code !== "EEXIST") throw error;
+    }
+
+    await mkdir(target, { recursive: true });
+
+    for (const entry of await readdir(source, { withFileTypes: true })) {
+      await rename(path.join(source, entry.name), path.join(target, entry.name));
+    }
+
+    await rm(source, { recursive: true, force: true });
   },
 };
 
