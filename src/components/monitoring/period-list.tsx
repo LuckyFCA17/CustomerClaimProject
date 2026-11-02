@@ -48,8 +48,8 @@ export interface PeriodView {
 /**
  * Periode pemantauan beserta evidence dan penilaiannya (§6 Modul 4).
  *
- * Penilaian dan pengumpulan bukti sengaja berada pada kartu yang sama: Factory Manager
- * yang menilai perlu melihat berkas yang menjadi dasarnya tanpa berpindah halaman.
+ * Penilaian dan pengumpulan bukti sengaja berada pada kartu yang sama: yang menilai
+ * perlu melihat berkas yang menjadi dasarnya tanpa berpindah halaman.
  */
 export function PeriodList({
   periods,

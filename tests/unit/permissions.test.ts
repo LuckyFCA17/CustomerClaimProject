@@ -191,13 +191,22 @@ describe("Modul 3 — pengisian dan verifikasi CPAR", () => {
 });
 
 describe("Modul 4 — monitoring", () => {
-  it("memberi penilaian efektivitas hanya kepada Factory Manager dan PresDir", () => {
+  it("memberi penilaian efektivitas kepada QA dan manajemen, bukan departemen pelaksana", () => {
     const target = cparClaim("CAPA_MONITORING");
 
     expect(can(factoryMgr, "monitoring.setEffectiveness", target)).toBe(true);
     expect(can(presdir, "monitoring.setEffectiveness", target)).toBe(true);
-    expect(can(qa, "monitoring.setEffectiveness", target)).toBe(false);
+    expect(can(qa, "monitoring.setEffectiveness", target)).toBe(true);
+    expect(can(qaHead, "monitoring.setEffectiveness", target)).toBe(true);
+
+    // Departemen yang mengerjakan perbaikan tetap tidak menilai hasilnya sendiri.
     expect(can(prodStaff, "monitoring.setEffectiveness", target)).toBe(false);
+    expect(can(prodHead, "monitoring.setEffectiveness", target)).toBe(false);
+  });
+
+  it("tidak memberi Administrator kewenangan menilai (asumsi A-06)", () => {
+    // Admin mengurus sistem, bukan memutuskan mutu — sama seperti verifikasi CPAR.
+    expect(can(admin, "monitoring.setEffectiveness", cparClaim("CAPA_MONITORING"))).toBe(false);
   });
 
   it("membiarkan departemen penanggung jawab mengunggah evidence implementasi", () => {

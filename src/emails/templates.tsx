@@ -265,7 +265,7 @@ function MonitoringEvidenceRequest({ payload }: { payload: ClaimEmailPayload }) 
       <Paragraph>
         {payload.actorName} ({payload.actorJobTitle}) membuka jadwal pemantauan untuk
         countermeasure berikut. Mohon kumpulkan evidence tiap periode melalui portal sebelum
-        tenggatnya; Factory Manager atau President Director yang akan menilai efektivitasnya.
+        tenggatnya; QA bersama manajemen yang akan menilai efektivitasnya.
       </Paragraph>
 
       <SummaryTable rows={cparRows(payload)} />
@@ -360,8 +360,8 @@ function MonitoringWeeklyReminder({ payload }: { payload: ClaimEmailPayload }) {
     >
       <Paragraph>
         Periode {payload.periodNo ?? "pemantauan"} pada klaim di bawah ini jatuh tempo besok dan
-        belum dinilai. Mohon lengkapi evidence periode ini melalui portal supaya Factory Manager
-        atau President Director dapat menilai efektivitasnya tepat waktu.
+        belum dinilai. Mohon lengkapi evidence periode ini melalui portal supaya penilaiannya
+        dapat dilakukan tepat waktu.
       </Paragraph>
 
       <SummaryTable rows={cparRows(payload)} />

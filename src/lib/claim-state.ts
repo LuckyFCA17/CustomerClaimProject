@@ -122,7 +122,11 @@ export const TRANSITIONS: readonly Transition[] = [
     from: "CAPA_MONITORING",
     to: "CPAR_REVISION",
     action: "monitoring.setEffectiveness",
-    roles: ["FACTORY_MGR", "PRESDIR"],
+    // Harus sama dengan PERMISSION_MATRIX["monitoring.setEffectiveness"]. Daftar yang
+    // lebih sempit di sini membuat penilai hanya dapat memilih Effective: Not Effective
+    // memindahkan status, dan penjaga transisilah yang menolaknya — tanpa ada satu pun
+    // tombol yang terlihat salah.
+    roles: ["QA", "QA_HEAD", "FACTORY_MGR", "PRESDIR"],
     label: "Mark period not effective",
   },
   {

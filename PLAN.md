@@ -744,7 +744,7 @@ Kolom **Status** = status klaim yang mengizinkan aksi; di status lain aksi selal
 | 13 | `cpar.print` | ≥ `CPAR_IN_PROGRESS` | ✅ | ✅ | d | d | ✅ | ✅ | ✅ |
 | 14 | `monitoring.start` *(Action Button C)* | `CPAR_APPROVED` | ✅ | ✅ | — | — | — | — | ✅ |
 | 15 | `monitoring.evidence.upload` | `CAPA_MONITORING` | ✅ | — | d | d | — | — | ✅ |
-| 16 | `monitoring.setEffectiveness` | `CAPA_MONITORING` | — | — | — | — | ✅ | ✅ | — |
+| 16 | `monitoring.setEffectiveness` | `CAPA_MONITORING` | ✅ | ✅ | — | — | ✅ | ✅ | — |
 | 17 | `monitoring.submitReport` | `CAPA_MONITORING` (semua periode `EFFECTIVE`) | ✅ | ✅ | — | — | — | — | ✅ |
 | 18 | `claim.export` | semua | ✅ | ✅ | d | d | ✅ | ✅ | ✅ |
 | 19 | `master.manage` | — | — | — | — | — | — | — | ✅ |
@@ -856,7 +856,7 @@ stateDiagram-v2
 | `CPAR_UNDER_VERIFICATION` | `CPAR_REVISION` | `cpar.verify(REVISE)` | QA_HEAD/USER_HEAD/FACTORY_MGR/PRESDIR | komentar wajib · `cycle += 1` · section di-unlock |
 | `CPAR_UNDER_VERIFICATION` | `CPAR_APPROVED` | `cpar.verify(VERIFIED)` | idem | dievaluasi setelah tiap keputusan; pindah hanya bila `requiredVerifiers` lengkap |
 | `CPAR_APPROVED` | `CAPA_MONITORING` | `monitoring.start` | QA | jumlah periode ≥1 · interval hari ≥1 |
-| `CAPA_MONITORING` | `CPAR_REVISION` | `monitoring.setEffectiveness(NOT_EFFECTIVE)` | FACTORY_MGR/PRESDIR | `cycle += 1` · Action Button B aktif lagi |
+| `CAPA_MONITORING` | `CPAR_REVISION` | `monitoring.setEffectiveness(NOT_EFFECTIVE)` | QA/QA_HEAD/FACTORY_MGR/PRESDIR | `cycle += 1` · Action Button B aktif lagi |
 | `CAPA_MONITORING` | `VERIFIED_CLOSED` | `monitoring.submitReport` | QA | semua periode siklus berjalan `EFFECTIVE` · ImprovementReport tersimpan |
 
 Transisi lain **tidak ada di tabel** → `assertTransition` melempar `IllegalTransitionError` (HTTP 409),

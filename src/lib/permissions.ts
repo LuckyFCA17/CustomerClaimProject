@@ -195,8 +195,21 @@ export const PERMISSION_MATRIX: Record<Action, ActionRule> = {
     roles: { QA: "ALL", USER_DEPT: "DEPT", USER_HEAD: "DEPT", ADMIN: "ALL" },
     statuses: ["CAPA_MONITORING"],
   },
+  /**
+   * Penilaian efektivitas CAPA.
+   *
+   * QA ikut menilai karena merekalah yang memegang data keluhan dan hasil inspeksi
+   * sesudah perbaikan — angka yang menentukan apakah sebuah periode benar-benar
+   * efektif. Factory Manager dan President Director tetap berwenang.
+   *
+   * Catatan: QA juga boleh mengunggah evidence pemantauan, sehingga seorang QA dapat
+   * mengumpulkan bukti lalu menilainya sendiri. Itu konsekuensi yang diterima, bukan
+   * kelalaian — penilaiannya tercatat atas namanya di audit log dan pada timeline
+   * klaim, dan keputusan Not Effective selalu disertai catatan yang terbaca semua
+   * pihak.
+   */
   "monitoring.setEffectiveness": {
-    roles: { FACTORY_MGR: "ALL", PRESDIR: "ALL" },
+    roles: { QA: "ALL", QA_HEAD: "ALL", FACTORY_MGR: "ALL", PRESDIR: "ALL" },
     statuses: ["CAPA_MONITORING"],
   },
   "monitoring.submitReport": {
