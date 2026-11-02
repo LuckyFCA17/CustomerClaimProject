@@ -195,6 +195,20 @@ mode produksi **±287 MB** dan memuncak di **±343 MB** saat menerima foto 4,65 
 pnpm boot       # build bila perlu, lalu start
 ```
 
+`pnpm boot` menjalankan `tsc` lebih dulu sebagai gerbang murah, lalu membangun dengan
+pemeriksaan Next dimatikan supaya `tsc` tidak berjalan dua kali. Alasannya ongkos gagal,
+bukan ongkos berhasil — terukur pada portal ini:
+
+| Langkah | Puncak memori | Durasi |
+|---|---|---|
+| `next build` dengan type check + lint | 1.649 MB | 72 detik |
+| `next build` tanpa keduanya | 1.699 MB | 60 detik |
+| `tsc --noEmit` sendirian | **456 MB** | **3 detik** |
+
+Baris kedua penting: melewati type check **tidak menghemat memori sama sekali** — yang
+berat adalah kompilasinya. Nilainya ada di baris ketiga: galat tipe ketahuan dalam 3 detik
+pada 456 MB, bukan sesudah 72 detik pada 1.649 MB.
+
 Tiga perintah dan kapan memakainya — `pnpm boot` memilihkan dua yang terakhir:
 
 | Perintah | Memori | Kapan |
@@ -406,7 +420,7 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm env:init` | Membuat `.env` dari `.env.example` dan mengisi `AUTH_SECRET` |
 | `pnpm checkup` | Memeriksa folder, salinan liar, umur build, memori, `.env`, basis data, migrasi, seed, dan SMTP |
 | `pnpm run doctor` | Nama lama `pnpm checkup`; **`pnpm doctor` tanpa `run` menjalankan pemeriksa milik pnpm, bukan portal** |
-| `pnpm boot` | **Perintah utama untuk memakai portal**: cek basis data, build bila kode lebih baru, lalu `start`; `--force` memaksa build |
+| `pnpm boot` | **Perintah utama untuk memakai portal**: cek basis data, `tsc` sebagai gerbang murah, build bila kode lebih baru, lalu `start`; `--force` memaksa build |
 | `pnpm serve` | `prisma generate` → migrasi → `build` → `start`; selalu membangun ulang |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 + penampil email di 1080 |
 | `pnpm mail:test` | Mengirim satu contoh dari tiap template email; `--to`, `--only`, `--dry`, `--list` |

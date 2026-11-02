@@ -29,9 +29,13 @@ import { buildState } from "./lib/build-freshness.mjs";
 
 const force = process.argv.includes("--force");
 
-function run(command, args) {
+function run(command, args, env) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: "inherit", shell: process.platform === "win32" });
+    const child = spawn(command, args, {
+      stdio: "inherit",
+      shell: process.platform === "win32",
+      env: env ? { ...process.env, ...env } : process.env,
+    });
 
     child.on("error", reject);
     child.on("exit", (code, signal) => {
@@ -125,10 +129,27 @@ async function main() {
     await run("pnpm", ["exec", "prisma", "generate"]);
     await run("node", ["scripts/apply-migrations.mjs"]);
 
-    console.log("\n  Membangun — ini bagian yang paling berat. Tutup aplikasi lain dan");
-    console.log("  jangan buka peramban dulu; di ponsel build memuncak di sekitar 1.560 MB.\n");
+    // Gerbang murah sebelum gerbang mahal. `tsc` sendirian 456 MB / 3 detik; galat yang
+    // sama lewat `next build` baru ketahuan sesudah 1.649 MB / 72 detik. Build lalu
+    // dijalankan dengan pemeriksaan dimatikan supaya tsc tidak berjalan dua kali.
+    console.log("\n  Memeriksa tipe lebih dulu (murah — sekitar 3 detik)...");
 
-    await run("pnpm", ["exec", "next", "build"]);
+    try {
+      await run("pnpm", ["exec", "tsc", "--noEmit"]);
+    } catch {
+      console.error("\n  Ada galat tipe di atas; build dihentikan sebelum bagian yang mahal.");
+      console.error("      Galat tipe pada kode yang tidak Anda sunting hampir selalu berarti");
+      console.error("      isi folder tidak utuh — `git pull` yang berhenti di tengah");
+      console.error("      meninggalkan sebagian berkas di versi lama.");
+      console.error("      Periksa: pnpm checkup   lalu   git status\n");
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log("\n  Membangun — ini bagian yang paling berat. Tutup aplikasi lain dan");
+    console.log("  jangan buka peramban dulu; di ponsel build memuncak di sekitar 1.650 MB.\n");
+
+    await run("pnpm", ["exec", "next", "build"], { NCC_BUILD_ONLY: "1" });
   }
 
   console.log("\n  Melayani di mode produksi (±290 MB). Tekan Ctrl+C untuk berhenti.\n");
