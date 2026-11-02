@@ -340,6 +340,7 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm serve` | `prisma generate` → migrasi → `build` → `start`; mode produksi, dipakai di Termux |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 + penampil email di 1080 |
 | `pnpm mail:test` | Mengirim satu contoh dari tiap template email; `--to`, `--only`, `--dry`, `--list` |
+| `pnpm upload:check` | Menguji jalur simpan unggahan tanpa peramban; `--mb N` |
 | `pnpm reminders` | Menjalankan tiga pengingat terjadwal lewat portal yang sedang hidup |
 
 ### Pengingat terjadwal
