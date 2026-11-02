@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { RoleCode } from "@/generated/prisma/enums";
+import { CATALOGS, CATALOG_SLUGS, isCatalogSlug } from "@/lib/master-catalog";
 import {
   PASSWORD_MIN,
   ROLE_CODES,
+  catalogEntrySchema,
   createUserSchema,
   departmentSchema,
   hasAdminRole,
@@ -156,5 +158,123 @@ describe("wouldRemoveLastAdmin", () => {
   it("mengenali role Administrator dari daftarnya", () => {
     expect(hasAdminRole(["QA", "ADMIN"])).toBe(true);
     expect(hasAdminRole(["QA", "QA_HEAD"])).toBe(false);
+  });
+});
+
+describe("catalogEntrySchema", () => {
+  const base = { code: "crack_broken", name: "Crack / Broken" };
+
+  it("menormalkan kode menjadi huruf besar dan membolehkan garis bawah", () => {
+    const result = catalogEntrySchema.safeParse(base);
+
+    expect(result.success).toBe(true);
+    expect(result.success ? result.data.code : null).toBe("CRACK_BROKEN");
+  });
+
+  it("memberi urutan tampil bawaan nol", () => {
+    const result = catalogEntrySchema.safeParse(base);
+
+    expect(result.success ? result.data.sortOrder : null).toBe(0);
+  });
+
+  it("menolak urutan tampil yang bukan bilangan bulat tak negatif", () => {
+    expect(catalogEntrySchema.safeParse({ ...base, sortOrder: "-1" }).success).toBe(false);
+    expect(catalogEntrySchema.safeParse({ ...base, sortOrder: "1.5" }).success).toBe(false);
+    expect(catalogEntrySchema.safeParse({ ...base, sortOrder: "7" }).success).toBe(true);
+  });
+
+  it("memecah alamat tambahan yang ditulis sebagai satu kotak teks", () => {
+    // Alamat disalin dari tempat lain dengan pemisah yang berbeda-beda; ketiganya
+    // diterima supaya orang tidak perlu merapikannya lebih dulu.
+    const result = catalogEntrySchema.safeParse({
+      ...base,
+      extraEmails: " QA@nifco.co.id\nmanajemen@nifco.co.id, pabrik@nifco.co.id ; \n",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.success ? result.data.extraEmails : null).toEqual([
+      "qa@nifco.co.id",
+      "manajemen@nifco.co.id",
+      "pabrik@nifco.co.id",
+    ]);
+  });
+
+  it("menolak alamat tambahan yang tidak berbentuk email", () => {
+    const result = catalogEntrySchema.safeParse({ ...base, extraEmails: "qa@nifco.co.id\nbukan" });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("menerima kotak alamat yang kosong", () => {
+    const result = catalogEntrySchema.safeParse({ ...base, extraEmails: "   " });
+
+    expect(result.success).toBe(true);
+    expect(result.success ? result.data.extraEmails : null).toEqual([]);
+  });
+
+  it("menolak kode yang mengandung spasi", () => {
+    expect(errorsFor(catalogEntrySchema.safeParse({ ...base, code: "CRACK BROKEN" }), "code"))
+      .toHaveLength(1);
+  });
+});
+
+describe("CATALOGS", () => {
+  it("mencakup keenam daftar yang belum tersentuh sebelumnya", () => {
+    expect(CATALOG_SLUGS).toEqual([
+      "customers",
+      "parts",
+      "nc-details",
+      "product-categories",
+      "documents",
+      "recipient-groups",
+    ]);
+  });
+
+  it("tiap slug punya definisinya sendiri", () => {
+    for (const slug of CATALOG_SLUGS) {
+      expect(CATALOGS[slug].slug, slug).toBe(slug);
+      expect(CATALOGS[slug].title.length, slug).toBeGreaterThan(0);
+    }
+  });
+
+  it("hanya part yang punya kolom tambahan, hanya grup email yang punya penerima", () => {
+    const withExtra = CATALOG_SLUGS.filter((slug) => CATALOGS[slug].extraField);
+    const withRecipients = CATALOG_SLUGS.filter((slug) => CATALOGS[slug].hasRecipients);
+
+    expect(withExtra).toEqual(["parts"]);
+    expect(withRecipients).toEqual(["recipient-groups"]);
+  });
+
+  it("menolak slug yang tidak dikenal", () => {
+    expect(isCatalogSlug("customers")).toBe(true);
+    expect(isCatalogSlug("users")).toBe(false);
+    expect(isCatalogSlug("../etc/passwd")).toBe(false);
+  });
+});
+
+describe("galat alamat tambahan", () => {
+  it("dilaporkan pada kolomnya, bukan pada elemen ke-sekian", () => {
+    // Kunci "extraEmails.1" tidak pernah sampai ke kotak teksnya, sehingga pengisi
+    // hanya melihat "periksa kembali" tanpa tahu baris mana yang salah.
+    const result = catalogEntrySchema.safeParse({
+      code: "QA_ONLY",
+      name: "QA saja",
+      extraEmails: "qa@nifco.co.id\nbukan\njuga-bukan",
+    });
+
+    expect(result.success).toBe(false);
+    expect(errorsFor(result, "extraEmails")).toHaveLength(1);
+    expect(errorsFor(result, "extraEmails.1")).toHaveLength(0);
+  });
+
+  it("menyebut alamat mana yang bermasalah", () => {
+    const result = catalogEntrySchema.safeParse({
+      code: "QA_ONLY",
+      name: "QA saja",
+      extraEmails: "qa@nifco.co.id\nbukan\njuga-bukan",
+    });
+
+    expect(errorsFor(result, "extraEmails")[0]).toContain("bukan");
+    expect(errorsFor(result, "extraEmails")[0]).toContain("juga-bukan");
   });
 });

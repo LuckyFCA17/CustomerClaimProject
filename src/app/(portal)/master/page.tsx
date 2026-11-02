@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Building2, ChevronRight, Users } from "lucide-react";
+import { Building2, ChevronRight, Database, Users } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { db } from "@/lib/db";
+import { CATALOG_LIST } from "@/lib/master-catalog";
 
 export const metadata: Metadata = {
   title: "Master Data",
@@ -16,15 +15,11 @@ export const metadata: Metadata = {
  * mengulang pemeriksaan role — yang diulang justru di server action, tempat tulisannya
  * benar-benar terjadi.
  *
- * Yang belum dibangun sengaja disebut apa adanya. Daftar yang menyembunyikan bagian
- * yang belum ada akan membuat admin mencarinya berulang kali.
+ * Delapan daftar, dua di antaranya punya aturannya sendiri — departemen dan pengguna
+ * menentukan hak akses — sedangkan enam sisanya hanya "kode + nama + aktif" dan dilayani
+ * satu halaman yang sama.
  */
-export default async function MasterPage() {
-  const [departments, users] = await Promise.all([
-    db.department.count(),
-    db.user.count(),
-  ]);
-
+export default function MasterPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <header className="space-y-1">
@@ -39,34 +34,25 @@ export default async function MasterPage() {
           href="/master/departments"
           icon={Building2}
           title="Departemen"
-          hint={`${departments} departemen — penanggung jawab CPAR dan naungan pengguna`}
+          hint="Penanggung jawab CPAR dan naungan pengguna"
         />
         <Section
           href="/master/users"
           icon={Users}
           title="Pengguna & role"
-          hint={`${users} pengguna — siapa boleh melihat dan memutuskan apa`}
+          hint="Siapa boleh melihat dan memutuskan apa"
         />
-      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Belum dapat diubah dari portal</CardTitle>
-          <CardDescription>
-            Keenamnya masih diisi lewat berkas seed. Menyusul pada bagian berikutnya Fase 7.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="grid gap-1.5 text-sm text-muted-foreground sm:grid-cols-2">
-            <li>Customer</li>
-            <li>Part</li>
-            <li>Non-conformance detail</li>
-            <li>Product category</li>
-            <li>Initial document</li>
-            <li>Grup penerima email</li>
-          </ul>
-        </CardContent>
-      </Card>
+        {CATALOG_LIST.map((catalog) => (
+          <Section
+            key={catalog.slug}
+            href={`/master/${catalog.slug}`}
+            icon={Database}
+            title={catalog.title}
+            hint={catalog.summary}
+          />
+        ))}
+      </div>
     </div>
   );
 }

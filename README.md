@@ -510,7 +510,6 @@ DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
   - [x] Claim list server-side: pencarian, filter, urutan, paginasi
   - [x] Dasbor CPAR: daftar tersaring + tabel action/evidence pending
   - [x] Pengingat terjadwal (§8 #6, #8, #12)
-  - [x] Master data: departemen, pengguna & role
-  - [ ] Master data: customer, part, NC detail, product category, initial document, grup email
+  - [x] Master data CRUD — delapan daftar acuan
   - [ ] Dashboard + grafik, ekspor Excel
 - [ ] **Fase 8** — E2E Playwright, README final

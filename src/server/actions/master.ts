@@ -7,10 +7,12 @@ import { RoleCode } from "@/generated/prisma/enums";
 import { readRequestContext, writeAuditLog } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { NotFoundError, ValidationError } from "@/lib/errors";
+import { CATALOGS, isCatalogSlug, type CatalogSlug } from "@/lib/master-catalog";
 import { assertCan } from "@/lib/permissions";
 import { requireActor } from "@/lib/session";
 import {
   ADMIN_ROLE,
+  catalogEntrySchema,
   createUserSchema,
   departmentSchema,
   hasAdminRole,
@@ -408,6 +410,346 @@ export async function resetUserPassword(input: unknown): Promise<MasterResult> {
     });
 
     return { ok: true, message: `Kata sandi ${user.name} diganti.` };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+// ─────────────────────── Daftar acuan sederhana ───────────────────────
+
+/**
+ * Keenam daftar acuan dilayani satu jalur.
+ *
+ * Yang berbeda antar daftar hanya tabel tujuannya dan kolom mana yang dipakai; sisanya
+ * — izin, keunikan kode, audit, penonaktifan — sama persis. Percabangannya dikumpulkan
+ * pada dua switch di bawah, bukan disebar menjadi enam berkas yang mirip.
+ */
+
+interface CatalogAccess {
+  /** Nama kolom kode pada tabelnya; part memakai nomor part sebagai kodenya. */
+  readonly codeField: "code" | "internalPartNo";
+  readonly findByCode: (code: string, exceptId: string | null) => Promise<{ id: string } | null>;
+  readonly create: (data: CatalogWriteData) => Promise<{ id: string }>;
+  readonly update: (id: string, data: CatalogWriteData) => Promise<{ id: string }>;
+  readonly setActive: (id: string, isActive: boolean) => Promise<{ id: string }>;
+}
+
+interface CatalogWriteData {
+  readonly code: string;
+  readonly name: string;
+  readonly sortOrder: number;
+  readonly extra?: string;
+  readonly roleCodes: readonly RoleCode[];
+  readonly extraEmails: readonly string[];
+  readonly isActive: boolean;
+}
+
+function accessFor(slug: CatalogSlug): CatalogAccess {
+  switch (slug) {
+    case "customers":
+      return {
+        codeField: "code",
+        findByCode: (code, exceptId) =>
+          db.customer.findFirst({
+            where: { code, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+            select: { id: true },
+          }),
+        create: (data) =>
+          db.customer.create({
+            data: { code: data.code, name: data.name, isActive: data.isActive },
+            select: { id: true },
+          }),
+        update: (id, data) =>
+          db.customer.update({
+            where: { id },
+            data: { code: data.code, name: data.name, isActive: data.isActive },
+            select: { id: true },
+          }),
+        setActive: (id, isActive) =>
+          db.customer.update({ where: { id }, data: { isActive }, select: { id: true } }),
+      };
+
+    case "parts":
+      return {
+        codeField: "internalPartNo",
+        findByCode: (code, exceptId) =>
+          db.part.findFirst({
+            where: { internalPartNo: code, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+            select: { id: true },
+          }),
+        create: (data) =>
+          db.part.create({
+            data: {
+              internalPartNo: data.code,
+              name: data.name,
+              customerPartNo: data.extra || null,
+              isActive: data.isActive,
+            },
+            select: { id: true },
+          }),
+        update: (id, data) =>
+          db.part.update({
+            where: { id },
+            data: {
+              internalPartNo: data.code,
+              name: data.name,
+              customerPartNo: data.extra || null,
+              isActive: data.isActive,
+            },
+            select: { id: true },
+          }),
+        setActive: (id, isActive) =>
+          db.part.update({ where: { id }, data: { isActive }, select: { id: true } }),
+      };
+
+    case "nc-details":
+      return {
+        codeField: "code",
+        findByCode: (code, exceptId) =>
+          db.nonConformanceDetail.findFirst({
+            where: { code, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+            select: { id: true },
+          }),
+        create: (data) =>
+          db.nonConformanceDetail.create({
+            data: {
+              code: data.code,
+              name: data.name,
+              sortOrder: data.sortOrder,
+              isActive: data.isActive,
+            },
+            select: { id: true },
+          }),
+        update: (id, data) =>
+          db.nonConformanceDetail.update({
+            where: { id },
+            data: {
+              code: data.code,
+              name: data.name,
+              sortOrder: data.sortOrder,
+              isActive: data.isActive,
+            },
+            select: { id: true },
+          }),
+        setActive: (id, isActive) =>
+          db.nonConformanceDetail.update({
+            where: { id },
+            data: { isActive },
+            select: { id: true },
+          }),
+      };
+
+    case "product-categories":
+      return {
+        codeField: "code",
+        findByCode: (code, exceptId) =>
+          db.productCategory.findFirst({
+            where: { code, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+            select: { id: true },
+          }),
+        create: (data) =>
+          db.productCategory.create({
+            data: {
+              code: data.code,
+              name: data.name,
+              sortOrder: data.sortOrder,
+              isActive: data.isActive,
+            },
+            select: { id: true },
+          }),
+        update: (id, data) =>
+          db.productCategory.update({
+            where: { id },
+            data: {
+              code: data.code,
+              name: data.name,
+              sortOrder: data.sortOrder,
+              isActive: data.isActive,
+            },
+            select: { id: true },
+          }),
+        setActive: (id, isActive) =>
+          db.productCategory.update({ where: { id }, data: { isActive }, select: { id: true } }),
+      };
+
+    case "documents":
+      return {
+        codeField: "code",
+        findByCode: (code, exceptId) =>
+          db.initialDocument.findFirst({
+            where: { code, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+            select: { id: true },
+          }),
+        create: (data) =>
+          db.initialDocument.create({
+            data: {
+              code: data.code,
+              name: data.name,
+              sortOrder: data.sortOrder,
+              isActive: data.isActive,
+            },
+            select: { id: true },
+          }),
+        update: (id, data) =>
+          db.initialDocument.update({
+            where: { id },
+            data: {
+              code: data.code,
+              name: data.name,
+              sortOrder: data.sortOrder,
+              isActive: data.isActive,
+            },
+            select: { id: true },
+          }),
+        setActive: (id, isActive) =>
+          db.initialDocument.update({ where: { id }, data: { isActive }, select: { id: true } }),
+      };
+
+    case "recipient-groups":
+      return {
+        codeField: "code",
+        findByCode: (code, exceptId) =>
+          db.recipientGroup.findFirst({
+            where: { code, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+            select: { id: true },
+          }),
+        create: (data) =>
+          db.recipientGroup.create({
+            data: {
+              code: data.code,
+              name: data.name,
+              roleCodes: [...data.roleCodes],
+              extraEmails: [...data.extraEmails],
+              isActive: data.isActive,
+            },
+            select: { id: true },
+          }),
+        update: (id, data) =>
+          db.recipientGroup.update({
+            where: { id },
+            data: {
+              code: data.code,
+              name: data.name,
+              roleCodes: [...data.roleCodes],
+              extraEmails: [...data.extraEmails],
+              isActive: data.isActive,
+            },
+            select: { id: true },
+          }),
+        setActive: (id, isActive) =>
+          db.recipientGroup.update({ where: { id }, data: { isActive }, select: { id: true } }),
+      };
+  }
+}
+
+function revalidateCatalog(slug: CatalogSlug): void {
+  revalidatePath(`/master/${slug}`);
+  // Daftar acuan mengisi pilihan di form klaim dan CPAR; keduanya ikut disegarkan
+  // supaya isian yang baru ditambahkan langsung dapat dipilih.
+  revalidatePath("/claims");
+  revalidatePath("/cpar");
+}
+
+export async function saveCatalogEntry(
+  slug: CatalogSlug,
+  id: string | null,
+  input: unknown,
+): Promise<MasterResult> {
+  try {
+    const actor = await requireActor();
+    assertCan(actor, "master.manage");
+
+    if (!isCatalogSlug(slug)) throw new NotFoundError("Daftar acuan tidak dikenal.");
+
+    const parsed = catalogEntrySchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        message: "Periksa kembali isiannya.",
+        fieldErrors: flattenZodErrors(parsed.error),
+      };
+    }
+
+    const definition = CATALOGS[slug];
+    const access = accessFor(slug);
+    const data = parsed.data;
+
+    const clash = await access.findByCode(data.code, id);
+    if (clash) {
+      return {
+        ok: false,
+        message: `${definition.codeLabel} sudah dipakai.`,
+        fieldErrors: { code: [`${data.code} sudah dipakai baris lain.`] },
+      };
+    }
+
+    if (definition.hasRecipients && data.roleCodes.length === 0 && data.extraEmails.length === 0) {
+      return {
+        ok: false,
+        message: "Grup tanpa penerima tidak akan mengirim apa pun.",
+        fieldErrors: { roleCodes: ["Pilih setidaknya satu role, atau isi alamat tambahan."] },
+      };
+    }
+
+    const requestContext = await readRequestContext();
+    const saved = id ? await access.update(id, data) : await access.create(data);
+
+    await db.$transaction(async (tx) => {
+      await writeAuditLog(
+        tx,
+        {
+          actorId: actor.id,
+          entityType: definition.title,
+          entityId: saved.id,
+          action: "master.manage",
+          payloadDiff: { code: data.code, name: data.name, isActive: data.isActive, created: !id },
+        },
+        requestContext,
+      );
+    });
+
+    revalidateCatalog(slug);
+
+    return {
+      ok: true,
+      message: id ? `${data.name} diperbarui.` : `${data.name} ditambahkan.`,
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function setCatalogEntryActive(
+  slug: CatalogSlug,
+  id: string,
+  isActive: boolean,
+): Promise<MasterResult> {
+  try {
+    const actor = await requireActor();
+    assertCan(actor, "master.manage");
+
+    if (!isCatalogSlug(slug)) throw new NotFoundError("Daftar acuan tidak dikenal.");
+
+    const requestContext = await readRequestContext();
+    await accessFor(slug).setActive(id, isActive);
+
+    await db.$transaction(async (tx) => {
+      await writeAuditLog(
+        tx,
+        {
+          actorId: actor.id,
+          entityType: CATALOGS[slug].title,
+          entityId: id,
+          action: "master.manage",
+          payloadDiff: { isActive },
+        },
+        requestContext,
+      );
+    });
+
+    revalidateCatalog(slug);
+
+    return { ok: true, message: isActive ? "Diaktifkan." : "Dinonaktifkan." };
   } catch (error) {
     return failure(error);
   }

@@ -127,3 +127,71 @@ export function wouldRemoveLastAdmin(input: {
 
   return input.activeAdmins <= 1;
 }
+
+// ─────────────────────── Daftar acuan sederhana ───────────────────────
+
+/**
+ * Satu skema untuk keenam daftar acuan.
+ *
+ * Kolom yang tidak dipakai sebuah daftar tetap diterima lalu diabaikan server saat
+ * menyimpan. Membuat enam skema yang 80% sama hanya memindahkan percabangan dari satu
+ * tempat ke enam tempat, dan di enam tempat ia akan berbeda-beda seiring waktu.
+ */
+export const catalogEntrySchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(2, "Kode minimal 2 karakter.")
+    .max(40, "Kode maksimal 40 karakter.")
+    .regex(/^[A-Za-z0-9_&-]+$/, "Kode hanya boleh huruf, angka, _, & dan -.")
+    .transform((value) => value.toUpperCase()),
+  name: z.string().trim().min(2, "Nama wajib diisi.").max(120, "Maksimal 120 karakter."),
+  /** Hanya dipakai daftar yang urutan tampilnya ditentukan manusia. */
+  sortOrder: z.coerce
+    .number({ message: "Urutan harus berupa angka." })
+    .int("Urutan harus bilangan bulat.")
+    .min(0, "Urutan tidak boleh negatif.")
+    .max(9999, "Urutan terlalu besar.")
+    .default(0),
+  /** Hanya dipakai part. */
+  extra: trimmed(60).optional().or(z.literal("")),
+  /** Hanya dipakai grup penerima email. */
+  roleCodes: z.array(z.enum(RoleCode, { message: "Role tidak dikenal." })).default([]),
+  /**
+   * Alamat tambahan ditulis sebagai satu kotak teks.
+   *
+   * Galat per baris dilaporkan pada kolomnya, bukan pada elemen ke-sekian: Zod
+   * menamai galat elemen `extraEmails.1`, dan kunci itu tidak pernah sampai ke kotak
+   * teksnya — pengisi hanya melihat "periksa kembali" tanpa tahu baris mana. Pesannya
+   * menyebut alamat yang bermasalah, karena itulah yang dicari matanya.
+   */
+  extraEmails: z
+    .preprocess(
+      // Pemisahnya boleh baris baru, koma, atau titik koma — ketiganya muncul saat
+      // alamat disalin dari tempat lain.
+      (value) =>
+        typeof value === "string"
+          ? value
+              .split(/[\n,;]+/)
+              .map((entry) => entry.trim().toLowerCase())
+              .filter(Boolean)
+          : value,
+      z
+        .array(z.string())
+        .max(50, "Maksimal 50 alamat.")
+        .superRefine((entries, ctx) => {
+          const invalid = entries.filter((entry) => !z.email().safeParse(entry).success);
+
+          if (invalid.length > 0) {
+            ctx.addIssue({
+              code: "custom",
+              message: `Bukan alamat email: ${invalid.join(", ")}.`,
+            });
+          }
+        }),
+    )
+    .default([]),
+  isActive: z.coerce.boolean().default(true),
+});
+
+export type CatalogEntryInput = z.infer<typeof catalogEntrySchema>;
