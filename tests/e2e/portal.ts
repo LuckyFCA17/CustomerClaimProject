@@ -131,3 +131,164 @@ export async function fillClaimForm(page: Page, partName: string): Promise<void>
   }
 
 }
+
+/** Menyimpan satu section CPAR dan menunggu halaman menulis ulang keadaannya. */
+async function saveSection(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Save update", exact: true }).first().click();
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(1200);
+}
+
+/**
+ * Mengisi satu analisis 4M1E — dipakai dua kali, untuk occurrence dan outflow.
+ *
+ * Editor yang terbuka dikenali dari id medannya, bukan dari urutan tombol. Kedua tombol
+ * pembukanya bernama sama persis ("Mulai analisis 4M1E"), dan begitu yang pertama diisi,
+ * urutan tombol yang tersisa bergeser — memilih berdasarkan indeks akan mengisi section
+ * yang sama dua kali tanpa ada yang terlihat salah.
+ */
+async function fillRootCause(page: Page): Promise<string> {
+  await page.getByRole("button", { name: "Mulai analisis 4M1E", exact: true }).first().click();
+  await page.waitForTimeout(900);
+
+  const key = (await page.locator("#ROOT_CAUSE_OCCURRENCE-problem").count())
+    ? "ROOT_CAUSE_OCCURRENCE"
+    : "ROOT_CAUSE_OUTFLOW";
+
+  const occurrence = key === "ROOT_CAUSE_OCCURRENCE";
+
+  await page
+    .locator(`#${key}-problem`)
+    .fill(occurrence ? "Kaki pengunci patah saat perakitan" : "Part cacat lolos ke pelanggan");
+
+  await page.getByRole("button", { name: occurrence ? "Machine" : "Method", exact: true }).click();
+  await page.waitForTimeout(700);
+
+  await page.getByLabel("Item yang diperiksa").fill(occurrence ? "Tekanan injeksi" : "Inspeksi akhir");
+  await page.getByLabel("Control point (standar acuan)").fill(occurrence ? "45 ± 2 MPa" : "100% visual");
+  await page.getByLabel("Kondisi aktual").fill(occurrence ? "Terukur 38 MPa" : "Sampling 10%");
+  await page.getByLabel("Judgement").selectOption("NG");
+
+  // Tidak ada tombol yang perlu ditekan: rantai 5 Why terbuka sendiri begitu judgement
+  // bernilai NG, dan tombol "Telusuri 5 Why" justru menghilang saat itu.
+  await page.waitForTimeout(700);
+
+  // Lima tingkat; yang terdalam adalah akarnya.
+  const whys = occurrence
+    ? [
+        "Tekanan injeksi di bawah standar",
+        "Katup regulator aus",
+        "Tidak masuk jadwal perawatan",
+        "Daftar komponen kritis belum memuat regulator",
+        "Standar perawatan tidak ditinjau sejak 2024",
+      ]
+    : [
+        "Inspeksi akhir hanya sampling",
+        "Standar inspeksi menetapkan sampling",
+        "Part belum diklasifikasikan kritis",
+        "Klasifikasi mengikuti dokumen lama",
+        "Tidak ada tinjauan klasifikasi part",
+      ];
+
+  // Baris berikutnya baru muncul setelah baris sebelumnya terisi, jadi jumlahnya
+  // dihitung ulang tiap langkah alih-alih sekali di awal.
+  for (let level = 0; level < whys.length; level += 1) {
+    const field = page.getByLabel(new RegExp(`^Why ${level + 1} untuk faktor`));
+
+    if ((await field.count()) === 0) break;
+
+    await field.first().fill(whys[level]);
+    await page.waitForTimeout(250);
+  }
+
+  await page
+    .locator(`#${key}-conclusion`)
+    .fill(whys[whys.length - 1]);
+
+  await saveSection(page);
+
+  return key;
+}
+
+/**
+ * Mengisi satu baris rencana tindakan: isi tindakan, PIC yang diminta, dan tanggalnya.
+ *
+ * Ketiganya wajib. Menambahkan baris lalu menyimpannya tanpa diisi membuat section
+ * terbaca "tersimpan" padahal kosong — dan itu yang membuat asersi longgar lolos sementara
+ * CPAR-nya sebenarnya belum lengkap.
+ */
+async function fillActionRow(
+  page: Page,
+  itemLabel: string,
+  action: string,
+  implementedOn: string,
+): Promise<void> {
+  await page.getByLabel(itemLabel, { exact: true }).fill(action);
+  await page.getByLabel("PIC yang diminta").last().selectOption({ index: 1 });
+  await page.getByLabel("Tanggal implementasi").last().fill(implementedOn);
+}
+
+/**
+ * Mengisi seluruh section CPAR sampai siap dikirim ke rantai verifikasi.
+ *
+ * Isinya sengaja masuk akal, bukan "aaa": lembar CPAR ikut tercetak ke PDF dan terbaca
+ * pada email, dan uji yang meninggalkan omong kosong di sana menyembunyikan tata letak
+ * yang rusak justru pada data yang panjangnya wajar.
+ */
+export async function fillCparSections(page: Page, cparUrl: string): Promise<void> {
+  const open = async (name: string) => {
+    await page.goto(cparUrl);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(800);
+    await page.getByRole("button", { name, exact: true }).first().click();
+    await page.waitForTimeout(900);
+  };
+
+  await open("Isi tindakan penahan");
+  await page.getByRole("button", { name: "Selection stock internal", exact: true }).click();
+  await page.locator("#ta-note").fill("Seluruh stok internal disortir 100%; 12 pcs NG ditahan.");
+  await saveSection(page);
+
+  await open("Gambar alur proses");
+  await page.getByRole("button", { name: "Pakai alur umum NID", exact: true }).click();
+  await page.waitForTimeout(700);
+  await page.locator("#flow-note").fill("Alur standar NID; titik deteksi ada pada inspeksi akhir.");
+  await saveSection(page);
+
+  await page.goto(cparUrl);
+  await page.waitForLoadState("networkidle");
+  await fillRootCause(page);
+
+  await page.goto(cparUrl);
+  await page.waitForLoadState("networkidle");
+  await fillRootCause(page);
+
+  await open("Isi perbaikan tetap");
+  await page.getByRole("button", { name: "Tambah tindakan", exact: true }).click();
+  await page.waitForTimeout(700);
+  await fillActionRow(
+    page,
+    "Tindakan perbaikan 1",
+    "Mengganti seal regulator mesin 4 dan memasukkannya ke jadwal perawatan jam operasi",
+    "2026-11-18",
+  );
+  await saveSection(page);
+
+  await open("Isi standardisasi & penyebaran");
+  await page.getByRole("button", { name: "Tambah baris", exact: true }).click();
+  await page.waitForTimeout(700);
+  await fillActionRow(
+    page,
+    "Dokumen atau penerapan 1",
+    "WI-PRD-014 direvisi ke rev. 3 dan jadwal perawatan diterapkan ke mesin 1–3",
+    "2026-11-19",
+  );
+  await saveSection(page);
+
+  await open("Isi section");
+  await page
+    .locator("textarea")
+    .last()
+    .fill("Pemantauan tiga periode mingguan; efektif bila tidak ada temuan berulang.");
+  await saveSection(page);
+}

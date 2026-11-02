@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { act, fillClaimForm, login, loginAs, USERS } from "./portal";
+import { act, fillClaimForm, fillCparSections, login, loginAs, USERS } from "./portal";
 
 /**
  * Happy path penuh (§7 Fase 8): satu klaim dari draft kosong sampai Verified Closed.
@@ -72,4 +72,30 @@ test("QA Dept. Head menerbitkan CPAR ke departemen penanggung jawab", async ({ p
 
   await expect(page.locator("body")).toContainText(/NID\/CPAR\/\d{2}\/\d{4}/);
   await expect(page.locator("body")).toContainText(/Production/);
+});
+
+test("Production Dept. Head mengisi seluruh section CPAR", async ({ page }) => {
+  await loginAs(page, USERS.prodHead);
+
+  const cparUrl = `/cpar/${claimUrl.split("/").pop()}`;
+
+  await fillCparSections(page, cparUrl);
+
+  await page.goto(cparUrl);
+  await page.waitForLoadState("networkidle");
+
+  // Seluruh tombol pembuka harus hilang. Memeriksa satu section saja membuat uji ini
+  // lolos sementara tiga section lain masih kosong — persis yang sempat terjadi.
+  for (const opener of [
+    "Isi tindakan penahan",
+    "Gambar alur proses",
+    "Mulai analisis 4M1E",
+    "Isi perbaikan tetap",
+    "Isi standardisasi & penyebaran",
+    "Isi section",
+  ]) {
+    await expect(page.getByRole("button", { name: opener, exact: true })).toHaveCount(0);
+  }
+
+  await expect(page.locator("body")).toContainText(/CPAR in progress/i);
 });
