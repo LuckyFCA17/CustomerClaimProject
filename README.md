@@ -233,6 +233,33 @@ rm -rf .next
 pnpm serve
 ```
 
+**`git pull` yang tidak selesai.** Di perangkat yang membunuh proses saat memori menipis,
+pull dapat berhenti di tengah dan meninggalkan working tree campur: sebagian berkas sudah
+versi baru, satu-dua tertinggal di versi lama. Gejalanya muncul jauh dari sebabnya —
+build gagal dengan *type error* tentang properti yang "hilang", padahal di repositori
+properti itu ada dan ditambahkan pada commit yang sama dengan pemakainya. Contoh nyata:
+
+```
+src/emails/types.ts:45:14
+Type error: Property 'CPAR_EVIDENCE_REQUEST' is missing in type '{ … }'
+            but required in type 'Record<NotificationType, string>'.
+```
+
+Tidak ada pesan git yang muncul belakangan untuk memberi tahu bahwa pull-nya tidak utuh.
+`pnpm checkup` menyebutkannya, dan perbaikannya adalah menyamakan isi folder dengan
+commit-nya:
+
+```bash
+git status                                        # lihat apa yang berbeda
+git fetch origin claude/nid-customer-claim-portal-tcippa
+git reset --hard origin/claude/nid-customer-claim-portal-tcippa
+rm -rf .next && pnpm boot
+```
+
+> `git reset --hard` membuang suntingan lokal pada berkas ter-track. Pada salinan yang
+> hanya dipakai menjalankan portal itu memang yang diinginkan; bila ada suntingan yang
+> ingin disimpan, `git stash` lebih dulu.
+
 Catatan terkait: bila peramban tidak menyediakan `OffscreenCanvas`/`createImageBitmap`,
 foto **tidak diperkecil** sebelum dikirim dan melintas utuh — portal menampilkan
 peringatan "Foto dikirim tanpa diperkecil" sekali per sesi agar sebabnya terlihat.

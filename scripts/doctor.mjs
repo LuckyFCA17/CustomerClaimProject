@@ -1,5 +1,7 @@
+import { execFile } from "node:child_process";
 import { createConnection } from "node:net";
 import { access, readFile, readdir } from "node:fs/promises";
+import { promisify } from "node:util";
 import { platform, totalmem } from "node:os";
 import path from "node:path";
 
@@ -107,8 +109,74 @@ async function checkProjectRoot() {
 
   ok("package.json dan prisma/migrations ditemukan");
   await checkStrayCopies();
+  await checkWorktree();
 
   return true;
+}
+
+const exec = promisify(execFile);
+
+/** Menjalankan git dan mengembalikan keluarannya; null bila git tidak ada atau gagal. */
+async function git(args) {
+  try {
+    const { stdout } = await exec("git", args, { timeout: 8000 });
+
+    // Hanya ujung yang dipangkas. `git status --porcelain` menandai berkas yang berubah
+    // di luar index dengan spasi di kolom pertama (" M path"); trim penuh membuang spasi
+    // itu pada baris pertama saja, sehingga nama berkasnya tercetak kurang satu huruf.
+    return stdout.replace(/\s+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Memastikan isi folder benar-benar sama dengan commit yang sedang ditunjuk.
+ *
+ * `git pull` tidak selalu selesai di perangkat yang membunuh proses saat memori menipis.
+ * Yang tersisa adalah working tree campur: sebagian berkas sudah versi baru, satu-dua
+ * berkas tertinggal di versi lama. Gejalanya muncul jauh dari sebabnya — build gagal
+ * dengan type error tentang properti yang "hilang", padahal di repositori properti itu
+ * ada, dan ditambahkan pada commit yang sama dengan pemakainya.
+ *
+ * Tidak ada pesan git yang muncul belakangan untuk memberi tahu bahwa pull-nya tidak
+ * utuh, jadi pemeriksaan ini yang menyebutkannya.
+ */
+async function checkWorktree() {
+  const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
+
+  if (branch === null) {
+    ok("bukan working tree git (atau git tidak terpasang) — pemeriksaan versi dilewati");
+    return;
+  }
+
+  // Hanya berkas ter-track; berkas baru yang belum di-commit bukan urusan pemeriksaan ini.
+  const dirty = (await git(["status", "--porcelain", "--untracked-files=no"])) ?? "";
+  const changed = dirty.split("\n").filter(Boolean);
+
+  if (changed.length > 0) {
+    const names = changed.slice(0, 4).map((line) => line.slice(3)).join(" · ");
+
+    warn(
+      `${changed.length} berkas berbeda dari commit ${branch} — bisa berarti git pull tidak selesai`,
+      `periksa dengan git status; bila tidak ada suntingan yang ingin disimpan: git reset --hard origin/${branch} (${names}${changed.length > 4 ? " · …" : ""})`,
+    );
+  } else {
+    ok(`isi folder sama persis dengan commit ${branch}`);
+  }
+
+  const behind = await git(["rev-list", "--count", `HEAD..origin/${branch}`]);
+
+  if (behind === null) return;
+
+  if (Number(behind) > 0) {
+    warn(
+      `tertinggal ${behind} commit dari origin/${branch}`,
+      `git pull origin ${branch}, lalu pnpm boot`,
+    );
+  } else {
+    ok(`sudah sejajar dengan origin/${branch} yang terakhir diambil`);
+  }
 }
 
 /**
