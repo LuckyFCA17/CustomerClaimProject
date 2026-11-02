@@ -1,10 +1,12 @@
 import { createConnection } from "node:net";
-import { access, readFile, readdir, stat } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { platform, totalmem } from "node:os";
 import path from "node:path";
 
 import "dotenv/config";
 import pg from "pg";
+
+import { buildState } from "./lib/build-freshness.mjs";
 
 /**
  * Memeriksa kesiapan lingkungan sebelum portal dipakai.
@@ -153,24 +155,17 @@ async function checkStrayCopies() {
 async function checkBuildFreshness() {
   console.log("\nHasil build");
 
-  const buildId = await stat(path.resolve(".next/BUILD_ID")).catch(() => null);
+  const { state, minutesBehind } = await buildState();
 
-  if (!buildId) {
-    warn(
-      "belum pernah di-build",
-      "wajib sebelum pnpm start; pnpm dev tidak memerlukannya",
-    );
+  if (state === "missing") {
+    warn("belum pernah di-build", "wajib sebelum pnpm start; pnpm dev tidak memerlukannya");
     return;
   }
 
-  const newest = await newestSourceMtime();
-
-  if (newest > buildId.mtimeMs) {
-    const minutes = Math.round((newest - buildId.mtimeMs) / 60000);
-
+  if (state === "stale") {
     fail(
-      `kode lebih baru daripada hasil build (selisih ${minutes} menit) — route baru akan 404`,
-      "pnpm build, lalu jalankan ulang pnpm start",
+      `kode lebih baru daripada hasil build (selisih ${minutesBehind} menit) — route baru akan 404`,
+      "pnpm boot membangun ulang sendiri bila perlu",
     );
     return;
   }
@@ -178,48 +173,6 @@ async function checkBuildFreshness() {
   ok("hasil build lebih baru daripada kodenya");
 }
 
-/** Waktu ubah terakhir di antara berkas yang memengaruhi hasil build. */
-async function newestSourceMtime() {
-  const roots = ["src", "prisma/schema.prisma", "next.config.ts", "package.json"];
-  let newest = 0;
-
-  async function walk(target) {
-    const info = await stat(target).catch(() => null);
-    if (!info) return;
-
-    if (info.isDirectory()) {
-      const entries = await readdir(target, { withFileTypes: true });
-      for (const entry of entries) {
-        // src/generated diisi ulang `prisma generate` setiap pnpm install, jadi
-        // waktunya tidak mencerminkan perubahan kode yang perlu di-build ulang.
-        if (entry.name === "generated") continue;
-        await walk(path.join(target, entry.name));
-      }
-      return;
-    }
-
-    newest = Math.max(newest, info.mtimeMs);
-  }
-
-  for (const root of roots) {
-    await walk(path.resolve(root));
-  }
-
-  return newest;
-}
-
-/**
- * Memastikan Prisma Client hasil generate sejalan dengan schema.
- *
- * `src/generated` tidak ikut di-commit, jadi `git pull` tidak pernah membawanya: ia
- * hanya berubah ketika `prisma generate` dijalankan. Setelah schema menambah enum,
- * client lama tidak mengekspornya, dan impor yang undefined baru meledak jauh di
- * dalam Zod sebagai "Cannot convert undefined or null to object" — galat yang sama
- * sekali tidak menyebut Prisma maupun langkah yang terlewat.
- *
- * Yang dibandingkan adalah daftar enum-nya, bukan waktu berkas: lebih langsung, dan
- * tidak terpengaruh jam sistem maupun urutan penyalinan berkas.
- */
 async function checkPrismaClient() {
   console.log("\nPrisma Client");
 

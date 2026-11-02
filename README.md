@@ -151,9 +151,14 @@ pnpm db:seed
 
 # 7. Jalankan — dua proses, masing-masing di sesi Termux sendiri
 #    (geser dari tepi kiri → NEW SESSION untuk membuka sesi kedua)
-pnpm mail:sink                # sesi 1 · penangkap SMTP :1025, pengganti MailHog
-pnpm dev                      # sesi 2 · http://localhost:3000
+pnpm mail:sink                # sesi 1 · penangkap SMTP :1025 + penampil :1080
+pnpm boot                     # sesi 2 · http://localhost:3000
 ```
+
+`pnpm boot` adalah satu-satunya perintah yang perlu diingat untuk memakai portal. Ia
+memeriksa PostgreSQL, membangun ulang **hanya bila kodenya lebih baru daripada hasil
+build**, lalu melayani dalam mode produksi. Jangan pakai `pnpm dev` di ponsel — alasannya
+di bagian *Unggah foto gagal* di bawah.
 
 Buka `http://localhost:3000` di peramban ponsel yang sama. Masuk dengan akun demo di bawah.
 
@@ -164,8 +169,9 @@ Setiap kali Termux dibuka ulang, PostgreSQL perlu dinyalakan lagi — langkah 1�
 sekali seumur pemasangan:
 
 ```bash
-pg_ctl -D $PREFIX/var/lib/postgresql start
-cd CustomerClaimProject && pnpm dev
+termux-wake-lock
+pg_ctl -D $PREFIX/var/lib/postgresql start      # lewati bila sudah jalan
+cd CustomerClaimProject && pnpm boot
 ```
 
 ### Unggah foto gagal: "Failed to fetch"
@@ -186,8 +192,16 @@ mode produksi **±287 MB** dan memuncak di **±343 MB** saat menerima foto 4,65 
 **mode produksi**, bukan `pnpm dev`:
 
 ```bash
-pnpm serve      # = pnpm build && pnpm start
+pnpm boot       # build bila perlu, lalu start
 ```
+
+Tiga perintah dan kapan memakainya — `pnpm boot` memilihkan dua yang terakhir:
+
+| Perintah | Memori | Kapan |
+|---|---|---|
+| `pnpm dev` | ±1.723 MB **terus-menerus** | hanya saat menulis kode di mesin ber-RAM besar |
+| `pnpm build` | ±1.560 MB, sekali | otomatis dijalankan `pnpm boot` bila kode lebih baru |
+| `pnpm start` | ±287 MB (±343 MB saat unggah foto) | melayani; inilah yang dipakai sehari-hari |
 
 `pnpm checkup` memeriksa sisa memori perangkat dan memperingatkan lebih dulu bila mode dev
 tidak akan muat.
@@ -365,7 +379,8 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm env:init` | Membuat `.env` dari `.env.example` dan mengisi `AUTH_SECRET` |
 | `pnpm checkup` | Memeriksa folder, salinan liar, umur build, memori, `.env`, basis data, migrasi, seed, dan SMTP |
 | `pnpm run doctor` | Nama lama `pnpm checkup`; **`pnpm doctor` tanpa `run` menjalankan pemeriksa milik pnpm, bukan portal** |
-| `pnpm serve` | `prisma generate` → migrasi → `build` → `start`; mode produksi, dipakai di Termux |
+| `pnpm boot` | **Perintah utama untuk memakai portal**: cek basis data, build bila kode lebih baru, lalu `start`; `--force` memaksa build |
+| `pnpm serve` | `prisma generate` → migrasi → `build` → `start`; selalu membangun ulang |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 + penampil email di 1080 |
 | `pnpm mail:test` | Mengirim satu contoh dari tiap template email; `--to`, `--only`, `--dry`, `--list` |
 | `pnpm upload:check` | Menguji jalur simpan unggahan tanpa peramban; `--mb N` |

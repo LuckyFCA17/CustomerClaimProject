@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "serve": "prisma generate && node scripts/apply-migrations.mjs && next build && next start",
+    "boot": "node scripts/run.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
