@@ -90,11 +90,11 @@ su postgres -c "createdb -O ncc ncc_portal"
 Untuk SMTP, jalankan penangkap bawaan repo di terminal terpisah:
 
 ```bash
-pnpm mail:sink        # mendengarkan 127.0.0.1:1025, menyimpan .eml ke ./.mail
+pnpm mail:sink        # SMTP :1025 → ./.mail, penampil web :1080
 ```
 
-Email tidak pernah diteruskan ke mana pun; berkas `.eml`-nya dapat dibuka langsung beserta
-lampiran PDF-nya.
+Email tidak pernah diteruskan ke mana pun. Isinya tersimpan sebagai `.eml` dan dapat dibaca
+di <http://localhost:1080>, termasuk dari ponsel di jaringan yang sama.
 </details>
 
 <details>
@@ -318,7 +318,8 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm env:init` | Membuat `.env` dari `.env.example` dan mengisi `AUTH_SECRET` |
 | `pnpm doctor` | Memeriksa folder, umur build, `.env`, basis data, migrasi, seed, dan SMTP |
 | `pnpm serve` | `prisma generate` → migrasi → `build` → `start`; mode produksi, dipakai di Termux |
-| `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 bila MailHog tidak tersedia |
+| `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 + penampil email di 1080 |
+| `pnpm mail:test` | Mengirim satu contoh dari tiap template email; `--to`, `--only`, `--dry`, `--list` |
 | `pnpm reminders` | Menjalankan tiga pengingat terjadwal lewat portal yang sedang hidup |
 
 ### Pengingat terjadwal
@@ -455,6 +456,54 @@ visibilitas §3 yang bekerja.
 yang dipakai hanya `@react-email/render` — perender React Email yang masih didukung. Primitif
 email (shell, tabel ringkasan, tombol) ditulis sendiri di `src/emails/primitives.tsx` memakai
 tabel dan atribut lawas, karena klien email korporat tidak dapat diandalkan untuk flexbox.
+
+### Menguji email dari ponsel Android
+
+Ada dua pertanyaan berbeda, dan setelannya tidak sama.
+
+**"Apakah emailnya benar?"** — isi, tautan, dan ke-15 tampilannya. Jawabannya tidak perlu
+relay sungguhan:
+
+```bash
+pnpm mail:sink                          # terminal 1 · SMTP :1025 + penampil :1080
+pnpm mail:test --to apa@pun.test        # terminal 2 · satu contoh tiap template
+```
+
+Ke-15 email mendarat di penampil. Buka alamat LAN yang tercetak saat `mail:sink` start dari
+peramban ponsel; ada pengubah lebar 360/414px untuk melihat tata letaknya pada ukuran ponsel,
+beserta versi teks, sumber `.eml`, dan lampirannya.
+
+**"Apakah tampilannya benar di aplikasi Gmail Android?"** — ini hanya terjawab di kotak masuk
+Gmail sungguhan, karena yang diuji justru mesin render Gmail: ia membuang sebagian CSS,
+memaksa mode gelap, dan memotong email di atas 102KB. Arahkan SMTP ke relay:
+
+```bash
+SMTP_HOST=smtp.gmail.com                # App Password, bukan sandi akun
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=anda@gmail.com
+SMTP_PASSWORD=xxxxxxxxxxxxxxxx
+MAIL_FROM="NCC Portal <anda@gmail.com>"
+```
+
+```bash
+pnpm mail:test --to anda+ncc@gmail.com --yes
+```
+
+`--yes` wajib begitu `SMTP_HOST` bukan loopback: satu perintah mengirim 15 email sungguhan,
+dan alamat seed portal ini berakhiran `@nifco.co.id` yang bisa jadi domain aktif. Ganti dulu
+alamat akun demo lewat **Data acuan → Pengguna** menjadi alias `anda+qa@gmail.com`,
+`anda+prod@gmail.com`, dan seterusnya — Gmail mengantar semuanya ke satu kotak masuk, tetapi
+header `To:` tetap berbeda sehingga terlihat peran mana yang dinotifikasi.
+
+> **`APP_URL` wajib dapat dijangkau ponsel.** Tombol di dalam email menunjuk ke sana. Bila
+> portal berjalan di laptop, isi `APP_URL` dengan IP LAN laptop dan **kosongkan `AUTH_URL`**;
+> bila portal berjalan di ponsel lewat Termux, `http://localhost:3000` justru benar.
+> `pnpm doctor` memeriksa keduanya.
+
+Yang tidak diuji `mail:test`: **siapa** penerimanya dan **kapan** emailnya dipicu. Itu logika
+`src/server/claim-notifications.ts`, dan hanya terbukti dengan menjalankan alur klaim sungguhan
+lalu membandingkannya dengan halaman `/notifications`.
 
 ## Kontrol akses
 

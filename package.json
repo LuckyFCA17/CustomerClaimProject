@@ -22,6 +22,7 @@
     "env:init": "node scripts/init-env.mjs",
     "doctor": "node scripts/doctor.mjs",
     "mail:sink": "node scripts/mail-sink.mjs",
+    "mail:test": "tsx --tsconfig scripts/tsconfig.json scripts/mail-test.mts",
     "reminders": "node scripts/reminders.mjs",
     "db:apply-sql": "node scripts/apply-migrations.mjs"
   },
