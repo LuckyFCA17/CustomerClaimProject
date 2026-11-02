@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, FilePlus2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, FilePlus2, Sheet } from "lucide-react";
 
 import { ClaimFilters, type CustomerOption } from "@/components/claims/claim-filters";
 import { Button } from "@/components/ui/button";
@@ -97,14 +97,29 @@ export default async function ClaimsPage({
           </p>
         </div>
 
-        {can(user, "claim.create") ? (
-          <form action={createClaimDraft}>
-            <Button type="submit" size="lg">
-              <FilePlus2 aria-hidden />
-              Issue new claim
+        <div className="flex flex-wrap items-center gap-2">
+          {/*
+            Ekspor membawa penyaring yang sedang berlaku, bukan seluruh register:
+            orang yang menekannya baru saja menyusun penyaring itu.
+          */}
+          {can(user, "claim.export") ? (
+            <Button type="button" size="lg" variant="outline" asChild>
+              <a href={`/api/claims/export${claimQueryString(query, { page: 1 })}`} download>
+                <Sheet aria-hidden />
+                Export Excel
+              </a>
             </Button>
-          </form>
-        ) : null}
+          ) : null}
+
+          {can(user, "claim.create") ? (
+            <form action={createClaimDraft}>
+              <Button type="submit" size="lg">
+                <FilePlus2 aria-hidden />
+                Issue new claim
+              </Button>
+            </form>
+          ) : null}
+        </div>
       </header>
 
       <Card>

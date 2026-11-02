@@ -152,7 +152,13 @@ export const PERMISSION_MATRIX: Record<Action, ActionRule> = {
     roles: { QA: "ALL", QA_HEAD: "ALL" },
     statuses: ["PUBLISHED"],
   },
-  "claim.export": { roles: READ_ONLY_FOR_EVERYONE, statuses: "ANY" },
+  /**
+   * Ekspor berlaku untuk daftar, bukan satu klaim, jadi tidak terikat status.
+   *
+   * Yang membatasi isinya `visibleClaimsWhere` — ekspor tidak pernah memuat klaim yang
+   * tidak boleh dilihat orangnya, berapa pun lebar penyaring yang ia kirimkan.
+   */
+  "claim.export": { roles: READ_ONLY_FOR_EVERYONE, statuses: null },
 
   "cpar.view": { roles: READ_ONLY_FOR_EVERYONE, statuses: CPAR_PHASE_STATUSES },
   "cpar.section.fill": {

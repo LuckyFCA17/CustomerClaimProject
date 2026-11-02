@@ -511,5 +511,6 @@ DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
   - [x] Dasbor CPAR: daftar tersaring + tabel action/evidence pending
   - [x] Pengingat terjadwal (§8 #6, #8, #12)
   - [x] Master data CRUD — delapan daftar acuan
-  - [ ] Dashboard + grafik, ekspor Excel
+  - [x] Ekspor Excel daftar klaim (membawa penyaring yang sedang berlaku)
+  - [ ] Dashboard + grafik
 - [ ] **Fase 8** — E2E Playwright, README final
