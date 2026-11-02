@@ -251,7 +251,18 @@ export async function fillCparSections(page: Page, cparUrl: string): Promise<voi
 
   await open("Gambar alur proses");
   await page.getByRole("button", { name: "Pakai alur umum NID", exact: true }).click();
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(900);
+
+  // Langkah saja belum membuat section ini lengkap: satu proses harus ditandai suspek
+  // occurrence dan satu lagi suspek outflow. Tanpa keduanya, section tetap tersimpan —
+  // tombol pembukanya pun hilang — tetapi pengiriman CPAR ditolak dengan pop-up
+  // "Submission incomplete" yang menyebut Process flow diagram.
+  const occurrence = page.getByRole("checkbox", { name: /Suspek occurrence/ });
+  const outflow = page.getByRole("checkbox", { name: /Suspek outflow/ });
+
+  await occurrence.first().click();
+  await outflow.last().click();
+
   await page.locator("#flow-note").fill("Alur standar NID; titik deteksi ada pada inspeksi akhir.");
   await saveSection(page);
 

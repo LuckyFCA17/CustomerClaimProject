@@ -670,7 +670,6 @@ DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
   - [x] Dashboard + grafik (kartu ringkas, klaim per bulan, pareto NC detail, tabel tindakan)
 - [ ] **Fase 8** — E2E Playwright, README final
   - [x] Harness E2E: basis data + penyimpanan sendiri, server mode produksi di port 3100
-  - [x] Happy path sampai CPAR terbit (buat klaim → review → terbit → Follow Up)
-  - [ ] Pengisian 8 section CPAR → rantai verifikasi → monitoring → Verified Closed
-  - [ ] Skenario Not Effective
+  - [x] Happy path penuh: draft kosong → Verified Closed (12 uji, satu klaim berurutan)
+  - [x] Skenario Not Effective: siklus naik, verifikasi diulang, lalu ditutup
   - [ ] README final + diagram
