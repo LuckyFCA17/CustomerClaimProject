@@ -169,12 +169,19 @@ export function Topbar({
             ) : null}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link href="/master/users">
-              <UserCog aria-hidden />
-              Account settings
-            </Link>
-          </DropdownMenuItem>
+          {/*
+            Hanya Administrator yang boleh membuka data acuan. Menawarkannya kepada
+            semua orang berarti sebagian besar pengguna menekan menu yang selalu
+            memantulkan mereka ke halaman "tidak berhak".
+          */}
+          {user.roles.includes("ADMIN") ? (
+            <DropdownMenuItem asChild>
+              <Link href="/master/users">
+                <UserCog aria-hidden />
+                Kelola pengguna
+              </Link>
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem asChild>
             <form action={logoutAction}>
               <button type="submit" className="flex w-full items-center gap-2">
