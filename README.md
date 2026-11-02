@@ -4,11 +4,17 @@ Customer Complaint Handling Portal untuk **PT Nifco Indonesia (NID)**. Mengganti
 (Excel log + email + PDF manual) dengan satu record klaim hidup yang bergerak lewat *action button*
 dari input sampai `Verified Closed`.
 
-> **Status: Fase 6 selesai** — klaim berjalan penuh dari `DRAFT` sampai `VERIFIED_CLOSED`
-> lewat UI, termasuk pengisian CPAR per role, rantai verifikasi empat kapasitas, siklus
-> revisi, pemantauan efektivitas CAPA, dan jalur Not Effective yang memulangkan klaim ke
-> pengisian. Mencetak kelima PDF §9 dan mengirim sebelas dari empat belas notifikasi §8.
-> Tiga sisanya dipicu cron dan menyusul pada Fase 7.
+> **Status: Fase 8 — seluruh modul jalan.** Klaim bergerak penuh dari `DRAFT` sampai
+> `VERIFIED_CLOSED` lewat UI: pengisian CPAR per role, rantai verifikasi empat kapasitas,
+> siklus revisi, pemantauan efektivitas CAPA, dan jalur Not Effective yang memulangkan
+> klaim ke pengisian. Kelima PDF §9 tercetak dan keempat belas notifikasi §8 terkirim
+> (tiga di antaranya oleh pengingat terjadwal). Dilengkapi dashboard, daftar klaim
+> tersaring, ekspor Excel, dan CRUD data acuan.
+>
+> Diuji oleh **439 unit test** (`pnpm test`) dan **12 uji E2E** (`pnpm test:e2e`) yang
+> menjalankan satu klaim melewati seluruh rantai lewat peramban sungguhan, termasuk
+> skenario Not Effective.
+>
 > Rujukan rancangan: [`PLAN.md`](./PLAN.md) (skema Prisma final, matriks permission, diagram state)
 > dan [`ASSUMPTIONS.md`](./ASSUMPTIONS.md) (aturan bisnis yang diasumsikan).
 
@@ -642,15 +648,99 @@ diterima, 130 sisanya harus ditolak.
 
 ## Diagram alur status
 
-Lihat [`PLAN.md` §3](./PLAN.md#3-diagram-state-klaim). Ringkasnya:
+Empat belas perpindahan yang sah, dengan kapasitas yang boleh memicunya. Diagram ini
+dijaga `tests/unit/readme-diagram.test.ts`: bila `src/lib/claim-state.ts` berubah tanpa
+diagramnya ikut diperbarui, unit test gagal — supaya gambar ini tidak pelan-pelan
+berbohong seiring kode bergerak.
 
+```mermaid
+stateDiagram-v2
+    direction TB
+
+    [*] --> DRAFT
+
+    DRAFT --> PENDING_QA_HEAD_REVIEW: claim.submit · QA
+    REVISION_REQUESTED --> PENDING_QA_HEAD_REVIEW: claim.submit · QA
+    PENDING_QA_HEAD_REVIEW --> REVISION_REQUESTED: claim.review.revise · QA Head
+    PENDING_QA_HEAD_REVIEW --> PUBLISHED: claim.review.approve · QA Head
+
+    PUBLISHED --> IGNORED: claim.ignore · QA
+    PUBLISHED --> CPAR_ISSUED: claim.followUp · QA
+
+    CPAR_ISSUED --> CPAR_IN_PROGRESS: cpar.section.fill · dept
+    CPAR_IN_PROGRESS --> CPAR_UNDER_VERIFICATION: cpar.submitFinal · QA
+    CPAR_REVISION --> CPAR_UNDER_VERIFICATION: cpar.submitFinal · QA
+
+    CPAR_UNDER_VERIFICATION --> CPAR_REVISION: cpar.verify · 1 dari 4 menolak
+    CPAR_UNDER_VERIFICATION --> CPAR_APPROVED: cpar.verify · keempatnya setuju
+
+    CPAR_APPROVED --> CAPA_MONITORING: monitoring.start · QA
+    CAPA_MONITORING --> CPAR_REVISION: monitoring.setEffectiveness · Not Effective
+    CAPA_MONITORING --> VERIFIED_CLOSED: monitoring.submitReport · QA
+
+    IGNORED --> [*]
+    VERIFIED_CLOSED --> [*]
 ```
-DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
-              ↑        ↓                     └→ CPAR_ISSUED → CPAR_IN_PROGRESS
-       REVISION_REQUESTED                          → CPAR_UNDER_VERIFICATION ⇄ CPAR_REVISION
-                                                   → CPAR_APPROVED → CAPA_MONITORING
-                                                   → VERIFIED_CLOSED (terminal)
+
+Dua lingkaran yang membuat portal ini bukan sekadar daftar status: `CPAR_UNDER_VERIFICATION
+⇄ CPAR_REVISION` (verifier menolak, siklus naik, verifikasi diulang dari awal) dan
+`CAPA_MONITORING → CPAR_REVISION` (countermeasure terbukti tidak efektif di lapangan,
+sehingga analisisnya dibuka kembali).
+
+## Diagram arsitektur
+
+```mermaid
+flowchart TB
+    subgraph browser["Peramban"]
+        ui["Server Component + form<br/>shadcn/ui · Tailwind"]
+    end
+
+    subgraph next["Next.js App Router"]
+        mw["middleware.ts<br/><i>penjaga route</i>"]
+        sa["Server Actions<br/><i>validasi Zod</i>"]
+        print["/print/[doc]/[id]<br/><i>halaman cetak</i>"]
+        api["/api/reminders · /api/claims/export"]
+    end
+
+    subgraph rules["Aturan — satu sumber kebenaran"]
+        perm["lib/permissions.ts<br/>can(user, action, claim)"]
+        state["lib/claim-state.ts<br/>assertTransition()"]
+    end
+
+    subgraph side["Efek samping"]
+        mail["Nodemailer + React Email"]
+        pdf["Puppeteer → PDF"]
+        files["storage.ts → disk"]
+    end
+
+    db[("PostgreSQL<br/>Prisma · soft delete")]
+
+    ui --> mw --> sa
+    sa --> perm
+    sa --> state
+    sa --> db
+    sa -. "after() — pasca-commit" .-> mail
+    sa -. "after() — pasca-commit" .-> pdf
+    sa --> files
+    print --> pdf
+    api --> sa
+    db --> ui
+
+    classDef rule fill:#fef3c7,stroke:#b45309,color:#1f2933
+    class perm,state rule
 ```
+
+Tiga hal yang diperlihatkan diagram ini dan mudah hilang dari pandangan saat membaca kode:
+
+- **Aturan dipanggil dari server action, bukan dari komponen.** UI menyembunyikan tombol
+  sebagai kesopanan; yang menolak perbuatan adalah `can()` dan `assertTransition()`.
+- **Email dan PDF berjalan sesudah transaksi commit** (`after()`, panah putus-putus).
+  SMTP yang mati tidak membatalkan perpindahan status, dan transaksi yang di-rollback
+  tidak menyisakan email yang terlanjur keluar. Penulisan berkas tidak begitu: ia terjadi
+  di dalam aksi (panah utuh), karena jalur penyimpanannya harus sudah pasti sebelum
+  barisnya ditulis ke basis data.
+- **Halaman cetak adalah route biasa.** PDF dirender dari `/print/[doc]/[id]`, sehingga
+  `?preview=1` di peramban benar-benar menggambarkan hasil cetaknya.
 
 ## Progres fase
 
@@ -668,8 +758,8 @@ DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
   - [x] Master data CRUD — delapan daftar acuan
   - [x] Ekspor Excel daftar klaim (membawa penyaring yang sedang berlaku)
   - [x] Dashboard + grafik (kartu ringkas, klaim per bulan, pareto NC detail, tabel tindakan)
-- [ ] **Fase 8** — E2E Playwright, README final
+- [x] **Fase 8** — E2E Playwright, README final
   - [x] Harness E2E: basis data + penyimpanan sendiri, server mode produksi di port 3100
   - [x] Happy path penuh: draft kosong → Verified Closed (12 uji, satu klaim berurutan)
   - [x] Skenario Not Effective: siklus naik, verifikasi diulang, lalu ditutup
-  - [ ] README final + diagram
+  - [x] README final + diagram state & arsitektur (Mermaid, dijaga unit test)
