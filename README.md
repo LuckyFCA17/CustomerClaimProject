@@ -265,16 +265,24 @@ Type error: Property 'CPAR_EVIDENCE_REQUEST' is missing in type '{ … }'
             but required in type 'Record<NotificationType, string>'.
 ```
 
-Tidak ada pesan git yang muncul belakangan untuk memberi tahu bahwa pull-nya tidak utuh.
-`pnpm checkup` menyebutkannya, dan perbaikannya adalah menyamakan isi folder dengan
-commit-nya:
+Tanda yang paling jelas: **nomor baris pada pesan galat tidak cocok dengan berkas yang
+Anda buka**, dan galatnya menyangkut kode yang tidak pernah Anda sunting. Pada satu kasus
+nyata, dua berkas berasal dari dua keadaan berbeda sekaligus — satu persis commit dari 23
+Oktober, satu lagi tidak cocok dengan commit mana pun karena tertulis separuh.
+
+Tidak ada pesan git yang muncul belakangan untuk memberi tahu bahwa checkout-nya tidak
+utuh. `pnpm checkup` menyebutkannya, dan `pnpm repair` memperbaikinya:
 
 ```bash
-git status                                        # lihat apa yang berbeda
-git fetch origin claude/nid-customer-claim-portal-tcippa
-git reset --hard origin/claude/nid-customer-claim-portal-tcippa
-rm -rf .next && pnpm boot
+pnpm repair --dry-run    # tunjukkan berkas mana yang akan dikembalikan
+pnpm repair              # fetch → reset --hard → clean → buang .next
+pnpm install             # bila package.json ikut berubah
+pnpm typecheck           # 3 detik; hijau berarti isi folder sudah utuh
+pnpm boot
 ```
+
+`pnpm repair` aman diulang — dan memang perlu diulang bila ia sendiri ikut terbunuh di
+tengah, yang pada perangkat ini bukan hal aneh.
 
 > `git reset --hard` membuang suntingan lokal pada berkas ter-track. Pada salinan yang
 > hanya dipakai menjalankan portal itu memang yang diinginkan; bila ada suntingan yang
@@ -426,6 +434,7 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm db:apply-sql` | Menerapkan migrasi tanpa schema-engine (untuk Termux); `--dry-run`, `--repair`, `--reset` |
 | `pnpm env:init` | Membuat `.env` dari `.env.example` dan mengisi `AUTH_SECRET` |
 | `pnpm checkup` | Memeriksa folder, salinan liar, umur build, memori, `.env`, basis data, migrasi, seed, dan SMTP |
+| `pnpm repair` | Menyamakan isi folder dengan commit terakhir di remote dan membuang `.next`; `--dry-run` menunjukkan dulu |
 | `pnpm run doctor` | Nama lama `pnpm checkup`; **`pnpm doctor` tanpa `run` menjalankan pemeriksa milik pnpm, bukan portal** |
 | `pnpm boot` | **Perintah utama untuk memakai portal**: cek basis data, `tsc` sebagai gerbang murah, build bila kode lebih baru, lalu `start`; `--force` memaksa build |
 | `pnpm serve` | `prisma generate` → migrasi → `build` → `start`; selalu membangun ulang |

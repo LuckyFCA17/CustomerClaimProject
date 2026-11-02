@@ -150,6 +150,13 @@ async function checkWorktree() {
     return;
   }
 
+  // Commit yang sedang ditunjuk dicetak apa adanya. Saat membandingkan keadaan lewat
+  // tangkapan layar, "versi mana ini" adalah pertanyaan pertama dan paling sering tidak
+  // terjawab — nomor baris pada pesan galat tidak cukup untuk menjawabnya.
+  const head = await git(["log", "-1", "--format=%h %ad %s", "--date=short"]);
+
+  if (head) ok(`HEAD ${branch} — ${head.slice(0, 72)}`);
+
   // Hanya berkas ter-track; berkas baru yang belum di-commit bukan urusan pemeriksaan ini.
   const dirty = (await git(["status", "--porcelain", "--untracked-files=no"])) ?? "";
   const changed = dirty.split("\n").filter(Boolean);

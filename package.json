@@ -24,6 +24,7 @@
     "db:reset": "prisma migrate reset",
     "env:init": "node scripts/init-env.mjs",
     "checkup": "node scripts/doctor.mjs",
+    "repair": "node scripts/repair.mjs",
     "doctor": "node scripts/doctor.mjs",
     "mail:sink": "node scripts/mail-sink.mjs",
     "mail:test": "tsx --tsconfig scripts/tsconfig.json scripts/mail-test.mts",
