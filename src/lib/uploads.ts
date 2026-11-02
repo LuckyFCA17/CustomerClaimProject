@@ -44,6 +44,11 @@ export function maxUploadLabel(): string {
   return `${Math.round(UPLOAD_LIMITS.maxBytes / 1024 / 1024)} MB`;
 }
 
+/** Ukuran berkas untuk dibaca pengguna. Satu tempat, supaya tiap pesan menulisnya sama. */
+export function formatSizeMb(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 /**
  * Pemeriksaan yang dijalankan peramban sebelum berkas dikirim.
  *
@@ -57,8 +62,7 @@ export function validateUploadFile(file: { size: number; type: string; name: str
   }
 
   if (file.size > UPLOAD_LIMITS.maxBytes) {
-    const actual = (file.size / 1024 / 1024).toFixed(1);
-    return `Ukuran berkas ${actual} MB melebihi batas ${maxUploadLabel()}.`;
+    return `Ukuran berkas ${formatSizeMb(file.size)} melebihi batas ${maxUploadLabel()}.`;
   }
 
   if (!isAllowedType(file.type)) {

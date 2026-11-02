@@ -3,12 +3,24 @@
 import { toast } from "sonner";
 
 import { downscaleImage } from "@/lib/image-downscale";
-import { validateUploadFile } from "@/lib/uploads";
+import { formatSizeMb, validateUploadFile } from "@/lib/uploads";
 
 interface UploadOutcome {
   readonly ok: boolean;
   readonly message?: string;
 }
+
+/** Di bawah ini, foto yang tidak diperkecil belum cukup berat untuk diperingatkan. */
+const WARN_ABOVE_BYTES = 1024 * 1024;
+
+/**
+ * Peringatan "tidak dapat diperkecil" hanya ditampilkan sekali.
+ *
+ * Sebabnya melekat pada peramban, bukan pada berkasnya: begitu satu foto tidak dapat
+ * diperkecil, seluruh foto berikutnya juga tidak. Mengulang pesan yang sama pada tiap
+ * unggahan hanya menutupi toast lain yang justru perlu dibaca.
+ */
+let warnedAboutDownscale = false;
 
 /**
  * Pengiriman satu berkas unggahan dari peramban.
@@ -38,7 +50,27 @@ export async function submitUpload(
   // kilobyte, bukan beberapa megabyte — penting pada ponsel yang menjalankan
   // portalnya sendiri, tempat lonjakan memori penerimaan berkas dapat membuat
   // Android menghentikan server.
-  const payload = await downscaleImage(file);
+  const { file: payload, outcome } = await downscaleImage(file);
+
+  // Peramban lama tidak menyediakan OffscreenCanvas, sehingga fotonya melintas utuh.
+  // Unggahannya tetap dicoba — pemeriksaan di peramban bukan pengaman, dan berkas
+  // sebesar ini masih di bawah batas server. Yang berubah hanya peluang terputusnya,
+  // dan pengunggah berhak tahu sebabnya sebelum menyalahkan koneksinya.
+  if (
+    !warnedAboutDownscale &&
+    (outcome === "unsupported" || outcome === "failed") &&
+    payload.size > WARN_ABOVE_BYTES
+  ) {
+    warnedAboutDownscale = true;
+
+    toast.warning("Foto dikirim tanpa diperkecil", {
+      description:
+        `Peramban ini tidak dapat memperkecil foto, jadi berkas ${formatSizeMb(payload.size)} ` +
+        "dikirim apa adanya. Unggahan menjadi lebih lambat dan lebih mudah terputus — " +
+        "bila gagal, perkecil fotonya lebih dulu lalu coba lagi.",
+      duration: 8000,
+    });
+  }
 
   try {
     const result = await send(build(payload));

@@ -168,13 +168,33 @@ pg_ctl -D $PREFIX/var/lib/postgresql start
 cd CustomerClaimProject && pnpm dev
 ```
 
-### Sesi Termux mati saat mengunggah berkas
+### Unggah foto gagal: "Failed to fetch"
 
-Gunakan **mode produksi**, bukan `pnpm dev`:
+Gejalanya menyesatkan. Saat memori menipis, Next mode dev **me-restart dirinya sendiri**:
+
+```
+⚠ Server is approaching the used memory threshold, restarting...
+```
+
+Restart itu memutus semua koneksi yang sedang berjalan, termasuk POST unggahan foto. Di
+peramban, permintaan yang terputus tidak pernah menerima status HTTP apa pun, sehingga
+muncul sebagai `TypeError: Failed to fetch` pada `fetchServerAction` — bukan sebagai pesan
+kehabisan memori, dan bukan bug pada kode unggahnya.
+
+Terukur pada portal ini: mode dev menempati **±1.723 MB** dalam keadaan diam, sedangkan
+mode produksi **±287 MB** dan memuncak di **±343 MB** saat menerima foto 4,65 MB. Gunakan
+**mode produksi**, bukan `pnpm dev`:
 
 ```bash
 pnpm serve      # = pnpm build && pnpm start
 ```
+
+`pnpm doctor` memeriksa sisa memori perangkat dan memperingatkan lebih dulu bila mode dev
+tidak akan muat.
+
+Catatan terkait: bila peramban tidak menyediakan `OffscreenCanvas`/`createImageBitmap`,
+foto **tidak diperkecil** sebelum dikirim dan melintas utuh — portal menampilkan
+peringatan "Foto dikirim tanpa diperkecil" sekali per sesi agar sebabnya terlihat.
 
 > **Setiap kali setelah `git pull`:**
 >
@@ -316,7 +336,7 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm db:reset` | Menghapus database dan menjalankan ulang migrasi + seed |
 | `pnpm db:apply-sql` | Menerapkan migrasi tanpa schema-engine (untuk Termux); `--dry-run`, `--repair`, `--reset` |
 | `pnpm env:init` | Membuat `.env` dari `.env.example` dan mengisi `AUTH_SECRET` |
-| `pnpm doctor` | Memeriksa folder, umur build, `.env`, basis data, migrasi, seed, dan SMTP |
+| `pnpm doctor` | Memeriksa folder, umur build, memori, `.env`, basis data, migrasi, seed, dan SMTP |
 | `pnpm serve` | `prisma generate` → migrasi → `build` → `start`; mode produksi, dipakai di Termux |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 + penampil email di 1080 |
 | `pnpm mail:test` | Mengirim satu contoh dari tiap template email; `--to`, `--only`, `--dry`, `--list` |

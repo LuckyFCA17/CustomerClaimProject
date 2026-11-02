@@ -1,5 +1,6 @@
 import { createConnection } from "node:net";
 import { access, readFile, readdir, stat } from "node:fs/promises";
+import { platform, totalmem } from "node:os";
 import path from "node:path";
 
 import "dotenv/config";
@@ -21,6 +22,22 @@ import pg from "pg";
 const MIGRATIONS_DIR = path.resolve("prisma/migrations");
 /** Sebagian tabel inti; cukup untuk membedakan "migrasi belum jalan" dari "basis data kosong". */
 const CORE_TABLES = ["User", "Role", "Claim", "Department"];
+
+/**
+ * Kebutuhan memori kedua mode, dalam MB.
+ *
+ * Diukur pada portal ini: `pnpm dev` menempati ±1.723 MB dalam keadaan diam, sedangkan
+ * `pnpm start` menempati ±287 MB dan memuncak di ±343 MB saat menerima unggahan foto
+ * 4,65 MB. Selisih enam kali lipat itu bukan beban aplikasinya, melainkan HMR, source
+ * map, dan modul yang belum dikompilasi yang hanya ada di mode dev.
+ *
+ * Angkanya dipakai sebagai ambang peringatan, bukan ukuran pasti: beban sebenarnya
+ * bergantung pada berapa banyak route yang sudah dikompilasi selama sesi berjalan.
+ */
+const DEV_MEMORY_MB = 1723;
+const PROD_PEAK_MEMORY_MB = 343;
+/** Kelonggaran di atas kebutuhan mode dev sebelum restart otomatisnya mulai terpicu. */
+const DEV_HEADROOM_MB = 400;
 
 let failures = 0;
 let warnings = 0;
@@ -370,6 +387,76 @@ async function checkSeed(client) {
   ok(`${active} pengguna aktif dari ${total}`);
 }
 
+/**
+ * Memori yang benar-benar tersedia, dalam MB.
+ *
+ * `os.freemem()` menyesatkan di Linux dan Android: memori yang dipakai page cache
+ * terhitung "terpakai", padahal dilepas begitu ada yang membutuhkan. `MemAvailable` di
+ * /proc/meminfo adalah perkiraan kernel sendiri tentang berapa yang benar-benar dapat
+ * dialokasikan tanpa menukar ke swap, dan itulah angka yang menentukan di sini.
+ */
+async function availableMemoryMb() {
+  const text = await readFile("/proc/meminfo", "utf8").catch(() => null);
+
+  if (!text) return null;
+
+  const match = /^MemAvailable:\s+(\d+) kB$/m.exec(text);
+
+  return match ? Math.round(Number(match[1]) / 1024) : null;
+}
+
+/**
+ * Apakah perangkat ini sanggup menjalankan mode dev.
+ *
+ * Pemeriksaan ini ada karena gejalanya menyesatkan. Saat memori menipis, Next mode dev
+ * **me-restart dirinya sendiri** ("Server is approaching the used memory threshold,
+ * restarting...") dan memutus seluruh koneksi yang sedang berjalan. Unggahan foto yang
+ * sedang melintas ikut putus, dan di peramban hal itu muncul sebagai
+ * `TypeError: Failed to fetch` — bukan sebagai pesan kehabisan memori. Tanpa petunjuk
+ * ini, orang akan mencari bug di kode unggahnya, yang tidak ada.
+ */
+async function checkMemory() {
+  console.log("\nMemori");
+
+  const total = Math.round(totalmem() / 1024 / 1024);
+  const available = await availableMemoryMb();
+  const onAndroid = platform() === "android" || Boolean(process.env.TERMUX_VERSION);
+
+  if (available === null) {
+    // Hanya terjadi di sistem tanpa /proc; tidak cukup alasan untuk menggagalkan apa pun.
+    ok(`RAM total ${total} MB (sisa tidak terbaca di sistem ini)`);
+    return;
+  }
+
+  const label = `RAM ${total} MB, tersedia ${available} MB`;
+
+  if (available >= DEV_MEMORY_MB + DEV_HEADROOM_MB) {
+    ok(`${label} — cukup untuk pnpm dev (±${DEV_MEMORY_MB} MB)`);
+    return;
+  }
+
+  if (available >= DEV_MEMORY_MB) {
+    warn(
+      `${label} — pas-pasan untuk pnpm dev (±${DEV_MEMORY_MB} MB)`,
+      `unggah foto bisa terputus bila ada aplikasi lain berjalan; pnpm serve hanya butuh ±${PROD_PEAK_MEMORY_MB} MB`,
+    );
+    return;
+  }
+
+  warn(
+    `${label} — di bawah kebutuhan pnpm dev (±${DEV_MEMORY_MB} MB)`,
+    "pakai pnpm serve: mode dev akan me-restart dirinya sendiri saat memori menipis, " +
+      "memutus unggahan yang sedang berjalan, dan di peramban itu terbaca sebagai " +
+      '"Failed to fetch"',
+  );
+
+  if (onAndroid) {
+    console.log(
+      `      → di Termux jalankan termux-wake-lock lebih dulu; mode produksi memuncak di ±${PROD_PEAK_MEMORY_MB} MB saat mengunggah foto`,
+    );
+  }
+}
+
 async function checkOptional() {
   console.log("\nOpsional");
 
@@ -396,6 +483,7 @@ async function main() {
   if (await checkProjectRoot()) {
     await checkPrismaClient();
     await checkBuildFreshness();
+    await checkMemory();
 
     if (await checkEnv()) {
       await checkDatabase();
