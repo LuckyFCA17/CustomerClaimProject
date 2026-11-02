@@ -1,8 +1,22 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import type { NextConfig } from "next";
 
 import { SERVER_ACTION_BODY_LIMIT_MB } from "./src/lib/uploads";
 
 const nextConfig: NextConfig = {
+  /**
+   * Akar workspace ditetapkan, bukan disimpulkan.
+   *
+   * Next menebak akarnya dari posisi lockfile terdekat ke atas. Bila ada `pnpm-lock.yaml`
+   * liar di folder induk — misalnya sisa `git clone` yang menghasilkan
+   * `CustomerClaimProject/CustomerClaimProject` — tebakannya mendarat di folder home, dan
+   * build ikut membaca salinan proyek yang sudah basi di sana. Gejalanya menyesatkan:
+   * build gagal menyebut nomor baris yang tidak cocok dengan berkas yang sedang dibuka.
+   */
+  outputFileTracingRoot: path.dirname(fileURLToPath(import.meta.url)),
+
   experimental: {
     // Mengaktifkan forbidden() dan unauthorized(), sehingga penolakan izin membalas
     // 403 dan 401 yang sebenarnya — bukan 500 dari galat yang tidak tertangkap.

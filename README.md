@@ -189,8 +189,35 @@ mode produksi **±287 MB** dan memuncak di **±343 MB** saat menerima foto 4,65 
 pnpm serve      # = pnpm build && pnpm start
 ```
 
-`pnpm doctor` memeriksa sisa memori perangkat dan memperingatkan lebih dulu bila mode dev
+`pnpm checkup` memeriksa sisa memori perangkat dan memperingatkan lebih dulu bila mode dev
 tidak akan muat.
+
+### Build gagal, atau menyajikan kode lama
+
+Dua sebab, keduanya tidak menyebut dirinya sendiri di pesan galat.
+
+**Salinan proyek ganda.** `git clone` yang dijalankan dari dalam folder bernama sama
+menghasilkan `CustomerClaimProject/CustomerClaimProject`. Yang luar tidak pernah di-`git
+pull` lagi, dan Next — yang menyimpulkan akar workspace dari posisi `pnpm-lock.yaml`
+terdekat ke atas — ikut membaca salinan basi itu. Gejalanya: build gagal menyebut nomor
+baris yang **tidak cocok** dengan berkas yang sedang Anda buka. Periksa dan bersihkan:
+
+```bash
+ls ~/pnpm-lock.yaml ~/CustomerClaimProject/pnpm-lock.yaml 2>/dev/null
+rm -rf ~/CustomerClaimProject/node_modules ~/CustomerClaimProject/pnpm-lock.yaml
+pnpm checkup          # memperingatkan bila masih ada salinan di folder induk
+```
+
+`outputFileTracingRoot` di `next.config.ts` sudah mengunci akar workspace ke folder
+proyek, jadi peringatan "inferred your workspace root" tidak muncul lagi.
+
+**Cache build basi.** `.next/cache` menyimpan hasil kompilasi lama, termasuk peta sumber
+yang memetakan galat ke nomor baris versi lama. Setelah `git pull` yang jauh, hapus dulu:
+
+```bash
+rm -rf .next
+pnpm serve
+```
 
 Catatan terkait: bila peramban tidak menyediakan `OffscreenCanvas`/`createImageBitmap`,
 foto **tidak diperkecil** sebelum dikirim dan melintas utuh — portal menampilkan
@@ -214,14 +241,14 @@ peringatan "Foto dikirim tanpa diperkecil" sekali per sesi agar sebabnya terliha
 > tidak pernah membawanya — ia hanya berubah ketika perintah itu dijalankan. Client yang
 > tertinggal tidak mengekspor enum baru, dan impor yang `undefined` meledak jauh di dalam
 > Zod sebagai `Cannot convert undefined or null to object`, galat yang sama sekali tidak
-> menyebut Prisma. `pnpm serve` sudah menjalankannya lebih dulu, dan `pnpm doctor`
+> menyebut Prisma. `pnpm serve` sudah menjalankannya lebih dulu, dan `pnpm checkup`
 > menyebutkan enum mana yang hilang bila sempat terlewat.
 >
 > `pnpm start` menyajikan isi `.next` apa adanya, jadi route yang baru ditarik belum ada
 > di sana sampai `pnpm build` dijalankan lagi — gejalanya **menu yang 404 padahal kodenya
 > sudah ada**. Tidak ada yang memberi tahu; build basi tetap melayani permintaan seolah
 > normal. `pnpm serve` menggabungkan keduanya supaya langkahnya tidak bisa terlewat, dan
-> `pnpm doctor` memperingatkan bila kode lebih baru daripada hasil build atau bila ada
+> `pnpm checkup` memperingatkan bila kode lebih baru daripada hasil build atau bila ada
 > migrasi yang belum diterapkan.
 
 Alasannya memori. `next dev` membawa compiler dan menyimpan hasil kompilasi tiap route
@@ -250,7 +277,7 @@ pemeriksaan di peramban bukan pengaman.
 
 Jalankan juga `termux-wake-lock` sebelum layar dimatikan.
 
-**Tidak bisa login?** Jalankan `pnpm doctor`. Satu perintah itu memeriksa posisi folder,
+**Tidak bisa login?** Jalankan `pnpm checkup`. Satu perintah itu memeriksa posisi folder,
 `.env`, koneksi basis data, migrasi, seed, dan SMTP sekaligus, lalu menyebut perintah
 perbaikannya. Penyebab tersering di Termux adalah PostgreSQL yang belum dinyalakan
 ulang setelah ponsel di-restart.
@@ -274,14 +301,14 @@ Server `pnpm dev` sudah mendengarkan di semua antarmuka — barisnya tercetak sa
 peramban di perangkat lain berhasil di sisi server, lalu dilempar ke `localhost` milik
 perangkat itu sendiri — dan gagal **tanpa pesan apa pun di layar**, hanya kembali ke
 halaman login. Dibiarkan kosong, portal mengikuti host yang dipakai pengunjung.
-`pnpm doctor` memperingatkan bila `AUTH_URL` masih menunjuk ke localhost.
+`pnpm checkup` memperingatkan bila `AUTH_URL` masih menunjuk ke localhost.
 
 Agar tautan "Open in portal" di email juga dapat dibuka dari perangkat itu, isi
 `APP_URL` dengan alamat Network yang sama, lalu jalankan ulang server.
 
 Catatan Wi-Fi: sebagian jaringan kantor dan hotspot mengaktifkan *client isolation*,
 sehingga perangkat tidak dapat saling menghubungi. Bila alamat Network tidak terbuka
-padahal `pnpm doctor` hijau, coba lewat hotspot ponsel.
+padahal `pnpm checkup` hijau, coba lewat hotspot ponsel.
 
 Dua pesan yang tampak menakutkan padahal bukan kegagalan:
 
@@ -292,7 +319,7 @@ Dua pesan yang tampak menakutkan padahal bukan kegagalan:
 
 Sebaliknya, pesan yang sering terlewat: `pnpm` apa pun yang dijalankan dari luar folder
 proyek berhenti dengan "No package.json found". Bila itu terjadi pada langkah 6, tabel
-tidak pernah terbentuk dan gejalanya baru muncul saat login. `pnpm doctor` mencetak folder
+tidak pernah terbentuk dan gejalanya baru muncul saat login. `pnpm checkup` mencetak folder
 kerjanya di baris pertama supaya hal ini kelihatan.
 
 Bila `doctor` melaporkan tabel inti tidak ada padahal migrasi tercatat sudah
@@ -336,7 +363,8 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm db:reset` | Menghapus database dan menjalankan ulang migrasi + seed |
 | `pnpm db:apply-sql` | Menerapkan migrasi tanpa schema-engine (untuk Termux); `--dry-run`, `--repair`, `--reset` |
 | `pnpm env:init` | Membuat `.env` dari `.env.example` dan mengisi `AUTH_SECRET` |
-| `pnpm doctor` | Memeriksa folder, umur build, memori, `.env`, basis data, migrasi, seed, dan SMTP |
+| `pnpm checkup` | Memeriksa folder, salinan liar, umur build, memori, `.env`, basis data, migrasi, seed, dan SMTP |
+| `pnpm run doctor` | Nama lama `pnpm checkup`; **`pnpm doctor` tanpa `run` menjalankan pemeriksa milik pnpm, bukan portal** |
 | `pnpm serve` | `prisma generate` → migrasi → `build` → `start`; mode produksi, dipakai di Termux |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 + penampil email di 1080 |
 | `pnpm mail:test` | Mengirim satu contoh dari tiap template email; `--to`, `--only`, `--dry`, `--list` |
@@ -520,7 +548,7 @@ header `To:` tetap berbeda sehingga terlihat peran mana yang dinotifikasi.
 > **`APP_URL` wajib dapat dijangkau ponsel.** Tombol di dalam email menunjuk ke sana. Bila
 > portal berjalan di laptop, isi `APP_URL` dengan IP LAN laptop dan **kosongkan `AUTH_URL`**;
 > bila portal berjalan di ponsel lewat Termux, `http://localhost:3000` justru benar.
-> `pnpm doctor` memeriksa keduanya.
+> `pnpm checkup` memeriksa keduanya.
 
 Yang tidak diuji `mail:test`: **siapa** penerimanya dan **kapan** emailnya dipicu. Itu logika
 `src/server/claim-notifications.ts`, dan hanya terbukti dengan menjalankan alur klaim sungguhan

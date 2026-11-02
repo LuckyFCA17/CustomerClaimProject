@@ -104,7 +104,42 @@ async function checkProjectRoot() {
   }
 
   ok("package.json dan prisma/migrations ditemukan");
+  await checkStrayCopies();
+
   return true;
+}
+
+/**
+ * Mencari salinan proyek dan lockfile liar di folder di atas proyek ini.
+ *
+ * Jebakan yang sudah terjadi di lapangan: `git clone` dijalankan dari dalam folder
+ * bernama sama, menghasilkan `CustomerClaimProject/CustomerClaimProject`. Yang luar
+ * tidak pernah di-`git pull` lagi, lalu Next — yang menentukan akar workspace dari
+ * posisi lockfile — menyimpulkan akarnya ada di atas dan ikut membaca salinan basi itu.
+ *
+ * Gejalanya sangat menyesatkan: build gagal menyebut nomor baris yang tidak cocok dengan
+ * berkas yang sedang dibuka, atau berhasil tetapi menyajikan kode lama. Tidak ada satu
+ * pun pesan yang menyebut kata "salinan".
+ */
+async function checkStrayCopies() {
+  const here = process.cwd();
+  const strays = [];
+
+  // Hanya ke atas; folder di bawah proyek adalah urusan proyek ini sendiri.
+  for (let dir = path.dirname(here); dir !== path.dirname(dir); dir = path.dirname(dir)) {
+    if (await exists(path.join(dir, "pnpm-lock.yaml"))) strays.push(path.join(dir, "pnpm-lock.yaml"));
+    if (await exists(path.join(dir, "prisma/migrations"))) strays.push(path.join(dir, "(salinan proyek)"));
+  }
+
+  if (strays.length === 0) {
+    ok("tidak ada salinan proyek atau lockfile lain di folder di atasnya");
+    return;
+  }
+
+  warn(
+    `ada ${strays.length} lockfile/salinan proyek di folder di atas ini — Next dapat membaca kode dari salinan yang basi`,
+    `hapus yang tidak dipakai: ${strays.join(" · ")}`,
+  );
 }
 
 /**
