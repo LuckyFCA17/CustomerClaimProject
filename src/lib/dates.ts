@@ -11,13 +11,15 @@ const JAKARTA_OFFSET_MS = 7 * 60 * 60 * 1000;
 /** Jam kerja berakhir pukul 17:00 WIB; tenggat jatuh di akhir hari, bukan tengah malam. */
 const END_OF_DAY_HOUR_WIB = 17;
 
-interface DayParts {
+export interface DayParts {
   readonly year: number;
+  /** 0 = Januari, mengikuti Date. */
   readonly month: number;
   readonly day: number;
 }
 
-function toJakartaParts(date: Date): DayParts {
+/** Diekspor agar pengelompokan per bulan di dashboard memakai kalender yang sama. */
+export function toJakartaParts(date: Date): DayParts {
   const shifted = new Date(date.getTime() + JAKARTA_OFFSET_MS);
 
   return {

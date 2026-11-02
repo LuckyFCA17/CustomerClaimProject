@@ -575,11 +575,11 @@ DRAFT → PENDING_QA_HEAD_REVIEW → PUBLISHED ─┬→ IGNORED (terminal)
 - [x] **Fase 4** — Modul 2 (Follow Up / Ignore, CPAR ID)
 - [x] **Fase 5** — Modul 3 (CPAR form, verifikasi, siklus revisi)
 - [x] **Fase 6** — Modul 4 (monitoring, Not Effective, Verified Closed)
-- [ ] **Fase 7** — Worker cron, dashboard, claim list, master data
+- [x] **Fase 7** — Worker cron, dashboard, claim list, master data
   - [x] Claim list server-side: pencarian, filter, urutan, paginasi
   - [x] Dasbor CPAR: daftar tersaring + tabel action/evidence pending
   - [x] Pengingat terjadwal (§8 #6, #8, #12)
   - [x] Master data CRUD — delapan daftar acuan
   - [x] Ekspor Excel daftar klaim (membawa penyaring yang sedang berlaku)
-  - [ ] Dashboard + grafik
+  - [x] Dashboard + grafik (kartu ringkas, klaim per bulan, pareto NC detail, tabel tindakan)
 - [ ] **Fase 8** — E2E Playwright, README final

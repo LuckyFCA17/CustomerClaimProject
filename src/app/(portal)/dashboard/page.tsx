@@ -1,48 +1,109 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { MonthlyColumns } from "@/components/dashboard/monthly-columns";
+import { ParetoBars } from "@/components/dashboard/pareto-bars";
+import { StatTile } from "@/components/dashboard/stat-tile";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { StatusRail } from "@/components/shared/status-rail";
-import { CLAIM_STATUSES, type ClaimStatus } from "@/config/claim-status";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ROLE_LABEL } from "@/config/navigation";
+import { availableTransitions } from "@/lib/claim-state";
+import { DEFAULT_MONTHS, monthlySeries, paretoRows } from "@/lib/dashboard";
 import { db } from "@/lib/db";
-import { visibleClaimsWhere } from "@/lib/permissions";
-import { getPortalUser } from "@/lib/session";
+import { formatDate } from "@/lib/format";
 import { draftLabel } from "@/lib/numbering";
+import { can, visibleClaimsWhere, type Actor, type ClaimContext } from "@/lib/permissions";
+import { getPortalUser } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "Dashboard",
 };
 
+/** Berapa banyak baris "butuh tindakan" yang ditampilkan sebelum menunjuk ke daftar klaim. */
+const ACTION_ROWS = 8;
+
 /**
- * Fase 1 — dashboard baru menampilkan klaim yang boleh dilihat pengguna, untuk
- * membuktikan cakupan RBAC bekerja dari database sampai layar. Kartu ringkas, grafik
- * klaim per bulan, pareto Non-Conformance Detail, dan tabel "Butuh tindakan saya"
- * dibangun pada Fase 7.
+ * Halaman pembuka portal (§7 Fase 7).
+ *
+ * Seluruh angkanya melewati `visibleClaimsWhere()`, jadi dua orang dengan peran berbeda
+ * melihat dashboard yang berbeda pula — bukan satu ringkasan global yang kebetulan
+ * disembunyikan sebagian di halaman lain.
  */
 export default async function DashboardPage() {
   const user = await getPortalUser();
   const where = visibleClaimsWhere(user);
+  const now = new Date();
 
-  const [claims, totalClaims] = await Promise.all([
-    db.claim.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: 10,
-      select: {
-        id: true,
-        claimNo: true,
-        status: true,
-        partName: true,
-        internalPartNo: true,
-        createdAt: true,
-        cpar: { select: { cparNo: true, cycle: true, responsibleDept: { select: { code: true } } } },
-      },
-    }),
-    db.claim.count(),
-  ]);
+  // Awal bulan, 11 bulan ke belakang: rentang yang sama dipakai grafik dan pareto,
+  // supaya keduanya menjawab pertanyaan tentang periode yang sama.
+  const windowStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (DEFAULT_MONTHS - 1), 1),
+  );
 
-  const hiddenCount = totalClaims - claims.length;
+  const [recent, ncGroups, ncNames, openClaims, overdueCpar, closedRecently, actionable] =
+    await Promise.all([
+      db.claim.findMany({
+        where: { ...where, createdAt: { gte: windowStart } },
+        select: { createdAt: true },
+      }),
+      db.claim.groupBy({
+        by: ["ncDetailId"],
+        where: { ...where, createdAt: { gte: windowStart }, ncDetailId: { not: null } },
+        _count: { _all: true },
+      }),
+      db.nonConformanceDetail.findMany({ select: { id: true, name: true } }),
+      db.claim.count({
+        where: { ...where, status: { notIn: ["VERIFIED_CLOSED", "IGNORED"] } },
+      }),
+      db.cpar.count({
+        where: { claim: where, submittedAt: null, dueDate: { lt: now } },
+      }),
+      db.claim.count({
+        where: {
+          ...where,
+          status: "VERIFIED_CLOSED",
+          closedAt: { gte: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) },
+        },
+      }),
+      db.claim.findMany({
+        where: { ...where, status: { notIn: ["VERIFIED_CLOSED", "IGNORED"] } },
+        orderBy: { updatedAt: "asc" },
+        select: {
+          id: true,
+          claimNo: true,
+          status: true,
+          partName: true,
+          internalPartNo: true,
+          createdById: true,
+          updatedAt: true,
+          cpar: {
+            select: {
+              cparNo: true,
+              cycle: true,
+              dueDate: true,
+              responsibleDeptId: true,
+              responsibleDept: { select: { code: true } },
+              cftMembers: { select: { departmentId: true } },
+            },
+          },
+        },
+      }),
+    ]);
+
+  const series = monthlySeries(
+    recent.map((claim) => claim.createdAt),
+    now,
+  );
+
+  const nameById = new Map(ncNames.map((detail) => [detail.id, detail.name]));
+  const pareto = paretoRows(
+    ncGroups.map((group) => ({
+      label: group.ncDetailId ? (nameById.get(group.ncDetailId) ?? "Tidak dikenal") : "Tidak diisi",
+      count: group._count._all,
+    })),
+  );
+
+  const mine = actionable.filter((claim) => pendingActions(user, claim).length > 0);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -54,92 +115,154 @@ export default async function DashboardPage() {
         </p>
       </header>
 
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile
+          label="Butuh tindakan Anda"
+          value={mine.length}
+          tone="attention"
+          hint="klaim yang menunggu keputusan Anda"
+        />
+        <StatTile
+          label="Klaim berjalan"
+          value={openClaims}
+          href="/claims"
+          hint="belum ditutup maupun diabaikan"
+        />
+        <StatTile
+          label="CPAR lewat tenggat"
+          value={overdueCpar}
+          tone="attention"
+          href="/cpar"
+          hint="sudah jatuh tempo, belum dikirim"
+        />
+        <StatTile label="Ditutup 30 hari terakhir" value={closedRecently} hint="Verified Closed" />
+      </div>
+
       <Card>
         <CardHeader>
-          <CardTitle>Klaim yang terlihat oleh Anda</CardTitle>
+          <CardTitle>Butuh tindakan Anda</CardTitle>
           <CardDescription>
-            Difilter lewat <code className="text-xs">visibleClaimsWhere()</code> di{" "}
-            <code className="text-xs">lib/permissions.ts</code>. Pengguna departemen hanya melihat klaim yang
-            departemennya ditunjuk, ditambah klaim yang sudah terbit atau ditutup.
+            Klaim yang perpindahan statusnya terbuka bagi peran Anda, paling lama tidak
+            tersentuh di urutan atas.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
-          {claims.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada klaim yang dapat Anda lihat.</p>
+        <CardContent>
+          {mine.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-nid-border px-3 py-6 text-center text-sm text-muted-foreground">
+              Tidak ada yang menunggu Anda saat ini.
+            </p>
           ) : (
-            <ul className="divide-y divide-nid-border">
-              {claims.map((claim) => (
-                <li key={claim.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3">
-                  <span className="font-medium tabular">{claim.claimNo ?? draftLabel(claim.id)}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-                    {claim.partName} · {claim.internalPartNo}
-                    {claim.cpar
-                      ? ` · ${claim.cpar.cparNo} (${claim.cpar.responsibleDept.code}, siklus ${claim.cpar.cycle})`
-                      : ""}
-                  </span>
-                  <StatusBadge status={claim.status} showHint />
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="divide-y divide-nid-border">
+                {mine.slice(0, ACTION_ROWS).map((claim) => {
+                  const actions = pendingActions(user, claim);
+
+                  return (
+                    <li key={claim.id} className="py-3">
+                      <Link
+                        href={`/claims/${claim.id}`}
+                        className="flex flex-wrap items-center gap-x-3 gap-y-1 hover:underline"
+                      >
+                        <span className="font-medium tabular">
+                          {claim.claimNo ?? draftLabel(claim.id)}
+                        </span>
+                        {/* Lebar minimum, bukan `min-w-0`: bila ruangnya kurang, nama part
+                            pindah ke baris berikutnya alih-alih terperas menjadi "Clip …". */}
+                        <span
+                          className="min-w-[11rem] flex-1 truncate text-sm text-muted-foreground"
+                          title={`${claim.partName} · ${claim.internalPartNo}`}
+                        >
+                          {claim.partName} · {claim.internalPartNo}
+                          {claim.cpar
+                            ? ` · ${claim.cpar.cparNo} (${claim.cpar.responsibleDept.code}, siklus ${claim.cpar.cycle})`
+                            : ""}
+                        </span>
+                        <StatusBadge status={claim.status} />
+                      </Link>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {actions.join(" · ")} — terakhir bergerak {formatDate(claim.updatedAt)}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {mine.length > ACTION_ROWS ? (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {mine.length - ACTION_ROWS} klaim lain juga menunggu Anda —{" "}
+                  <Link href="/claims" className="text-nid-orange-700 hover:underline">
+                    lihat seluruh daftar
+                  </Link>
+                  .
+                </p>
+              ) : null}
+            </>
           )}
-
-          <p className="text-xs text-muted-foreground">
-            {claims.length} dari {totalClaims} klaim di database
-            {hiddenCount > 0 ? ` — ${hiddenCount} disembunyikan oleh aturan visibilitas.` : "."}
-          </p>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Status rail</CardTitle>
-          <CardDescription>
-            Elemen tanda tangan portal — dipasang di atas halaman detail klaim pada Fase 2. Tahap terlewati
-            terisi oranye, tahap aktif berdenyut halus, tahap yang kembali karena revisi ditandai garis balik.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <RailSample caption="Klaim baru menunggu review QA Dept. Head" status="PENDING_QA_HEAD_REVIEW" />
-          <RailSample caption="CPAR dikembalikan verifier — siklus 2" status="CPAR_REVISION" cycle={2} />
-          <RailSample caption="Monitoring CAPA berjalan" status="CAPA_MONITORING" />
-          <RailSample caption="Klaim selesai" status="VERIFIED_CLOSED" />
-          <RailSample caption="Klaim ditutup tanpa CPAR" status="IGNORED" />
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Klaim per bulan</CardTitle>
+            <CardDescription>
+              Dua belas bulan terakhir, menurut tanggal klaim dicatat (kalender Jakarta).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MonthlyColumns series={series} />
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Status klaim</CardTitle>
-          <CardDescription>
-            Dua belas status pada state machine (§5). Warnanya dipakai sama persis di badge, timeline, dan grafik.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          {CLAIM_STATUSES.map((status) => (
-            <StatusBadge key={status} status={status} showHint />
-          ))}
-        </CardContent>
-      </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Pareto non-conformance detail</CardTitle>
+            <CardDescription>
+              Sebab terbanyak dalam dua belas bulan terakhir. Yang berwarna aksen adalah
+              sebab yang bersama-sama menjelaskan 80% kasus.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ParetoBars rows={pareto} />
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
 
-function RailSample({
-  caption,
-  status,
-  cycle,
-}: {
-  caption: string;
-  status: ClaimStatus;
-  cycle?: number;
-}) {
-  return (
-    <div className="space-y-2 rounded-lg border border-nid-border p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm text-muted-foreground">{caption}</span>
-        <StatusBadge status={status} />
-      </div>
-      <StatusRail status={status} cycle={cycle} />
-    </div>
-  );
+interface ActionableClaim {
+  readonly status: ClaimContext["status"];
+  readonly createdById: string;
+  readonly cpar: {
+    readonly responsibleDeptId: string;
+    readonly cftMembers: readonly { readonly departmentId: string }[];
+  } | null;
+}
+
+/**
+ * Nama perpindahan yang benar-benar boleh dipicu pengguna ini atas klaim ini.
+ *
+ * Dua lapis, sama seperti di server action: `availableTransitions` menyaring menurut
+ * peran, `can()` menyaring menurut cakupan (ALL / OWNER / DEPT). Memakai satu lapis saja
+ * membuat dashboard menjanjikan tindakan yang akan ditolak begitu tombolnya ditekan —
+ * misalnya meminta seluruh Dept. Head mengisi CPAR milik departemen lain.
+ */
+function pendingActions(actor: Actor, claim: ActionableClaim): readonly string[] {
+  const context: ClaimContext = {
+    status: claim.status,
+    createdById: claim.createdById,
+    cpar: claim.cpar
+      ? {
+          responsibleDeptId: claim.cpar.responsibleDeptId,
+          cftMemberDeptIds: claim.cpar.cftMembers.map((member) => member.departmentId),
+        }
+      : null,
+  };
+
+  const labels = availableTransitions(claim.status, actor.roles)
+    .filter((transition) => can(actor, transition.action, context))
+    .map((transition) => transition.label);
+
+  return [...new Set(labels)];
 }
