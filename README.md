@@ -136,13 +136,16 @@ createdb ncc_portal
 psql -d ncc_portal -c "CREATE ROLE ncc LOGIN PASSWORD 'ncc' CREATEDB;"
 psql -d ncc_portal -c "GRANT ALL ON SCHEMA public TO ncc;"
 
-# 3. Ambil kode — dari HOME, bukan dari dalam folder bernama sama,
-#    supaya tidak jadi CustomerClaimProject/CustomerClaimProject
+# 3. Ambil kode ke folder bernama ncc-portal — bukan CustomerClaimProject.
+#    Namanya sengaja dibedakan: `git clone` yang tidak sengaja dijalankan dari dalam
+#    folder bernama sama menghasilkan CustomerClaimProject/CustomerClaimProject, dan
+#    sesudah itu `cd CustomerClaimProject` mendarat di salinan yang salah tanpa
+#    ada yang terlihat keliru.
 cd ~
-git clone https://github.com/LuckyFCA17/CustomerClaimProject.git
-cd CustomerClaimProject
+git clone https://github.com/LuckyFCA17/CustomerClaimProject.git ncc-portal
+cd ~/ncc-portal
 git checkout claude/nid-customer-claim-portal-tcippa
-pwd                           # catat jalur ini — seluruh perintah pnpm dijalankan di sini
+pwd                           # harus /data/data/com.termux/files/home/ncc-portal
 
 # 4. Pasang dependensi. Lewati build script supaya sharp tidak menggagalkan install.
 pnpm install --ignore-scripts
@@ -177,8 +180,49 @@ sekali seumur pemasangan:
 ```bash
 termux-wake-lock
 pg_ctl -D $PREFIX/var/lib/postgresql start      # lewati bila sudah jalan
-cd CustomerClaimProject && pnpm boot
+cd ~/ncc-portal && pnpm boot
 ```
+
+> Jalur ditulis lengkap dengan `~/`, bukan `cd ncc-portal`. Perintah relatif bergantung
+> pada posisi Anda saat mengetiknya, dan bila ada folder bernama mirip di dekatnya — sisa
+> klon lama, misalnya — ia mendarat di sana. Gejalanya: `Command "boot" not found`,
+> karena salinan lama itu belum punya skripnya.
+
+### `Command "boot" not found` — Anda berada di salinan yang salah
+
+Gejalanya: `pnpm boot`, `pnpm checkup`, `pnpm db:seed` semuanya menjawab *not found*,
+padahal skripnya jelas ada di `package.json`. Sebabnya bukan skripnya hilang — Anda
+sedang berdiri di **folder lain**.
+
+Ini terjadi bila `git clone` pernah dijalankan dari dalam folder bernama sama, sehingga
+tersusun bersarang:
+
+```
+~/CustomerClaimProject/                      ← klon lama, tidak pernah di-pull lagi
+~/CustomerClaimProject/CustomerClaimProject/ ← proyek yang sebenarnya
+```
+
+`cd CustomerClaimProject` dari home mendarat di yang **luar**. Periksa dulu:
+
+```bash
+pwd                        # Anda ada di mana?
+ls package.json            # ada?
+grep '"boot"' package.json # skripnya ada?
+```
+
+Rapikan sekali, lalu masalahnya tidak dapat terulang karena namanya tidak lagi sama:
+
+```bash
+cd ~
+mv CustomerClaimProject/CustomerClaimProject ncc-portal   # selamatkan yang benar
+rm -rf CustomerClaimProject                               # buang klon lama
+cd ~/ncc-portal
+pnpm repair && pnpm install && pnpm typecheck && pnpm boot
+```
+
+`mv` di sini hanya mengganti nama di sistem berkas yang sama — berjalan seketika, dan
+`.env`, `storage/`, serta `node_modules` ikut terbawa utuh. Yang dibuang hanyalah klon
+lama di luarnya.
 
 ### Unggah foto gagal: "Failed to fetch"
 
