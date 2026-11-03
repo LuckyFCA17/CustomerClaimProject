@@ -235,3 +235,45 @@ describe("verifierCapacity", () => {
     );
   });
 });
+
+/**
+ * Siapa yang mengisi kapasitas "User Dept. Head" pada rantai verifikasi.
+ *
+ * Diuji terpisah dari `can()` karena keduanya memang berbeda lebar, dan selisihnya
+ * sempat membingungkan di lapangan: `can(user, "cpar.verify")` memakai cakupan DEPT yang
+ * ikut mencakup anggota CFT, sedangkan kapasitas verifier hanya diberikan kepada head
+ * departemen penanggung jawab (asumsi A-04). Head departemen anggota CFT karena itu lolos
+ * penjaga izin tetapi tetap tidak memperoleh kapasitas — dan server action menolaknya di
+ * lapis kedua. Pasangan uji ini yang menjaga selisih itu tetap disengaja.
+ */
+describe("verifierCapacity — kapasitas User Dept. Head", () => {
+  // Bertipe CFT: Production memimpin, Engineering dan Maintenance ikut sebagai anggota.
+  const cpar: CparForVerification = { responsibilityType: "CFT", responsibleDeptId: "d-prd" };
+
+  it("memberi kapasitas kepada head departemen penanggung jawab", () => {
+    expect(verifierCapacity(["USER_HEAD", "USER_DEPT"], "d-prd", cpar)).toBe("USER_HEAD");
+  });
+
+  it("menolak head departemen anggota CFT — hanya lead dept yang wajib memutuskan", () => {
+    expect(verifierCapacity(["USER_HEAD", "USER_DEPT"], "d-eng", cpar)).toBeNull();
+  });
+
+  it("menolak head departemen yang tidak terlibat sama sekali", () => {
+    expect(verifierCapacity(["USER_HEAD"], "d-pur", cpar)).toBeNull();
+  });
+
+  it("menolak head tanpa departemen", () => {
+    expect(verifierCapacity(["USER_HEAD"], null, cpar)).toBeNull();
+  });
+
+  it("tidak terpengaruh departemen untuk kapasitas yang berlaku menyeluruh", () => {
+    expect(verifierCapacity(["QA_HEAD"], null, cpar)).toBe("QA_HEAD");
+    expect(verifierCapacity(["FACTORY_MGR"], "d-eng", cpar)).toBe("FACTORY_MGR");
+    expect(verifierCapacity(["PRESDIR"], null, cpar)).toBe("PRESDIR");
+  });
+
+  it("mengembalikan kapasitas pertama menurut urutan verifier wajib bila role rangkap", () => {
+    // Rina memegang QA_HEAD sekaligus QA; yang mengisi rantai adalah QA_HEAD.
+    expect(verifierCapacity(["QA", "QA_HEAD"], "d-qa", cpar)).toBe("QA_HEAD");
+  });
+});

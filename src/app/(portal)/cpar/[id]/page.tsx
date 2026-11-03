@@ -284,6 +284,23 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
   const overdue = cpar.dueDate < new Date() && !cpar.submittedAt;
   const underVerification = cpar.claim.status === "CPAR_UNDER_VERIFICATION";
 
+  /**
+   * Mengapa pembaca ini tidak melihat tombol keputusan.
+   *
+   * Ada dua sebab yang di layar tampak sama — rantai verifikasi tanpa tombol apa pun.
+   * Yang satu "Anda memang bukan verifier", yang lain "Anda verifier, tetapi bukan untuk
+   * CPAR ini". Keduanya benar menolak, tetapi hanya yang kedua yang membingungkan: orang
+   * itu memegang jabatan yang namanya tercetak di daftar, dan tetap tidak bisa berbuat.
+   */
+  const holdsVerifierRole = requiredVerifiers().some((role) => user.roles.includes(role));
+  const verifierNote =
+    underVerification && !capacity && holdsVerifierRole
+      ? `Anda membuka CPAR ini sebagai ${user.roles.includes("USER_HEAD") ? "Dept. Head" : "verifier"}, ` +
+        `tetapi kapasitas User Dept. Head pada CPAR ini dipegang head departemen penanggung jawab ` +
+        `(${cpar.responsibleDept.code} — ${cpar.responsibleDept.name}). Pada CPAR bertipe CFT pun ` +
+        `hanya head lead dept yang wajib memutuskan, bukan setiap departemen yang terlibat.`
+      : null;
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <header className="space-y-4">
@@ -491,6 +508,8 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
               required={requiredVerifiers()}
               verifications={verifications}
               cycle={cpar.cycle}
+              responsibleDept={cpar.responsibleDept.code}
+              note={verifierNote}
             />
 
             {underVerification && capacity && !alreadyDecided ? (

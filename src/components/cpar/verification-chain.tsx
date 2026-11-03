@@ -28,14 +28,21 @@ export function VerificationChain({
   required,
   verifications,
   cycle,
+  responsibleDept,
+  note,
 }: {
   required: readonly RoleCode[];
   verifications: readonly VerificationView[];
   cycle: number;
+  /** Kode departemen penanggung jawab; dicetak di sebelah kapasitas User Dept. Head. */
+  responsibleDept?: string | null;
+  /** Keterangan untuk pembaca yang membuka halaman ini tetapi tidak dapat memutuskan. */
+  note?: string | null;
 }) {
   const thisCycle = verifications.filter((entry) => entry.cycle === cycle);
 
   return (
+    <>
     <ol className="divide-y divide-nid-border">
       {required.map((role) => {
         const decision = thisCycle.find((entry) => entry.role === role);
@@ -45,7 +52,18 @@ export function VerificationChain({
             <DecisionIcon decision={decision?.decision ?? null} />
 
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium">{VERIFIER_CAPACITY_LABEL[role] ?? role}</div>
+              <div className="text-sm font-medium">
+                {VERIFIER_CAPACITY_LABEL[role] ?? role}
+                {/* Tanpa nama departemennya, "User Dept. Head" tidak menjawab pertanyaan
+                    yang sedang dibaca orang: head yang mana. Pada CPAR bertipe CFT, yang
+                    wajib memutuskan hanya head departemen penanggung jawab (asumsi A-04),
+                    bukan setiap head yang terlibat. */}
+                {role === "USER_HEAD" && responsibleDept ? (
+                  <span className="ml-1.5 font-normal text-muted-foreground">
+                    · {responsibleDept}
+                  </span>
+                ) : null}
+              </div>
 
               {decision ? (
                 <>
@@ -85,6 +103,16 @@ export function VerificationChain({
         );
       })}
     </ol>
+
+    {/* Tombol yang tidak ada tidak menjelaskan dirinya sendiri. Pembaca yang memegang
+        salah satu kapasitas verifier tetapi bukan untuk CPAR ini akan melihat rantai
+        tanpa satu pun tombol, dan tidak ada apa pun di layar yang menyebut sebabnya. */}
+    {note ? (
+      <p className="mt-3 rounded-lg bg-secondary px-3 py-2.5 text-sm text-muted-foreground">
+        {note}
+      </p>
+    ) : null}
+    </>
   );
 }
 
