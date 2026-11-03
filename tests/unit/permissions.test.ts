@@ -321,3 +321,53 @@ describe("pesan penolakan", () => {
     );
   });
 });
+
+describe("claim.discard", () => {
+  const draft = (createdById: string) => ({
+    status: "DRAFT" as const,
+    createdById,
+    cpar: null,
+  });
+
+  const qaStaff = { id: "u-qa", roles: ["QA"] as const, departmentId: "d-qa" };
+
+  it("mengizinkan pembuatnya membuang draftnya sendiri", () => {
+    expect(can({ ...qaStaff, roles: ["QA"] }, "claim.discard", draft("u-qa"))).toBe(true);
+  });
+
+  it("menolak QA lain membuang draft yang bukan miliknya", () => {
+    expect(can({ ...qaStaff, roles: ["QA"] }, "claim.discard", draft("u-lain"))).toBe(false);
+  });
+
+  /**
+   * Inilah batas yang menjaga prinsip "satu klaim = satu record hidup". Begitu klaim
+   * terbit ia punya Claim No. yang sudah dilihat dan dirujuk orang lain; membuangnya
+   * bukan lagi membatalkan pekerjaan sendiri, melainkan menghapus catatan bersama.
+   */
+  it.each([
+    "PENDING_QA_HEAD_REVIEW",
+    "REVISION_REQUESTED",
+    "PUBLISHED",
+    "CPAR_IN_PROGRESS",
+    "VERIFIED_CLOSED",
+    "IGNORED",
+  ] as const)("menolak pembuangan pada status %s", (status) => {
+    expect(can({ ...qaStaff, roles: ["QA"] }, "claim.discard", { status, createdById: "u-qa", cpar: null })).toBe(
+      false,
+    );
+  });
+
+  it("memberi Administrator kewenangan atas draft siapa pun", () => {
+    expect(
+      can({ id: "u-adm", roles: ["ADMIN"], departmentId: null }, "claim.discard", draft("u-lain")),
+    ).toBe(true);
+  });
+
+  it("tidak memberi kewenangan kepada departemen pelaksana maupun manajemen", () => {
+    for (const role of ["USER_DEPT", "USER_HEAD", "QA_HEAD", "FACTORY_MGR", "PRESDIR"] as const) {
+      expect(
+        can({ id: "u-x", roles: [role], departmentId: "d-prd" }, "claim.discard", draft("u-x")),
+      ).toBe(false);
+    }
+  });
+});

@@ -44,6 +44,7 @@ export const ACTIONS = [
   "claim.view",
   "claim.create",
   "claim.update",
+  "claim.discard",
   "claim.submit",
   "claim.review.approve",
   "claim.review.revise",
@@ -131,6 +132,21 @@ export const PERMISSION_MATRIX: Record<Action, ActionRule> = {
   "claim.update": {
     roles: { QA: "OWNER", ADMIN: "ALL" },
     statuses: ["DRAFT", "REVISION_REQUESTED"],
+  },
+  /**
+   * Membuang draft yang belum pernah dikirim.
+   *
+   * Hanya `DRAFT`, sengaja tidak termasuk `REVISION_REQUESTED`. Klaim yang pernah
+   * dikembalikan untuk revisi sudah memiliki Claim No. dan pernah terbit — membuangnya
+   * berarti menghapus catatan yang sudah dilihat dan dirujuk orang lain. Draft yang
+   * belum bernomor belum menjadi apa pun bagi siapa pun.
+   *
+   * Pembuangannya tetap soft delete: barisnya ditandai, bukan dihapus (§Prinsip —
+   * "jangan pernah hard delete klaim"). Audit log-nya pun tetap ditulis.
+   */
+  "claim.discard": {
+    roles: { QA: "OWNER", ADMIN: "ALL" },
+    statuses: ["DRAFT"],
   },
   "claim.submit": {
     roles: { QA: "OWNER", ADMIN: "ALL" },

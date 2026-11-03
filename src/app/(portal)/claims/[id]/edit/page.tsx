@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
 import { ClaimForm } from "@/components/claim/claim-form";
+import { DiscardDraft } from "@/components/claim/discard-draft";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { db } from "@/lib/db";
 import { can } from "@/lib/permissions";
@@ -132,7 +133,13 @@ export default async function EditClaimPage({ params }: { params: Promise<{ id: 
             Bad News Information &amp; Quick Information for Abnormal Part.
           </p>
         </div>
-        <StatusBadge status={claim.status} showHint />
+        <div className="flex items-center gap-2">
+          <StatusBadge status={claim.status} showHint />
+          {/* Hanya muncul untuk draft yang belum bernomor; izinnya diputuskan di server. */}
+          {can(user, "claim.discard", context) ? (
+            <DiscardDraft claimId={claim.id} label={claim.claimNo ?? draftLabel(claim.id)} />
+          ) : null}
+        </div>
       </header>
 
       <ClaimForm

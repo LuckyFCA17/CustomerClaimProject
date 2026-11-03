@@ -557,3 +557,71 @@ async function moveDraftAttachments(
     });
   }
 }
+
+/**
+ * Membuang draft klaim yang belum pernah dikirim.
+ *
+ * Soft delete, bukan penghapusan: barisnya ditandai `deletedAt` dan hilang dari seluruh
+ * pembacaan karena ekstensi Prisma menyaringnya, tetapi riwayatnya tetap ada di basis
+ * data dan di audit log. Itu syarat yang berlaku untuk seluruh klaim di portal ini —
+ * lampirannya pun ikut ditandai, bukan dibuang, supaya satu kekeliruan masih dapat
+ * ditelusuri dan dipulihkan oleh yang berwenang lewat basis data.
+ *
+ * Yang benar-benar dibuang hanya berkas fisiknya. Draft tanpa nomor tidak dirujuk
+ * dokumen mana pun, jadi tidak ada cetakan atau email yang kehilangan gambarnya.
+ */
+export async function discardClaimDraft(claimId: string): Promise<ActionResult> {
+  try {
+    const actor = await requireActor();
+    const claim = await loadClaim(claimId);
+
+    // Status diperiksa penjaga izin, bukan di sini: "claim.discard" hanya berlaku pada
+    // DRAFT, sehingga klaim yang sudah bernomor ditolak dengan pesan yang sama di mana
+    // pun aksi ini dipanggil — termasuk bila server action dipanggil langsung.
+    assertCan(actor, "claim.discard", toContext(claim));
+
+    const attachments = await db.attachment.findMany({
+      where: { claimId, deletedAt: null },
+      select: { id: true, path: true },
+    });
+
+    const now = new Date();
+    const context = await readRequestContext();
+
+    await db.$transaction(async (tx) => {
+      await tx.attachment.updateMany({
+        where: { claimId, deletedAt: null },
+        data: { deletedAt: now },
+      });
+
+      await tx.claim.update({ where: { id: claimId }, data: { deletedAt: now } });
+
+      await writeAuditLog(
+        tx,
+        {
+          actorId: actor.id,
+          entityType: "Claim",
+          entityId: claimId,
+          claimId,
+          action: "claim.discard",
+          fromStatus: claim.status,
+          payloadDiff: { attachments: attachments.length },
+        },
+        context,
+      );
+    });
+
+    // Berkas dibuang setelah transaksi berhasil. Dibalik urutannya, transaksi yang gagal
+    // menyisakan baris yang menunjuk ke berkas yang sudah tidak ada.
+    for (const attachment of attachments) {
+      await storage.remove(attachment.path).catch(() => undefined);
+    }
+
+    revalidatePath("/claims");
+    revalidatePath("/dashboard");
+
+    return { ok: true, message: "Draft dibuang." };
+  } catch (error) {
+    return failure(error);
+  }
+}

@@ -731,6 +731,7 @@ Kolom **Status** = status klaim yang mengizinkan aksi; di status lain aksi selal
 |---|---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | 1 | `claim.create` | — (baru) | ✅ | ✅ | — | — | — | — | ✅ |
 | 2 | `claim.update` | `DRAFT`, `REVISION_REQUESTED` | o | — | — | — | — | — | ✅ |
+| 2b | `claim.discard` | `DRAFT` saja | o | — | — | — | — | — | ✅ |
 | 3 | `claim.submit` | `DRAFT`, `REVISION_REQUESTED` | o | — | — | — | — | — | ✅ |
 | 4 | `claim.review.approve` | `PENDING_QA_HEAD_REVIEW` | — | ✅ | — | — | — | — | — |
 | 5 | `claim.review.revise` | `PENDING_QA_HEAD_REVIEW` | — | ✅ | — | — | — | — | — |
