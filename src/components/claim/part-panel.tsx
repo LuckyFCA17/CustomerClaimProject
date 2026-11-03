@@ -93,6 +93,16 @@ export function PartPanel({
                   unoptimized
                   className="aspect-[4/3] w-full object-cover"
                 />
+                {/*
+                  Tombol ini selalu terlihat, tidak menunggu hover.
+                  Sebelumnya ia `opacity-0` dan baru muncul pada `group-hover`, sehingga
+                  di layar sentuh — tempat portal ini paling banyak dipakai — foto tidak
+                  dapat dihapus sama sekali. Tidak ada hover di jari, dan tidak ada pesan
+                  apa pun yang menjelaskan mengapa tombolnya tidak ada.
+
+                  Ukurannya 36px, bukan 28px: di bawah itu tombol kecil di atas gambar
+                  sulit dikenai tanpa ikut menggeser halaman.
+                */}
                 <button
                   type="button"
                   aria-label={`Hapus foto ${photo.originalName}`}
@@ -100,12 +110,18 @@ export function PartPanel({
                   onClick={() =>
                     startTransition(async () => {
                       const result = await deletePartPhoto(photo.id);
-                      if (!result.ok) toast.error("Hapus foto gagal", { description: result.message });
+
+                      if (result.ok) toast.success("Foto dihapus");
+                      else toast.error("Hapus foto gagal", { description: result.message });
                     })
                   }
-                  className="absolute right-1.5 top-1.5 grid size-7 place-items-center rounded-md bg-nid-ink/70 text-white opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                  className="absolute right-1.5 top-1.5 grid size-9 place-items-center rounded-md bg-nid-ink/75 text-white ring-1 ring-white/30 transition-colors hover:bg-nid-ink focus-visible:ring-2 focus-visible:ring-white disabled:opacity-50"
                 >
-                  <Trash2 aria-hidden className="size-3.5" />
+                  {isPending ? (
+                    <Loader2 aria-hidden className="size-4 animate-spin" />
+                  ) : (
+                    <Trash2 aria-hidden className="size-4" />
+                  )}
                 </button>
               </li>
             ))}
