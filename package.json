@@ -25,6 +25,7 @@
     "env:init": "node scripts/init-env.mjs",
     "checkup": "node scripts/doctor.mjs",
     "repair": "node scripts/repair.mjs",
+    "login:check": "tsx --tsconfig scripts/tsconfig.json scripts/login-check.mts",
     "doctor": "node scripts/doctor.mjs",
     "mail:sink": "node scripts/mail-sink.mjs",
     "mail:test": "tsx --tsconfig scripts/tsconfig.json scripts/mail-test.mts",

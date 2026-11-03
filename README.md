@@ -243,6 +243,33 @@ rm -rf ~/ncc-portal/CustomerClaimProject
 Sejak `tsconfig.json` menyebut foldernya satu per satu alih-alih menyapu `**/*.ts`,
 salinan seperti itu tidak lagi ikut dikompilasi — tetapi tetap sebaiknya dibuang.
 
+### "Email atau kata sandi salah" padahal akunnya benar
+
+Layar login sengaja menjawab satu kalimat yang sama untuk tiga keadaan — email tidak
+terdaftar, akun dinonaktifkan, dan kata sandi salah — supaya tidak membocorkan email mana
+yang ada di sistem. Benar untuk pemakai, tetapi membuat pemiliknya ikut buta. Pisahkan
+dengan:
+
+```bash
+pnpm login:check dimas.prayoga@nifco.co.id    # cek satu akun
+pnpm login:check --list                        # seluruh akun dan status aktifnya
+```
+
+Ia memakai Prisma Client dan bcrypt yang sama dengan `authorize()`, lalu menyebutkan
+langkah mana yang gugur. Tiga jawaban yang paling sering muncul:
+
+| Temuan | Artinya |
+|---|---|
+| `tabel User kosong` | migrasi sudah jalan tetapi seed belum — `pnpm boot` tidak menjalankannya. Jalankan `pnpm db:seed`. |
+| `akun dinonaktifkan` | bukan soal kata sandi; aktifkan lewat **Data acuan → Pengguna** |
+| `Gagal menghubungi basis data` | galat itu juga yang ditangkap Auth.js dan muncul sebagai "kata sandi salah" |
+
+> **Spasi dari papan ketik ponsel.** Alamat yang benar tetapi membawa spasi di ujungnya
+> dulu ditolak sebagai format tidak valid, lalu muncul di layar sebagai "Email atau kata
+> sandi salah" — tanpa petunjuk bahwa yang salah hanyalah sebuah spasi. Sejak
+> `src/schemas/auth.ts` menormalkan alamat sebelum memvalidasinya, spasi dan huruf besar
+> tidak lagi menggagalkan login.
+
 ### Unggah foto gagal: "Failed to fetch"
 
 Gejalanya menyesatkan. Saat memori menipis, Next mode dev **me-restart dirinya sendiri**:
@@ -504,6 +531,7 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 + penampil email di 1080 |
 | `pnpm mail:test` | Mengirim satu contoh dari tiap template email; `--to`, `--only`, `--dry`, `--list` |
 | `pnpm upload:check` | Menguji jalur simpan unggahan tanpa peramban; `--mb N` |
+| `pnpm login:check <email>` | Memeriksa satu akun langsung ke basis data; `--list`, `--password` |
 | `pnpm reminders` | Menjalankan tiga pengingat terjadwal lewat portal yang sedang hidup |
 
 ### Pengingat terjadwal
