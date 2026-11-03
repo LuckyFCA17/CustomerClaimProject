@@ -260,7 +260,7 @@ langkah mana yang gugur. Tiga jawaban yang paling sering muncul:
 
 | Temuan | Artinya |
 |---|---|
-| `tabel User kosong` | migrasi sudah jalan tetapi seed belum — `pnpm boot` tidak menjalankannya. Jalankan `pnpm db:seed`. |
+| `tabel User kosong` | migrasi sudah jalan tetapi seed belum. Jalankan `pnpm db:seed` — aman diulang. Sejak versi ini `pnpm boot` menolak menyala dalam keadaan itu. |
 | `akun dinonaktifkan` | bukan soal kata sandi; aktifkan lewat **Data acuan → Pengguna** |
 | `Gagal menghubungi basis data` | galat itu juga yang ditangkap Auth.js dan muncul sebagai "kata sandi salah" |
 
@@ -526,7 +526,7 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm checkup` | Memeriksa folder, salinan liar, umur build, memori, `.env`, basis data, migrasi, seed, dan SMTP |
 | `pnpm repair` | Menyamakan isi folder dengan commit terakhir di remote dan membuang `.next`; `--dry-run` menunjukkan dulu |
 | `pnpm run doctor` | Nama lama `pnpm checkup`; **`pnpm doctor` tanpa `run` menjalankan pemeriksa milik pnpm, bukan portal** |
-| `pnpm boot` | **Perintah utama untuk memakai portal**: cek basis data, `tsc` sebagai gerbang murah, build bila kode lebih baru, lalu `start`; `--force` memaksa build |
+| `pnpm boot` | **Perintah utama untuk memakai portal**: cek basis data dan keberadaan akun, `tsc` sebagai gerbang murah, build bila kode lebih baru, lalu `start`; `--force` memaksa build |
 | `pnpm serve` | `prisma generate` → migrasi → `build` → `start`; selalu membangun ulang |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 + penampil email di 1080 |
 | `pnpm mail:test` | Mengirim satu contoh dari tiap template email; `--to`, `--only`, `--dry`, `--list` |

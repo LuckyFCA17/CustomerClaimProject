@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
+
+import pg from "pg";
 import { access } from "node:fs/promises";
 import path from "node:path";
 
@@ -98,6 +100,48 @@ async function requireDatabase() {
   process.exit(1);
 }
 
+
+/**
+ * Menolak menyalakan portal yang tidak punya satu pun akun.
+ *
+ * Migrasi membuat tabelnya, seed yang mengisinya — dan `pnpm boot` tidak menjalankan
+ * seed, karena pada pemakaian sehari-hari data tidak boleh ditimpa. Akibatnya portal
+ * dapat menyala sempurna di atas basis data kosong, dan satu-satunya gejala muncul di
+ * layar login sebagai "Email atau kata sandi salah" — kalimat yang sama persis dengan
+ * kata sandi yang memang keliru. Lebih baik berhenti di sini daripada membiarkan orang
+ * mencoba-coba kata sandinya sendiri.
+ */
+async function requireAccounts() {
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+
+  try {
+    await client.connect();
+
+    const { rows } = await client.query('SELECT count(*)::int AS total FROM "User"');
+
+    if (rows[0].total > 0) {
+      console.log(`  ✓ ${rows[0].total} akun terdaftar`);
+      return;
+    }
+
+    console.error("\n  ✗ Tabel User kosong — tidak ada satu pun akun yang dapat masuk.");
+    console.error("      pnpm db:seed    # mengisi data awal; aman diulang");
+    console.error("      Lalu periksa: pnpm login:check --list\n");
+    process.exit(1);
+  } catch (error) {
+    // Tabelnya belum ada berarti migrasi belum diterapkan; itu urusan langkah berikutnya,
+    // bukan kegagalan di sini.
+    if ((error instanceof Error ? error.message : "").includes('relation "User" does not exist')) {
+      console.log("  · tabel User belum ada — migrasi akan diterapkan lebih dulu");
+      return;
+    }
+
+    throw error;
+  } finally {
+    await client.end().catch(() => undefined);
+  }
+}
+
 async function main() {
   const root = process.cwd();
 
@@ -110,6 +154,8 @@ async function main() {
   console.log(`  folder: ${root}`);
 
   await requireDatabase();
+
+  await requireAccounts();
 
   const { state, minutesBehind } = await buildState();
   const rebuild = force || state !== "fresh";
