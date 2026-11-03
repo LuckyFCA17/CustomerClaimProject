@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { CparSectionKey, ResponsibilityType, VerificationDecision } from "@/generated/prisma/enums";
+import { CparSectionKey, ResponsibilityType, RoleCode, VerificationDecision } from "@/generated/prisma/enums";
 
 /**
  * Skema Modul 2 (§6): dua jalur yang saling eksklusif dari klaim yang sudah terbit.
@@ -16,8 +16,16 @@ export const followUpSchema = z
   .object({
     responsibilityType: z.enum(ResponsibilityType, { message: "Pilih jenis penanggung jawab." }),
     responsibleDeptId: z.string().min(1, "Pilih departemen penanggung jawab."),
-    /** Departemen tambahan pada tipe CFT; lead dept tidak diulang di sini. */
+    /** Departemen tambahan pada tipe CFT; Main Responsible Department tidak diulang di sini. */
     cftMemberDeptIds: z.array(z.string().min(1)).default([]),
+    /**
+     * Orang yang ditunjuk mengisi kapasitas User Dept. Head pada rantai verifikasi.
+     *
+     * Wajib, dan tidak boleh disimpulkan dari role: departemen yang tidak punya pemegang
+     * role USER_HEAD akan menghasilkan CPAR yang mustahil diselesaikan. Keanggotaannya di
+     * Main Responsible Department diperiksa di server, bukan di sini.
+     */
+    userHeadVerifierId: z.string().min(1, "Tunjuk User Dept. Head untuk verifikasi CPAR."),
     initialDocumentIds: z
       .array(z.string().min(1))
       .min(1, "Pilih minimal satu dokumen yang diminta."),
@@ -32,7 +40,8 @@ export const followUpSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["cftMemberDeptIds"],
-        message: "CFT memerlukan minimal satu departemen anggota selain lead dept.",
+        message:
+          "CFT memerlukan minimal satu departemen anggota selain Main Responsible Department.",
       });
     }
 
@@ -40,7 +49,8 @@ export const followUpSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["cftMemberDeptIds"],
-        message: "Lead dept sudah menjadi penanggung jawab; tidak perlu dipilih lagi sebagai anggota.",
+        message:
+          "Main Responsible Department sudah menjadi penanggung jawab; tidak perlu dipilih lagi sebagai anggota.",
       });
     }
 
@@ -112,6 +122,15 @@ export const verifySchema = z
     comment: z.string().trim().max(4000, "Maksimal 4000 karakter.").optional().or(z.literal("")),
     /** Section yang ditandai bermasalah; opsional, tetapi sangat membantu pengisi. */
     targetSections: z.array(z.enum(CparSectionKey)).default([]),
+    /**
+     * Kapasitas yang dipakai memutuskan.
+     *
+     * Dikirim klien karena satu orang dapat memegang dua kapasitas pada CPAR yang sama —
+     * QA Dept. Head yang sekaligus ditunjuk sebagai User Dept. Head. Server tidak
+     * memercayainya: nilainya harus termasuk kapasitas yang benar-benar dipegang
+     * pengirim, dan itu diperiksa ulang di server action.
+     */
+    capacity: z.enum(RoleCode, { message: "Kapasitas verifikasi tidak dikenal." }),
   })
   .superRefine((value, ctx) => {
     if (value.decision !== "REVISE") return;
@@ -132,6 +151,7 @@ export interface FollowUpFormValues {
   responsibilityType: string;
   responsibleDeptId: string;
   cftMemberDeptIds: string[];
+  userHeadVerifierId: string;
   initialDocumentIds: string[];
   dueDate: string;
   note: string;

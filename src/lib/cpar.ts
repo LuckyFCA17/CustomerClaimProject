@@ -242,13 +242,16 @@ export const VERIFIER_CAPACITY_LABEL: Record<string, string> = {
 export interface CparForVerification {
   readonly responsibilityType: ResponsibilityType;
   readonly responsibleDeptId: string;
+  /** Orang yang ditunjuk mengisi kapasitas User Dept. Head pada CPAR ini. */
+  readonly userHeadVerifierId?: string | null;
 }
 
 /**
  * Kapasitas yang wajib memutuskan sebelum CPAR dapat disetujui (§5, PLAN §2.4).
  *
  * Tidak bergantung pada tipe penanggung jawab, dan itu disengaja: pada tipe CFT,
- * `responsibleDeptId` berperan sebagai lead dept dan hanya head lead dept yang wajib
+ * `responsibleDeptId` berperan sebagai Main Responsible Department, dan hanya satu orang
+ * yang ditunjuk dari sana yang wajib
  * (asumsi A-04) — head dept CFT lain tetap boleh mengisi dan melihat, tapi approval
  * tidak menunggu mereka. Yang menyaring head dept mana adalah `verifierCapacity`,
  * bukan daftar ini. Daftarnya dibekukan ke payload notifikasi saat siklus dibuka,
@@ -295,28 +298,66 @@ export function verificationProgress(
 }
 
 /**
- * Kapasitas yang dipakai seorang aktor saat memverifikasi.
+ * Kapasitas verifier yang dipegang seorang aktor pada satu CPAR.
  *
- * Seorang pengguna bisa memegang lebih dari satu role — QA Dept. Head yang juga QA Staff,
- * misalnya. Yang dicatat di `Verification` adalah kapasitasnya, bukan seluruh rolenya,
- * karena kunci unik `(cparId, role, cycle)` berarti "satu keputusan per kapasitas".
- * Urutan `REQUIRED_VERIFIER_ROLES` menentukan kapasitas mana yang dipakai bila seseorang
- * memenuhi lebih dari satu.
+ * Mengembalikan daftar, bukan satu, karena satu orang memang dapat memegang dua
+ * kapasitas sekaligus. Yang paling sering: CPAR yang main responsible department-nya QA
+ * — QA Dept. Head di sana juga menjadi perwakilan departemen pelaksana. Selama fungsi ini
+ * hanya mengembalikan satu kapasitas, keputusan keduanya tidak pernah bisa dicatat dan
+ * rantai verifikasi tertahan selamanya.
+ *
+ * Kapasitas User Dept. Head mengikuti **penunjukan**, bukan role. Penunjukan itu ada
+ * justru karena role tidak selalu cukup: departemen QA tidak punya pemegang USER_HEAD.
+ * CPAR lama yang belum punya penunjukan jatuh kembali ke aturan sebelumnya — pemegang
+ * USER_HEAD di departemen penanggung jawab — supaya tidak ada CPAR berjalan yang
+ * mendadak kehilangan verifiernya saat kolom ini ditambahkan.
+ */
+export function verifierCapacities(
+  actor: { readonly id: string; readonly roles: readonly RoleCode[]; readonly departmentId: string | null },
+  cpar: CparForVerification,
+): readonly RoleCode[] {
+  const held: RoleCode[] = [];
+
+  for (const role of requiredVerifiers()) {
+    if (role === "USER_HEAD") {
+      const designated = cpar.userHeadVerifierId;
+
+      if (designated) {
+        if (designated === actor.id) held.push(role);
+        continue;
+      }
+
+      // Tanpa penunjukan: aturan lama.
+      if (actor.roles.includes(role) && actor.departmentId === cpar.responsibleDeptId) {
+        held.push(role);
+      }
+
+      continue;
+    }
+
+    if (actor.roles.includes(role)) held.push(role);
+  }
+
+  return held;
+}
+
+/**
+ * Kapasitas pertama yang dipegang aktor, menurut urutan verifier wajib.
+ *
+ * Dipertahankan untuk pemanggil yang memang hanya perlu tahu "apakah orang ini verifier".
+ * Yang memerlukan seluruh kapasitasnya — halaman CPAR dan server action verifikasi —
+ * memakai `verifierCapacities`.
  */
 export function verifierCapacity(
   actorRoles: readonly RoleCode[],
   actorDepartmentId: string | null,
   cpar: CparForVerification,
+  actorId = "",
 ): RoleCode | null {
-  for (const role of requiredVerifiers()) {
-    if (!actorRoles.includes(role)) continue;
+  const held = verifierCapacities(
+    { id: actorId, roles: actorRoles, departmentId: actorDepartmentId },
+    cpar,
+  );
 
-    // USER_HEAD hanya berlaku untuk head dept yang ditunjuk; head dept lain yang
-    // kebetulan membuka halaman ini tidak mengisi kapasitas itu.
-    if (role === "USER_HEAD" && actorDepartmentId !== cpar.responsibleDeptId) continue;
-
-    return role;
-  }
-
-  return null;
+  return held[0] ?? null;
 }

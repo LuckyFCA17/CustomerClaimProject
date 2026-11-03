@@ -27,6 +27,8 @@ export interface ClaimContext {
   readonly cpar: {
     readonly responsibleDeptId: string;
     readonly cftMemberDeptIds: readonly string[];
+    /** Orang yang ditunjuk mengisi kapasitas User Dept. Head; null bila belum ditunjuk. */
+    readonly userHeadVerifierId?: string | null;
   } | null;
 }
 
@@ -266,7 +268,8 @@ export const CPAR_SECTION_OWNERS: Record<CparSectionKey, readonly RoleCode[]> = 
 
 /**
  * Verifier wajib per siklus (§5, asumsi A-01 & A-04 — keduanya dikonfirmasi).
- * Sama untuk semua tipe klaim; pada CPAR bertipe CFT hanya head lead dept yang wajib.
+ * Sama untuk semua tipe klaim; pada CPAR bertipe CFT kapasitas User Dept. Head hanya
+ * dipegang satu orang yang ditunjuk dari Main Responsible Department.
  */
 export const REQUIRED_VERIFIER_ROLES = [
   "QA_HEAD",
@@ -326,6 +329,12 @@ export function can(actor: Actor, action: Action, claim: ClaimContext | null = n
     if (rule.statuses !== "ANY" && !rule.statuses.includes(claim.status)) return false;
     if (!canViewClaim(actor, claim)) return false;
   }
+
+  // Satu-satunya hak yang tidak berasal dari role: orang yang ditunjuk mengisi kapasitas
+  // User Dept. Head saat CPAR diterbitkan. Penunjukan itu ada justru karena role tidak
+  // selalu cukup — bila main responsible department-nya QA, tidak ada pemegang USER_HEAD
+  // di sana, dan tanpa jalur ini rantai verifikasi tidak akan pernah lengkap.
+  if (action === "cpar.verify" && claim?.cpar?.userHeadVerifierId === actor.id) return true;
 
   return actor.roles.some((role) => {
     const scope = rule.roles[role];

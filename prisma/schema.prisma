@@ -198,6 +198,7 @@ model User {
   reviewedClaims  Claim[]             @relation("ClaimReviewedBy")
   ignoredClaims   Claim[]             @relation("ClaimIgnoredBy")
   verifications   Verification[]
+  userHeadCpars   Cpar[]              @relation("CparUserHeadVerifier")
   auditLogs       AuditLog[]
   attachments     Attachment[]
   sections        CparSection[]
@@ -443,9 +444,18 @@ model Cpar {
   cparNo  String @unique
 
   responsibilityType ResponsibilityType
-  /// Pada tipe CFT, departemen ini berperan sebagai lead dept (asumsi A-04).
+  /// Main responsible department. Pada tipe CFT, departemen inilah yang memimpin dan
+  /// hanya perwakilannya yang mengisi kapasitas User Dept. Head (asumsi A-04).
   responsibleDeptId  String
   responsibleDept    Department            @relation("CparResponsibleDept", fields: [responsibleDeptId], references: [id])
+  /// Orang yang ditunjuk mengisi kapasitas User Dept. Head pada rantai verifikasi.
+  ///
+  /// Ditunjuk saat CPAR diterbitkan, dari anggota main responsible department. Dulu
+  /// kapasitas ini disimpulkan dari role USER_HEAD + departemen, dan aturan itu macet
+  /// bila departemennya QA — tidak ada pemegang USER_HEAD di sana, sehingga CPAR tidak
+  /// pernah mencapai empat keputusan.
+  userHeadVerifierId String?
+  userHeadVerifier   User?                 @relation("CparUserHeadVerifier", fields: [userHeadVerifierId], references: [id])
   cftMembers         CparCftMember[]
   initialDocuments   CparInitialDocument[]
 
@@ -465,6 +475,7 @@ model Cpar {
   deletedAt DateTime?
 
   @@index([responsibleDeptId])
+  @@index([userHeadVerifierId])
   @@index([dueDate])
 }
 

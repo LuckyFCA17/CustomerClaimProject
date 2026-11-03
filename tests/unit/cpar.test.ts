@@ -13,6 +13,7 @@ import {
   requiredVerifiers,
   verificationProgress,
   verifierCapacity,
+  verifierCapacities,
 } from "@/lib/cpar";
 
 /**
@@ -226,6 +227,81 @@ describe("verifierCapacity", () => {
     expect(verifierCapacity(["QA"], "dept-qa", USER_DEPT_CPAR)).toBeNull();
     expect(verifierCapacity(["ADMIN"], null, USER_DEPT_CPAR)).toBeNull();
     expect(verifierCapacity(["USER_DEPT"], LEAD_DEPT, USER_DEPT_CPAR)).toBeNull();
+  });
+});
+
+/**
+ * Kebuntuan yang pernah terjadi di produksi, diikat di sini.
+ *
+ * Dua cacat yang bergabung: (1) kapasitas User Dept. Head disimpulkan dari role, sehingga
+ * CPAR yang penanggung jawabnya QA — departemen yang tidak punya satu pun pemegang role
+ * USER_HEAD — berhenti selamanya pada tiga dari empat keputusan; dan (2) orang yang
+ * memegang dua kapasitas hanya dapat memakai yang pertama, karena helper-nya
+ * mengembalikan satu nilai.
+ */
+describe("verifierCapacities", () => {
+  const QA_DEPT = "dept-qa";
+
+  const rina = { id: "user-rina", roles: ["QA", "QA_HEAD"] as const, departmentId: QA_DEPT };
+
+  it("mengembalikan kedua kapasitas saat QA menjadi main responsible department", () => {
+    const cpar: CparForVerification = {
+      responsibilityType: "CFT",
+      responsibleDeptId: QA_DEPT,
+      userHeadVerifierId: rina.id,
+    };
+
+    expect(verifierCapacities(rina, cpar)).toEqual(["QA_HEAD", "USER_HEAD"]);
+  });
+
+  it("memisahkan penunjukan dari role: yang ditunjuk memegang USER_HEAD tanpa role itu", () => {
+    const cpar: CparForVerification = {
+      responsibilityType: "USER_DEPT",
+      responsibleDeptId: LEAD_DEPT,
+      userHeadVerifierId: "user-budi",
+    };
+
+    const budi = { id: "user-budi", roles: ["USER_DEPT"] as const, departmentId: LEAD_DEPT };
+
+    expect(verifierCapacities(budi, cpar)).toEqual(["USER_HEAD"]);
+  });
+
+  it("penunjukan mengalahkan role: pemegang USER_HEAD lain tidak ikut memutuskan", () => {
+    const cpar: CparForVerification = {
+      responsibilityType: "USER_DEPT",
+      responsibleDeptId: LEAD_DEPT,
+      userHeadVerifierId: "user-budi",
+    };
+
+    const bambang = { id: "user-bambang", roles: ["USER_HEAD"] as const, departmentId: LEAD_DEPT };
+
+    expect(verifierCapacities(bambang, cpar)).toEqual([]);
+  });
+
+  it("tanpa penunjukan, aturan lama tetap berlaku untuk CPAR yang terbit lebih dulu", () => {
+    const cpar: CparForVerification = {
+      responsibilityType: "USER_DEPT",
+      responsibleDeptId: LEAD_DEPT,
+      userHeadVerifierId: null,
+    };
+
+    const bambang = { id: "user-bambang", roles: ["USER_HEAD"] as const, departmentId: LEAD_DEPT };
+    const asing = { id: "user-asing", roles: ["USER_HEAD"] as const, departmentId: OTHER_DEPT };
+
+    expect(verifierCapacities(bambang, cpar)).toEqual(["USER_HEAD"]);
+    expect(verifierCapacities(asing, cpar)).toEqual([]);
+  });
+
+  it("mengembalikan kapasitas dalam urutan verifier wajib, bukan urutan role aktor", () => {
+    const cpar: CparForVerification = {
+      responsibilityType: "CFT",
+      responsibleDeptId: QA_DEPT,
+      userHeadVerifierId: rina.id,
+    };
+
+    const held = verifierCapacities({ ...rina, roles: ["QA_HEAD", "QA"] as const }, cpar);
+
+    expect(held).toEqual(requiredVerifiers().filter((role) => held.includes(role)));
   });
 
   it("mengabaikan USER_HEAD yang tidak berhak tetapi tetap memakai kapasitas lain", () => {

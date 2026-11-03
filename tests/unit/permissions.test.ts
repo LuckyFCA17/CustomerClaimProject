@@ -185,6 +185,44 @@ describe("Modul 3 — pengisian dan verifikasi CPAR", () => {
     expect(can(otherHead, "cpar.verify", cparClaim("CPAR_UNDER_VERIFICATION"))).toBe(false);
   });
 
+  /**
+   * Satu-satunya hak di portal ini yang tidak berasal dari role.
+   *
+   * Dibutuhkan karena ada departemen yang tidak punya satu pun pemegang role USER_HEAD —
+   * dan CPAR yang penanggung jawabnya departemen itu tidak akan pernah mencapai empat
+   * keputusan. Penunjukan dilakukan saat CPAR diterbitkan, bukan dengan membagikan role.
+   */
+  it("memberi hak verifikasi kepada orang yang ditunjuk, walau tidak memegang role verifier", () => {
+    const ditunjuk: Actor = { id: "u-qa-lead", roles: ["USER_DEPT"], departmentId: PRODUCTION };
+    const target = cparClaim("CPAR_UNDER_VERIFICATION", {
+      cpar: {
+        responsibleDeptId: PRODUCTION,
+        cftMemberDeptIds: [ENGINEERING],
+        userHeadVerifierId: ditunjuk.id,
+      },
+    });
+
+    expect(can(ditunjuk, "cpar.verify", target)).toBe(true);
+
+    // Penunjukan berlaku untuk satu CPAR, bukan untuk seluruh portal.
+    expect(can(ditunjuk, "cpar.verify", cparClaim("CPAR_UNDER_VERIFICATION"))).toBe(false);
+    expect(can(ditunjuk, "claim.review.approve", claim("PENDING_QA_HEAD_REVIEW"))).toBe(false);
+    expect(can(ditunjuk, "master.manage")).toBe(false);
+  });
+
+  it("tidak menjadikan orang lain verifier hanya karena ada penunjukan pada CPAR itu", () => {
+    const target = cparClaim("CPAR_UNDER_VERIFICATION", {
+      cpar: {
+        responsibleDeptId: PRODUCTION,
+        cftMemberDeptIds: [ENGINEERING],
+        userHeadVerifierId: "u-qa-lead",
+      },
+    });
+
+    expect(can(prodStaff, "cpar.verify", target)).toBe(false);
+    expect(can(qa, "cpar.verify", target)).toBe(false);
+  });
+
   it("mewajibkan empat kapasitas verifier yang sama untuk semua tipe klaim (asumsi A-01)", () => {
     expect(REQUIRED_VERIFIER_ROLES).toEqual(["QA_HEAD", "USER_HEAD", "FACTORY_MGR", "PRESDIR"]);
   });

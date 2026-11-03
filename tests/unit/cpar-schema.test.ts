@@ -29,6 +29,7 @@ function validFollowUp(overrides: Record<string, unknown> = {}) {
     responsibilityType: "USER_DEPT",
     responsibleDeptId: PRD,
     cftMemberDeptIds: [],
+    userHeadVerifierId: "user-bambang",
     initialDocumentIds: ["doc-4m", "doc-inspection"],
     dueDate: "2026-10-28",
     note: "",
@@ -78,16 +79,22 @@ describe("aturan khusus CFT", () => {
         followUpSchema.safeParse(validFollowUp({ responsibilityType: "CFT", cftMemberDeptIds: [] })),
         "cftMemberDeptIds",
       ),
-    ).toEqual(["CFT memerlukan minimal satu departemen anggota selain lead dept."]);
+    ).toEqual(["CFT memerlukan minimal satu departemen anggota selain Main Responsible Department."]);
   });
 
-  it("menolak lead dept yang ikut dipilih sebagai anggota", () => {
+  it("mewajibkan penunjukan User Dept. Head", () => {
+    expect(
+      errorsFor(followUpSchema.safeParse(validFollowUp({ userHeadVerifierId: "" })), "userHeadVerifierId"),
+    ).toHaveLength(1);
+  });
+
+  it("menolak Main Responsible Department yang ikut dipilih sebagai anggota", () => {
     const result = followUpSchema.safeParse(
       validFollowUp({ responsibilityType: "CFT", cftMemberDeptIds: [PRD, ENG] }),
     );
 
     expect(errorsFor(result, "cftMemberDeptIds")).toContain(
-      "Lead dept sudah menjadi penanggung jawab; tidak perlu dipilih lagi sebagai anggota.",
+      "Main Responsible Department sudah menjadi penanggung jawab; tidak perlu dipilih lagi sebagai anggota.",
     );
   });
 
@@ -187,20 +194,24 @@ describe("verifySchema", () => {
   const catatanMemadai = "Root cause occurrence masih berhenti di gejala, telusuri lebih dalam.";
 
   it("menerima VERIFIED tanpa komentar", () => {
-    const result = verifySchema.safeParse({ decision: "VERIFIED" });
+    const result = verifySchema.safeParse({ decision: "VERIFIED", capacity: "QA_HEAD" });
 
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.targetSections).toEqual([]);
   });
 
   it("mewajibkan komentar pada REVISE", () => {
-    const result = verifySchema.safeParse({ decision: "REVISE", comment: "" });
+    const result = verifySchema.safeParse({ decision: "REVISE", comment: "", capacity: "QA_HEAD" });
 
     expect(errorsFor(result, "comment")).toHaveLength(1);
   });
 
   it("menolak komentar REVISE yang terlalu pendek", () => {
-    const result = verifySchema.safeParse({ decision: "REVISE", comment: "kurang" });
+    const result = verifySchema.safeParse({
+      decision: "REVISE",
+      comment: "kurang",
+      capacity: "QA_HEAD",
+    });
 
     expect(errorsFor(result, "comment")).toHaveLength(1);
   });
@@ -208,6 +219,7 @@ describe("verifySchema", () => {
   it("menerima REVISE dengan komentar memadai dan section yang ditandai", () => {
     const result = verifySchema.safeParse({
       decision: "REVISE",
+      capacity: "QA_HEAD",
       comment: catatanMemadai,
       targetSections: ["ROOT_CAUSE_OCCURRENCE", "PERMANENT_COUNTERMEASURE"],
     });
@@ -217,12 +229,13 @@ describe("verifySchema", () => {
   });
 
   it("menolak keputusan yang tidak dikenal", () => {
-    expect(verifySchema.safeParse({ decision: "MUNGKIN" }).success).toBe(false);
+    expect(verifySchema.safeParse({ decision: "MUNGKIN", capacity: "QA_HEAD" }).success).toBe(false);
   });
 
   it("menolak section yang tidak dikenal pada targetSections", () => {
     const result = verifySchema.safeParse({
       decision: "REVISE",
+      capacity: "QA_HEAD",
       comment: catatanMemadai,
       targetSections: ["BUKAN_SECTION"],
     });

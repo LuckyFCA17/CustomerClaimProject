@@ -57,6 +57,12 @@ test("QA Dept. Head menerbitkan CPAR ke departemen penanggung jawab", async ({ p
   await page.getByRole("radio", { name: /User Department/ }).first().click();
   await page.locator("#responsibleDeptId").selectOption({ label: "PRD — Production" });
 
+  // Kapasitas User Dept. Head ditunjuk, bukan disimpulkan dari role: tanpa penunjukan
+  // CPAR terbit dengan rantai verifikasi yang tidak pernah dapat dilengkapi.
+  await page
+    .locator("#userHeadVerifierId")
+    .selectOption({ label: "Bambang Setiawan — Production Dept. Head" });
+
   // Minimal satu dokumen awal wajib diminta; tanpa itu form menolak dengan
   // "Pilih minimal satu dokumen yang diminta."
   await page.getByRole("checkbox", { name: "4M Change Sheet" }).click();

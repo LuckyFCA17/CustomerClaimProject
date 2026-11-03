@@ -19,6 +19,14 @@ export interface DepartmentOption {
   readonly id: string;
   readonly code: string;
   readonly name: string;
+  /** Calon User Dept. Head: seluruh anggota aktif departemen ini. */
+  readonly members: readonly MemberOption[];
+}
+
+export interface MemberOption {
+  readonly id: string;
+  readonly name: string;
+  readonly jobTitle: string;
 }
 
 export interface DocumentOption {
@@ -30,8 +38,13 @@ export interface DocumentOption {
  * Jalur Follow Up (§6 Modul 2): menetapkan penanggung jawab lalu menerbitkan CPAR.
  *
  * Pilihan CFT dan User Department tidak sekadar mengubah label — pada CFT, departemen
- * yang dipilih pertama berperan sebagai lead dept dan hanya head-nya yang menjadi
- * verifier wajib (asumsi A-04).
+ * yang dipilih pertama berperan sebagai Main Responsible Department dan hanya satu
+ * orang dari sana yang menjadi verifier User Dept. Head (asumsi A-04).
+ *
+ * Orang itu ditunjuk di sini, bukan disimpulkan dari role. Sebelumnya portal mencari
+ * sendiri pemegang role USER_HEAD di departemen tersebut, dan pada departemen yang tidak
+ * punya satu pun — QA, misalnya — CPAR berhenti selamanya pada tiga dari empat keputusan
+ * tanpa menunjukkan apa yang kurang.
  */
 export function FollowUpForm({
   claimId,
@@ -48,6 +61,7 @@ export function FollowUpForm({
 
   const [responsibilityType, setResponsibilityType] = useState("USER_DEPT");
   const [responsibleDeptId, setResponsibleDeptId] = useState("");
+  const [userHeadVerifierId, setUserHeadVerifierId] = useState("");
   const [cftMemberDeptIds, setCftMemberDeptIds] = useState<string[]>([]);
   const [initialDocumentIds, setInitialDocumentIds] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState(defaultDueDate);
@@ -57,6 +71,8 @@ export function FollowUpForm({
   const [pending, setPending] = useState(false);
 
   const isCft = responsibilityType === "CFT";
+  const selectedDept = departments.find((department) => department.id === responsibleDeptId) ?? null;
+  const members = selectedDept?.members ?? [];
 
   function toggle(list: string[], value: string): string[] {
     return list.includes(value) ? list.filter((entry) => entry !== value) : [...list, value];
@@ -73,6 +89,7 @@ export function FollowUpForm({
         // Anggota CFT hanya bermakna pada tipe CFT; pada User Department dikosongkan
         // supaya pilihan yang sempat dicentang tidak ikut tersimpan diam-diam.
         cftMemberDeptIds: isCft ? cftMemberDeptIds : [],
+        userHeadVerifierId,
         initialDocumentIds,
         dueDate,
         note,
@@ -98,8 +115,8 @@ export function FollowUpForm({
         <CardHeader>
           <CardTitle>Responsibility</CardTitle>
           <CardDescription>
-            Siapa yang menanggung penanganan klaim ini. Pada CFT, lead dept adalah departemen yang
-            head-nya ikut memverifikasi CPAR.
+            Siapa yang menanggung penanganan klaim ini, dan siapa dari sana yang memverifikasi
+            CPAR sebagai User Dept. Head.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -117,14 +134,14 @@ export function FollowUpForm({
             <RadioGroupItem value="CFT">
               <span className="block font-medium">Cross Functional Team</span>
               <span className="mt-0.5 block text-xs text-muted-foreground">
-                Lead dept dibantu departemen lain.
+                Main Responsible Department dibantu departemen lain.
               </span>
             </RadioGroupItem>
           </RadioGroup>
 
           <div className="space-y-1.5">
             <Label htmlFor="responsibleDeptId">
-              {isCft ? "Lead department" : "Departemen penanggung jawab"}
+              {isCft ? "Main Responsible Department" : "Departemen penanggung jawab"}
               <span className="ml-0.5 text-destructive">*</span>
             </Label>
             <SelectNative
@@ -133,6 +150,9 @@ export function FollowUpForm({
               onChange={(event) => {
                 setResponsibleDeptId(event.target.value);
                 setCftMemberDeptIds((list) => list.filter((id) => id !== event.target.value));
+                // Penunjukan ikut direset: orang dari departemen lama bukan calon yang sah
+                // lagi, dan membiarkannya terpilih akan ditolak server tanpa terlihat.
+                setUserHeadVerifierId("");
               }}
             >
               <option value="">Pilih departemen…</option>
@@ -143,6 +163,41 @@ export function FollowUpForm({
               ))}
             </SelectNative>
             <FieldError messages={errors.responsibleDeptId} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="userHeadVerifierId">
+              User Dept. Head untuk verifikasi CPAR
+              <span className="ml-0.5 text-destructive">*</span>
+            </Label>
+            <SelectNative
+              id="userHeadVerifierId"
+              value={userHeadVerifierId}
+              onChange={(event) => setUserHeadVerifierId(event.target.value)}
+              disabled={!selectedDept}
+            >
+              <option value="">
+                {selectedDept ? "Pilih orang…" : "Pilih departemen lebih dulu"}
+              </option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name} — {member.jobTitle}
+                </option>
+              ))}
+            </SelectNative>
+            {selectedDept && members.length === 0 ? (
+              <p className="text-xs text-destructive">
+                {selectedDept.code} belum punya anggota aktif. Tambahkan dulu di master data
+                pengguna, atau pilih departemen lain sebagai penanggung jawab.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Keputusannya satu dari empat verifikasi wajib. Orang ini tetap dapat
+                memverifikasi dalam kapasitas lain yang ia pegang, dan keduanya dihitung
+                terpisah.
+              </p>
+            )}
+            <FieldError messages={errors.userHeadVerifierId} />
           </div>
 
           {isCft ? (
@@ -157,7 +212,11 @@ export function FollowUpForm({
                     label={`${department.code} — ${department.name}`}
                     checked={cftMemberDeptIds.includes(department.id)}
                     disabled={department.id === responsibleDeptId}
-                    hint={department.id === responsibleDeptId ? "Sudah menjadi lead dept" : undefined}
+                    hint={
+                      department.id === responsibleDeptId
+                        ? "Sudah menjadi Main Responsible Department"
+                        : undefined
+                    }
                     onCheckedChange={() =>
                       setCftMemberDeptIds((list) => toggle(list, department.id))
                     }

@@ -82,6 +82,7 @@ export async function loadCparForPrint(claimId: string) {
         },
       },
       responsibleDept: { select: { code: true, name: true } },
+      userHeadVerifier: { select: { name: true, jobTitle: true } },
       cftMembers: { include: { department: { select: { code: true, name: true } } } },
       initialDocuments: { include: { initialDocument: { select: { name: true } } } },
       sections: { include: { filledBy: { select: { name: true, jobTitle: true } } } },

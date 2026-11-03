@@ -123,8 +123,16 @@ export default async function CparPrintPage({
             cpar.responsibilityType === "CFT" ? "Cross Functional Team" : "User Department",
           ],
           [
-            cpar.responsibilityType === "CFT" ? "Lead department" : "Responsible department",
+            cpar.responsibilityType === "CFT"
+              ? "Main responsible department"
+              : "Responsible department",
             `${cpar.responsibleDept.code} — ${cpar.responsibleDept.name}`,
+          ],
+          [
+            "User dept. head (verifier)",
+            cpar.userHeadVerifier
+              ? `${cpar.userHeadVerifier.name} — ${cpar.userHeadVerifier.jobTitle}`
+              : null,
           ],
           [
             "CFT members",

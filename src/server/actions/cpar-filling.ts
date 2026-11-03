@@ -17,7 +17,7 @@ import {
   isActionPlanSection,
   missingRequiredSections,
   verificationProgress,
-  verifierCapacity,
+  verifierCapacities,
 } from "@/lib/cpar";
 import { db } from "@/lib/db";
 import {
@@ -98,6 +98,9 @@ function toContext(cpar: LoadedCpar): ClaimContext {
     cpar: {
       responsibleDeptId: cpar.responsibleDeptId,
       cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
+      // Penunjukan ikut dibawa: tanpa ini, verifier yang ditunjuk tetapi tidak memegang
+      // role USER_HEAD akan ditolak penjaga izin sebelum kapasitasnya sempat dihitung.
+      userHeadVerifierId: cpar.userHeadVerifierId,
     },
   };
 }
@@ -1218,11 +1221,24 @@ export async function verifyCpar(claimId: string, input: unknown): Promise<Actio
     const comment = (parsed.data.comment ?? "").trim() || null;
 
     // Kapasitas, bukan seluruh role: kunci unik Verification adalah (cpar, role, cycle).
-    const capacity = verifierCapacity(actor.roles, actor.departmentId, cpar);
+    // Satu orang dapat memegang dua kapasitas pada CPAR yang sama, jadi yang dipakai
+    // adalah kapasitas yang dikirim — setelah dipastikan benar-benar ia pegang. Tanpa
+    // pemeriksaan itu, siapa pun yang memegang satu kapasitas dapat menandatangani
+    // kapasitas orang lain hanya dengan mengubah isi permintaannya.
+    const held = verifierCapacities(actor, cpar);
 
-    if (!capacity) {
+    if (held.length === 0) {
       throw new ForbiddenError(
         "Anda bukan salah satu verifier wajib untuk CPAR ini.",
+        "cpar.verify",
+      );
+    }
+
+    const capacity = parsed.data.capacity;
+
+    if (!held.includes(capacity)) {
+      throw new ForbiddenError(
+        `Anda tidak memegang kapasitas ${capacity} pada CPAR ini.`,
         "cpar.verify",
       );
     }

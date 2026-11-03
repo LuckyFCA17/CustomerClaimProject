@@ -97,8 +97,14 @@ export async function followUpClaim(claimId: string, input: unknown): Promise<Ac
       };
     }
 
-    const { responsibilityType, responsibleDeptId, cftMemberDeptIds, initialDocumentIds, note } =
-      parsed.data;
+    const {
+      responsibilityType,
+      responsibleDeptId,
+      cftMemberDeptIds,
+      initialDocumentIds,
+      userHeadVerifierId,
+      note,
+    } = parsed.data;
 
     // Input tanggal hanya mengirim Y-M-D, sehingga tenggat akan tersimpan pukul 00:00 UTC
     // alias 07:00 WIB — lewat tenggat sejak pagi hari H. Dinormalkan ke akhir jam kerja.
@@ -124,6 +130,26 @@ export async function followUpClaim(claimId: string, input: unknown): Promise<Ac
       throw new ValidationError("Ada departemen yang tidak dikenal atau sudah nonaktif.");
     }
 
+    // Yang ditunjuk harus benar-benar anggota aktif Main Responsible Department. Tanpa
+    // pemeriksaan ini siapa pun dapat ditunjuk lewat panggilan langsung ke server action,
+    // dan hak verifikasi User Dept. Head berpindah ke luar departemen yang menanggung.
+    const designated = await db.user.findFirst({
+      where: { id: userHeadVerifierId, isActive: true, departmentId: responsibleDeptId },
+      select: { id: true },
+    });
+
+    if (!designated) {
+      return {
+        ok: false,
+        message: "Periksa kembali isian penetapan penanggung jawab.",
+        fieldErrors: {
+          userHeadVerifierId: [
+            "Orang ini bukan anggota aktif Main Responsible Department yang dipilih.",
+          ],
+        },
+      };
+    }
+
     const documents = await db.initialDocument.findMany({
       where: { id: { in: initialDocumentIds }, isActive: true },
       select: { id: true },
@@ -145,6 +171,7 @@ export async function followUpClaim(claimId: string, input: unknown): Promise<Ac
           cparNo: number,
           responsibilityType,
           responsibleDeptId,
+          userHeadVerifierId,
           dueDate,
           issuedAt,
           cftMembers: {

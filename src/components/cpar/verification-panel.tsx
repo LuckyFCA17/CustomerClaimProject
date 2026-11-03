@@ -47,6 +47,9 @@ export function VerificationPanel({
     try {
       const result = await verifyCpar(claimId, {
         decision,
+        // Kapasitas ikut dikirim karena satu orang dapat memegang dua pada CPAR yang
+        // sama; server memeriksa ulang bahwa kapasitas ini memang ia pegang.
+        capacity,
         comment,
         targetSections: decision === "REVISE" ? targets : [],
       });

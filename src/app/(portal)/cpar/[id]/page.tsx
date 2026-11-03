@@ -37,7 +37,7 @@ import {
   missingSectionLabels,
   requiredVerifiers,
   verificationProgress,
-  verifierCapacity,
+  verifierCapacities,
 } from "@/lib/cpar";
 import { db } from "@/lib/db";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -82,6 +82,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
         },
       },
       responsibleDept: { select: { code: true, name: true } },
+      userHeadVerifier: { select: { name: true, jobTitle: true } },
       cftMembers: { include: { department: { select: { code: true, name: true } } } },
       initialDocuments: { include: { initialDocument: { select: { name: true } } } },
       sections: { include: { filledBy: { select: { name: true } } } },
@@ -100,6 +101,9 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
     cpar: {
       responsibleDeptId: cpar.responsibleDeptId,
       cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
+      // Penunjukan ikut dibawa: tanpa ini, verifier yang ditunjuk tetapi tidak memegang
+      // role USER_HEAD akan ditolak penjaga izin sebelum kapasitasnya sempat dihitung.
+      userHeadVerifierId: cpar.userHeadVerifierId,
     },
   };
 
@@ -274,12 +278,17 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
   const missing = missingSectionLabels(sections);
 
   const canSubmit = can(user, "cpar.submitFinal", context);
-  const capacity = can(user, "cpar.verify", context)
-    ? verifierCapacity(user.roles, user.departmentId, cpar)
-    : null;
-  const alreadyDecided = verifications.some(
-    (entry) => entry.role === capacity && entry.cycle === cpar.cycle,
+  // Seluruh kapasitas yang dipegang, bukan satu. QA Dept. Head yang sekaligus ditunjuk
+  // sebagai User Dept. Head memutuskan dua kali — sekali atas nama tiap kapasitas — dan
+  // kunci unik Verification memang (cpar, role, cycle), bukan (cpar, orang, cycle).
+  const heldCapacities = can(user, "cpar.verify", context)
+    ? verifierCapacities(user, cpar)
+    : [];
+  const pendingCapacities = heldCapacities.filter(
+    (role) => !verifications.some((entry) => entry.role === role && entry.cycle === cpar.cycle),
   );
+  const capacity = heldCapacities[0] ?? null;
+  const alreadyDecided = heldCapacities.length > 0 && pendingCapacities.length === 0;
 
   const overdue = cpar.dueDate < new Date() && !cpar.submittedAt;
   const underVerification = cpar.claim.status === "CPAR_UNDER_VERIFICATION";
@@ -296,9 +305,10 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
   const verifierNote =
     underVerification && !capacity && holdsVerifierRole
       ? `Anda membuka CPAR ini sebagai ${user.roles.includes("USER_HEAD") ? "Dept. Head" : "verifier"}, ` +
-        `tetapi kapasitas User Dept. Head pada CPAR ini dipegang head departemen penanggung jawab ` +
-        `(${cpar.responsibleDept.code} — ${cpar.responsibleDept.name}). Pada CPAR bertipe CFT pun ` +
-        `hanya head lead dept yang wajib memutuskan, bukan setiap departemen yang terlibat.`
+        `tetapi kapasitas User Dept. Head pada CPAR ini ditunjuk saat CPAR diterbitkan` +
+        `${cpar.userHeadVerifier ? ` dan dipegang ${cpar.userHeadVerifier.name}` : " dan belum terisi"}. ` +
+        `Satu CPAR hanya memerlukan satu keputusan untuk kapasitas itu, bukan satu dari ` +
+        `setiap departemen yang terlibat.`
       : null;
 
   return (
@@ -334,8 +344,8 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
         <CardHeader>
           <CardTitle>Penanggung jawab</CardTitle>
           <CardDescription>
-            Ditetapkan saat CPAR diterbitkan. Pada tipe CFT, hanya head lead dept yang menjadi
-            verifier wajib.
+            Ditetapkan saat CPAR diterbitkan. Kapasitas User Dept. Head pada rantai verifikasi
+            dipegang satu orang yang ditunjuk dari departemen penanggung jawab.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
@@ -344,8 +354,18 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
             value={cpar.responsibilityType === "CFT" ? "Cross Functional Team" : "User Department"}
           />
           <Row
-            label={cpar.responsibilityType === "CFT" ? "Lead department" : "Departemen"}
+            label={
+              cpar.responsibilityType === "CFT" ? "Main Responsible Department" : "Departemen"
+            }
             value={`${cpar.responsibleDept.code} — ${cpar.responsibleDept.name}`}
+          />
+          <Row
+            label="User Dept. Head (verifier)"
+            value={
+              cpar.userHeadVerifier
+                ? `${cpar.userHeadVerifier.name} — ${cpar.userHeadVerifier.jobTitle}`
+                : "Belum ditunjuk"
+            }
           />
           <Row
             label="Anggota CFT"
@@ -509,14 +529,17 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
               verifications={verifications}
               cycle={cpar.cycle}
               responsibleDept={cpar.responsibleDept.code}
+              userHead={cpar.userHeadVerifier}
               note={verifierNote}
             />
 
-            {underVerification && capacity && !alreadyDecided ? (
-              <div className="border-t border-nid-border pt-6">
-                <VerificationPanel claimId={id} capacity={capacity} />
-              </div>
-            ) : null}
+            {underVerification
+              ? pendingCapacities.map((role) => (
+                  <div key={role} className="border-t border-nid-border pt-6">
+                    <VerificationPanel claimId={id} capacity={role} />
+                  </div>
+                ))
+              : null}
 
             {underVerification && capacity && alreadyDecided ? (
               <p className="border-t border-nid-border pt-4 text-sm text-muted-foreground">

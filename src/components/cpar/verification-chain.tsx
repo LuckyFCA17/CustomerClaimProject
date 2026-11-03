@@ -29,6 +29,7 @@ export function VerificationChain({
   verifications,
   cycle,
   responsibleDept,
+  userHead,
   note,
 }: {
   required: readonly RoleCode[];
@@ -36,6 +37,8 @@ export function VerificationChain({
   cycle: number;
   /** Kode departemen penanggung jawab; dicetak di sebelah kapasitas User Dept. Head. */
   responsibleDept?: string | null;
+  /** Orang yang ditunjuk mengisi kapasitas User Dept. Head saat CPAR diterbitkan. */
+  userHead?: { readonly name: string; readonly jobTitle: string } | null;
   /** Keterangan untuk pembaca yang membuka halaman ini tetapi tidak dapat memutuskan. */
   note?: string | null;
 }) {
@@ -82,9 +85,29 @@ export function VerificationChain({
                     </p>
                   ) : null}
                 </>
+              ) : role === "USER_HEAD" ? (
+                /* Siapa yang sedang ditunggu adalah pertanyaan yang paling sering
+                   dibawa ke halaman ini, dan untuk kapasitas ini jawabannya bukan
+                   "siapa pun yang memegang role USER_HEAD" melainkan satu orang yang
+                   ditunjuk saat CPAR diterbitkan. */
+                <div className="text-xs text-muted-foreground">
+                  {userHead
+                    ? `Belum memutuskan — ${userHead.name} · ${userHead.jobTitle}`
+                    : "Belum ada yang ditunjuk"}
+                </div>
               ) : (
                 <div className="text-xs text-muted-foreground">Belum memutuskan</div>
               )}
+
+              {/* CPAR yang terbit sebelum penunjukan diwajibkan dapat tidak punya
+                  penunjukan sama sekali. Tanpa baris ini, satu-satunya gejalanya adalah
+                  verifikasi yang tidak pernah lengkap. */}
+              {role === "USER_HEAD" && !decision && !userHead ? (
+                <p className="mt-1 text-xs text-destructive">
+                  CPAR ini terbit tanpa penunjukan User Dept. Head, sehingga verifikasinya
+                  tidak dapat dilengkapi. Hubungi Administrator.
+                </p>
+              ) : null}
             </div>
 
             {decision ? (

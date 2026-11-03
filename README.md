@@ -658,7 +658,8 @@ Semua akun hasil seed memakai kata sandi **`Nifco#2026`**.
 Beberapa akun sengaja rangkap jabatan (§3), karena di lapangan hal itu lumrah.
 
 Seed juga membuat 3 klaim contoh pada status berbeda — `DRAFT`, `PENDING_QA_HEAD_REVIEW`, dan
-`CPAR_IN_PROGRESS` (CPAR bertipe CFT: Production sebagai lead dept, Engineering sebagai anggota).
+`CPAR_IN_PROGRESS` (CPAR bertipe CFT: Production sebagai Main Responsible Department, Engineering
+sebagai anggota).
 Masuk sebagai Yusuf (PRD) dan Agus (MTC) menghasilkan daftar klaim yang berbeda — itulah aturan
 visibilitas §3 yang bekerja.
 
@@ -786,6 +787,19 @@ Dua lingkaran yang membuat portal ini bukan sekadar daftar status: `CPAR_UNDER_V
 ⇄ CPAR_REVISION` (verifier menolak, siklus naik, verifikasi diulang dari awal) dan
 `CAPA_MONITORING → CPAR_REVISION` (countermeasure terbukti tidak efektif di lapangan,
 sehingga analisisnya dibuka kembali).
+
+Empat kapasitas verifier wajib itu — QA Dept. Head, User Dept. Head, Factory Manager,
+President Director — tidak seluruhnya berasal dari role. Kapasitas **User Dept. Head
+ditunjuk per CPAR**, dipilih dari anggota Main Responsible Department saat CPAR diterbitkan,
+dan disimpan di `Cpar.userHeadVerifierId`.
+
+Alasannya ditemukan di produksi: ada departemen yang tidak punya satu pun pemegang role
+`USER_HEAD` — QA, misalnya. CPAR yang penanggung jawabnya departemen itu berhenti selamanya
+pada tiga dari empat keputusan, tanpa apa pun di layar yang menyebutkan apa yang kurang.
+Dua akibat lanjutannya ikut ditangani: satu orang kini dapat memegang dua kapasitas sekaligus
+(QA Dept. Head yang juga ditunjuk sebagai User Dept. Head memutuskan dua kali, sekali untuk
+tiap kapasitas, dan rantai mencatat keduanya terpisah), dan kapasitas yang dipakai dikirim
+eksplisit lalu diperiksa ulang di server — bukan ditebak dari role pengirimnya.
 
 ## Diagram arsitektur
 

@@ -31,9 +31,18 @@ export default async function FollowUpPage({ params }: { params: Promise<{ id: s
     redirect(`/claims/${id}`);
   }
 
-  const [departments, documents] = await Promise.all([
+  const [departments, documents, candidates] = await Promise.all([
     db.department.findMany({ where: { isActive: true }, orderBy: { code: "asc" } }),
     db.initialDocument.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } }),
+    // Calon User Dept. Head tidak disaring menurut role. Justru itu masalahnya: ada
+    // departemen yang tidak punya satu pun pemegang role USER_HEAD, dan CPAR-nya lalu
+    // tidak pernah bisa mencapai empat keputusan. Yang memilih di sini manusia yang
+    // tahu susunan departemennya; jabatan ditampilkan agar pilihannya terinformasi.
+    db.user.findMany({
+      where: { isActive: true, departmentId: { not: null } },
+      select: { id: true, name: true, jobTitle: true, departmentId: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return (
@@ -53,7 +62,18 @@ export default async function FollowUpPage({ params }: { params: Promise<{ id: s
 
       <FollowUpForm
         claimId={claim.id}
-        departments={departments.map((d) => ({ id: d.id, code: d.code, name: d.name }))}
+        departments={departments.map((d) => ({
+          id: d.id,
+          code: d.code,
+          name: d.name,
+          members: candidates
+            .filter((candidate) => candidate.departmentId === d.id)
+            .map((candidate) => ({
+              id: candidate.id,
+              name: candidate.name,
+              jobTitle: candidate.jobTitle,
+            })),
+        }))}
         documents={documents.map((d) => ({ id: d.id, name: d.name }))}
         defaultDueDate={toJakartaDateInput(defaultCparDueDate())}
       />
