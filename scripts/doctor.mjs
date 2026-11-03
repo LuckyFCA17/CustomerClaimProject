@@ -208,13 +208,34 @@ async function checkStrayCopies() {
     if (await exists(path.join(dir, "prisma/migrations"))) strays.push(path.join(dir, "(salinan proyek)"));
   }
 
+  // Lalu ke bawah, satu tingkat. Salinan yang tersimpan DI DALAM proyek lebih berbahaya
+  // daripada yang di atasnya: tsconfig lama menyapu `**/*.ts`, sehingga berkas lama di
+  // sana ikut dikompilasi dan tsc melaporkan galat pada jalur yang tidak dikenali
+  // pembacanya. Sekarang include-nya sudah sempit, tetapi foldernya tetap perlu disebut —
+  // ia juga membingungkan pencarian dan membuang ruang disk.
+  for (const entry of await readdir(here, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "node_modules") {
+      continue;
+    }
+
+    // Dua penanda, bukan satu: salinan yang tertinggal sering tidak lengkap — sisa
+    // checkout yang terputus bisa hanya berisi sebagian src/ tanpa package.json.
+    const looksLikeCopy =
+      (await exists(path.join(here, entry.name, "package.json"))) ||
+      (await exists(path.join(here, entry.name, "src/lib")));
+
+    if (looksLikeCopy) {
+      strays.push(`${path.join(here, entry.name)} (salinan di dalam proyek)`);
+    }
+  }
+
   if (strays.length === 0) {
-    ok("tidak ada salinan proyek atau lockfile lain di folder di atasnya");
+    ok("tidak ada salinan proyek atau lockfile lain di dalam maupun di atasnya");
     return;
   }
 
   warn(
-    `ada ${strays.length} lockfile/salinan proyek di folder di atas ini — Next dapat membaca kode dari salinan yang basi`,
+    `ada ${strays.length} lockfile/salinan proyek di sekitar folder ini — kode basi di sana dapat ikut terbaca`,
     `hapus yang tidak dipakai: ${strays.join(" · ")}`,
   );
 }

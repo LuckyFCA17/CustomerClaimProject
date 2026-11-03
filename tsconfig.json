@@ -22,6 +22,25 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  // Folder disebut satu per satu, bukan "**/*". Pola menyapu itu ikut mengompilasi
+  // berkas .ts di folder mana pun di bawah akar proyek — termasuk salinan proyek yang
+  // tidak sengaja tersimpan di dalamnya, misalnya sisa `git clone` yang bersarang.
+  // Gejalanya menyesatkan: tsc melaporkan galat pada berkas yang jalurnya tidak dikenali
+  // dan nomor barisnya tidak cocok dengan apa pun yang sedang dibuka.
+  "include": [
+    "next-env.d.ts",
+    ".next/types/**/*.ts",
+    "*.ts",
+    "*.mts",
+    "*.mjs",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "scripts/**/*.ts",
+    "scripts/**/*.mts",
+    "scripts/**/*.mjs",
+    "prisma/**/*.ts"
+  ],
   "exclude": ["node_modules"]
 }

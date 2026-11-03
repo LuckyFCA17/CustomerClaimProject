@@ -224,6 +224,25 @@ pnpm repair && pnpm install && pnpm typecheck && pnpm boot
 `.env`, `storage/`, serta `node_modules` ikut terbawa utuh. Yang dibuang hanyalah klon
 lama di luarnya.
 
+**Periksa juga ke dalam.** Salinan yang tersimpan *di dalam* proyek lebih sulit dilihat.
+Tandanya: `tsc` melaporkan galat pada jalur berawalan nama folder lain, dan nomor
+barisnya tidak cocok dengan berkas yang sedang Anda buka —
+
+```
+CustomerClaimProject/src/emails/types.ts:45:14 - error TS2741: …
+```
+
+padahal Anda berada di `~/ncc-portal`. Berkas itu ada di
+`~/ncc-portal/CustomerClaimProject/`. Buang:
+
+```bash
+pnpm checkup                       # menyebutkan salinan di dalam maupun di atas proyek
+rm -rf ~/ncc-portal/CustomerClaimProject
+```
+
+Sejak `tsconfig.json` menyebut foldernya satu per satu alih-alih menyapu `**/*.ts`,
+salinan seperti itu tidak lagi ikut dikompilasi — tetapi tetap sebaiknya dibuang.
+
 ### Unggah foto gagal: "Failed to fetch"
 
 Gejalanya menyesatkan. Saat memori menipis, Next mode dev **me-restart dirinya sendiri**:
