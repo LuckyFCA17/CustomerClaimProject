@@ -617,11 +617,34 @@ justru yang terpisah. Yang membuatnya muat, berurutan dari yang paling besar pen
 - pemadatan tipografi dan jarak, dipusatkan di `.sheet-a3-landscape` pada `globals.css`
   supaya lembar A4 yang memakai komponen yang sama tidak ikut berubah.
 
-Sisa ruangnya tipis — sekitar 8mm dari 297mm pada CPAR terisi penuh. Karena itu `pnpm pdf:check`
-ikut memeriksa jumlah halaman, bukan hanya ukuran kertas: tanpa itu satu baris tambahan akan
-diam-diam mengembalikannya menjadi dua halaman. Margin lembar (5mm atas–bawah, 7mm kiri–kanan)
-sengaja tidak dikecilkan lagi — sebagian besar printer kantor tidak dapat mencetak lebih dekat
-dari itu ke tepi kertas.
+Sisa ruangnya tipis — sekitar 8mm dari 297mm pada CPAR terisi penuh — dan satu action plan yang
+panjang menghabiskannya. Karena itu ada **penyusutan otomatis**: `fitToOnePage()` di `lib/pdf.ts`
+mengukur lembar tepat sebelum mencetak dan, bila melebihi satu halaman, mengecilkan isinya
+secukupnya.
+
+Tiga keputusan di dalamnya:
+
+- **`zoom`, bukan `transform: scale()`.** Zoom ikut mengalirkan ulang tata letak, jadi teks yang
+  menyusut memakai barisnya lebih penuh dan tingginya turun lebih banyak daripada sekadar
+  diperkecil. `transform` hanya menggambar ulang kotak yang ukurannya tetap;
+- **dipasang pada pembungkus isi, bukan pada `.sheet`.** Dengan begitu yang mengecil hanya isinya;
+  padding lembar tetap 5mm atas–bawah dan 7mm kiri–kanan. Padding itulah margin cetaknya, dan
+  sebagian besar printer kantor tidak dapat mencetak lebih dekat dari itu ke tepi kertas;
+- **dicari lewat bagi dua, bukan sekali hitung.** Karena zoom mengalirkan ulang teks, tinggi tidak
+  berbanding lurus dengan faktornya — sekali hitung meleset. Yang dicari pun faktor *terbesar*
+  yang masih muat, bukan yang pertama kebetulan muat: menyusut berlebihan menyisakan lembar
+  setengah kosong dengan huruf lebih kecil daripada seharusnya. Tujuh kali bagi dua, seluruhnya
+  perhitungan tata letak di dalam peramban — tidak ada pencetakan ulang.
+
+Batas bawahnya **65%** (huruf 7,5pt menjadi sekitar 4,9pt). Di bawah itu lembar memang muat satu
+halaman tetapi tidak lagi terbaca dari jarak papan, yang justru alasan ia dicetak A3 — lebih baik
+dua halaman yang terbaca. Bila batas itu tercapai dan isinya masih meluap, lembar dicetak apa
+adanya dan sebuah peringatan masuk log server.
+
+Terukur pada CPAR tiruan yang isinya dilipatgandakan: dua kali lipat muat pada 80%, tiga kali
+lipat pada 70%, dan empat kali lipat — 20 baris permanent countermeasure, 16 faktor root cause —
+menembus batas bawah. `pnpm pdf:check` ikut memeriksa jumlah halaman supaya hal ini tidak lolos
+diam-diam.
 
 ```bash
 pnpm pdf:check --claim <claimId>              # ukuran kertas + jumlah halaman kelima dokumen

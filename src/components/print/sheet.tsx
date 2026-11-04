@@ -45,7 +45,13 @@ export function Sheet({
       {size === "a4" ? null : <style>{`@page { size: ${paper.page}; margin: 0; }`}</style>}
 
       <section className={paper.className} data-draft={draft ? "true" : undefined}>
-        {children}
+        {/*
+          Pembungkus untuk penyusutan otomatis (lihat `fitToOnePage` di lib/pdf.ts).
+          Zoom dipasang di sini, bukan pada .sheet, supaya yang mengecil hanya isinya —
+          padding lembar tetap 5mm/7mm. Padding itulah margin cetaknya, dan sebagian
+          besar printer kantor tidak dapat mencetak lebih dekat dari itu ke tepi kertas.
+        */}
+        <div className="sheet-fit">{children}</div>
       </section>
     </>
   );

@@ -212,6 +212,20 @@
   margin-top: 8mm;
 }
 
+/**
+ * Penyusutan otomatis agar lembar muat satu halaman.
+ *
+ * `--fit` diisi `fitToOnePage()` di lib/pdf.ts tepat sebelum mencetak; bawaannya 1,
+ * sehingga lembar yang memang sudah muat tidak tersentuh sama sekali.
+ *
+ * `zoom`, bukan `transform: scale()`: zoom ikut mengalirkan ulang tata letak, jadi teks
+ * yang menyusut memakai barisnya lebih penuh dan tingginya turun lebih banyak daripada
+ * sekadar diperkecil. `transform` hanya menggambar ulang kotak yang ukurannya tetap.
+ */
+.sheet-fit {
+  zoom: var(--fit, 1);
+}
+
 /* Form 5 (R3) PR-QA-ISO-07 dicetak mendatar; ukuran kertasnya diatur komponen Sheet. */
 .sheet-landscape {
   width: 297mm;
@@ -312,6 +326,13 @@
    ada, jadi tidak perlu setinggi foto yang sesungguhnya. */
 .sheet-a3-landscape .photo-slot {
   height: 11mm;
+}
+
+/* Lebar dibagi `--fit` supaya hasil kalinya kembali selebar area isi (420mm dikurangi
+   padding 7mm kiri-kanan). Tanpa ini isi yang menyusut akan menyisakan pita kosong di
+   kanan lembar alih-alih memakai lebarnya. */
+.sheet-a3-landscape .sheet-fit {
+  width: calc(406mm / var(--fit, 1));
 }
 
 /* Garis tabel form: satu kelas supaya ketebalannya seragam di seluruh lembar. */
