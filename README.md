@@ -589,7 +589,7 @@ untuk layar dan kertas, sehingga `?preview=1` di peramban memang menggambarkan h
 |---|---|---|
 | Bad News Information | A4 **mendatar** | Form 5 (R3) PR-QA-ISO-07 — Quality Alert, lengkap dengan grid sosialisasi operator |
 | Quick Information for Abnormal Part | A4 tegak | Foto besar berdampingan untuk ditempel di line produksi |
-| Corrective & Preventive Action Report | **A3 mendatar** | Delapan section CPAR dalam dua kolom, beserta fishbone, 5-Why, dan tabel action plan |
+| Corrective & Preventive Action Report | **A3 mendatar, satu halaman** | Delapan section CPAR dalam tiga kolom, beserta fishbone, 5-Why, dan tabel action plan |
 | CAPA Implementation Monitoring | A4 tegak | Periode pemantauan dan penilaian efektivitas |
 | A3 Improvement Report | A4 tegak | Lima blok A3 berdampingan |
 
@@ -600,11 +600,31 @@ pratinjau terlihat benar sementara PDF-nya terpotong, dan itu baru ketahuan sete
 
 CPAR memakai A3 mendatar sejak lembarnya memuat fishbone, tabel 5-Why, dan tabel action plan:
 dipadatkan ke A4 semuanya terbaca terlalu kecil, padahal lembar inilah yang ditempel saat review.
-Lebar A3 dipakai sebagai **dua kolom**, bukan satu baris selebar 400mm — baris sepanjang itu
+Lebar A3 dipakai sebagai **tiga kolom**, bukan satu baris selebar 400mm — baris sepanjang itu
 menyulitkan mata kembali ke awal baris berikutnya.
 
+CPAR juga harus **muat satu halaman**: lembar yang terbagi dua tidak dapat ditempel
+berdampingan, dan yang paling sering dibandingkan — root cause dengan countermeasure-nya —
+justru yang terpisah. Yang membuatnya muat, berurutan dari yang paling besar pengaruhnya:
+
+- **membuang pengulangan.** Type of claim, part name, internal part no., customer, dan
+  non-conformance detail dulu tercetak dua kali — di kepala lembar dan di section 1 Problem
+  Description. Kelimanya kini hanya di section 1, dan satu baris selebar lembar itu yang
+  paling menentukan;
+- **`column-fill: balance`.** Dengan `auto`, wadah multikolom memakai seluruh sisa tinggi
+  halaman walau isinya pendek, sehingga blok tanda tangan **selalu** terdorong ke halaman
+  kedua — berapa pun padatnya isi;
+- pemadatan tipografi dan jarak, dipusatkan di `.sheet-a3-landscape` pada `globals.css`
+  supaya lembar A4 yang memakai komponen yang sama tidak ikut berubah.
+
+Sisa ruangnya tipis — sekitar 8mm dari 297mm pada CPAR terisi penuh. Karena itu `pnpm pdf:check`
+ikut memeriksa jumlah halaman, bukan hanya ukuran kertas: tanpa itu satu baris tambahan akan
+diam-diam mengembalikannya menjadi dua halaman. Margin lembar (5mm atas–bawah, 7mm kiri–kanan)
+sengaja tidak dikecilkan lagi — sebagian besar printer kantor tidak dapat mencetak lebih dekat
+dari itu ke tepi kertas.
+
 ```bash
-pnpm pdf:check --claim <claimId>              # kelima dokumen + ukuran kertasnya
+pnpm pdf:check --claim <claimId>              # ukuran kertas + jumlah halaman kelima dokumen
 pnpm pdf:check --claim <claimId> --out ./pdf  # sekalian simpan berkasnya
 ```
 

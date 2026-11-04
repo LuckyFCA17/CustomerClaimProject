@@ -115,7 +115,7 @@ export function FieldGrid({
   columns = 2,
 }: {
   rows: readonly (readonly [string, string | null | undefined])[];
-  columns?: 1 | 2 | 3 | 4;
+  columns?: 1 | 2 | 3 | 4 | 5 | 6;
 }) {
   return (
     <table className="w-full border-collapse text-[9pt]">
@@ -168,7 +168,7 @@ export interface Signatory {
  */
 export function SignatureBlock({ signatories }: { signatories: readonly Signatory[] }) {
   return (
-    <div className="mt-[6mm]">
+    <div className="signature-block mt-[6mm]">
       <table className="w-full border-collapse text-center text-[8.5pt]">
         <tbody>
           <tr>
@@ -176,7 +176,7 @@ export function SignatureBlock({ signatories }: { signatories: readonly Signator
               <td key={signatory.role} className="border border-[#e4e7eb] px-[3mm] py-[2mm] align-top">
                 <div className="text-[7.5pt] uppercase tracking-wide text-[#6b7280]">{signatory.role}</div>
 
-                <div className="mt-[8mm] border-t border-[#1f2933] pt-[1.5mm]">
+                <div className="signature-rule mt-[8mm] border-t border-[#1f2933] pt-[1.5mm]">
                   <div className="font-semibold">{signatory.name ?? " "}</div>
                   <div className="text-[7.5pt] text-[#6b7280]">{signatory.jobTitle ?? " "}</div>
                   <div className="mt-[0.5mm] text-[7pt] tabular text-[#6b7280]">

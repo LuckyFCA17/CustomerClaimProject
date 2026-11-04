@@ -36,10 +36,27 @@ const EXPECTED: Record<DocumentKind, readonly [number, number]> = {
   A3: [210, 297],
 };
 
+/**
+ * Jumlah halaman maksimum, untuk dokumen yang memang harus muat sekian.
+ *
+ * CPAR harus satu halaman: lembar yang terbagi dua tidak dapat ditempel berdampingan
+ * saat review, dan bagian yang paling sering dibandingkan — root cause dengan
+ * countermeasure-nya — justru yang terpisah. Isinya dipadatkan untuk itu, dan ruang
+ * sisanya tipis; tanpa pemeriksaan ini satu baris tambahan akan diam-diam
+ * mengembalikannya menjadi dua halaman.
+ */
+const MAX_PAGES: Partial<Record<DocumentKind, number>> = {
+  CPAR: 1,
+};
+
 function arg(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
   const value = index > -1 ? process.argv[index + 1] : undefined;
   return value && !value.startsWith("--") ? value : undefined;
+}
+
+function pageCount(pdf: Buffer): number {
+  return (pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
 }
 
 /** Ukuran halaman pertama, dibaca dari /MediaBox pada berkas PDF. */
@@ -85,8 +102,17 @@ async function main(): Promise<void> {
 
         if (!ok) failures.push(`${kind} tercetak ${actual}, seharusnya ${wantW}×${wantH}mm`);
 
+        const pages = pageCount(pdf);
+        const maxPages = MAX_PAGES[kind];
+        const pagesOk = maxPages === undefined || pages <= maxPages;
+
+        if (!pagesOk) {
+          failures.push(`${kind} tercetak ${pages} halaman, maksimal ${maxPages}`);
+        }
+
         console.log(
-          `  ${ok ? "✓" : "✗"} ${kind.padEnd(11)} ${actual.padEnd(12)} ` +
+          `  ${ok && pagesOk ? "✓" : "✗"} ${kind.padEnd(11)} ${actual.padEnd(12)} ` +
+            `${String(pages).padStart(2)} hlm  ` +
             `${String((pdf.byteLength / 1024).toFixed(0)).padStart(4)} KB  ${DOCUMENT_TITLE[kind]}`,
         );
       } catch (error) {
@@ -106,7 +132,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log(`\n  ${kinds.length} dokumen tercetak dengan ukuran kertas yang benar.\n`);
+  console.log(`\n  ${kinds.length} dokumen tercetak dengan ukuran kertas dan jumlah halaman yang benar.\n`);
 }
 
 await main();

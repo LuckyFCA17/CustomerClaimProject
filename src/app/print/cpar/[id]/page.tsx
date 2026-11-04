@@ -23,7 +23,6 @@ import { readRootCause } from "@/schemas/root-cause";
 import { readTemporaryAction } from "@/schemas/temporary-action";
 import { loadProblemDescription } from "@/server/cpar-problem";
 import {
-  TYPE_LABEL,
   authorizePrint,
   loadActionPlanContext,
   loadCparForPrint,
@@ -114,15 +113,19 @@ export default async function CparPrintPage({
         printedAt={new Date()}
       />
 
+      {/*
+        Hanya identitas CPAR yang dicetak di kepala lembar.
+
+        Type of claim, part name, internal part no., customer, dan non-conformance
+        detail sengaja tidak diulang di sini: kelimanya sudah tercetak di section 1
+        Problem Description tepat di bawahnya, yang merupakan bagian form terkendali.
+        Mencetaknya dua kali menghabiskan satu baris penuh lebar lembar — dan baris itu
+        yang membuat CPAR tidak muat satu halaman.
+      */}
       <FieldGrid
         columns={4}
         rows={[
           ["Claim No.", claim.claimNo],
-          ["Type of claim", claim.type ? (TYPE_LABEL[claim.type] ?? claim.type) : null],
-          ["Part name", claim.partName],
-          ["Internal part no.", claim.internalPartNo],
-          ["Customer", claim.customer?.name],
-          ["Non-conformance detail", claim.ncDetail?.name],
           [
             "Responsibility",
             cpar.responsibilityType === "CFT" ? "Cross Functional Team" : "User Department",

@@ -77,7 +77,7 @@ function PartBlock({ part }: { part: ProblemPart }) {
             ))}
           </div>
         ) : (
-          <div className="grid h-[20mm] place-items-center border border-dashed border-[#e4e7eb] text-[7pt] text-[#6b7280]">
+          <div className="photo-slot grid h-[20mm] place-items-center border border-dashed border-[#e4e7eb] text-[7pt] text-[#6b7280]">
             Tidak ada foto
           </div>
         )}

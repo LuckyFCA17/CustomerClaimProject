@@ -228,21 +228,90 @@
 .sheet-a3-landscape {
   width: 420mm;
   min-height: 297mm;
-  padding: 10mm 12mm;
-  font-size: 9pt;
-  line-height: 1.4;
+  padding: 5mm 7mm;
+  font-size: 7.5pt;
+  line-height: 1.2;
 }
 
-/* Aliran dua kolom untuk isi lembar A3. `break-inside: avoid` dipasang pada tiap section
+/* Aliran tiga kolom untuk isi lembar A3. `break-inside: avoid` dipasang pada tiap section
    supaya satu section tidak terbelah di tengah antar-kolom maupun antar-halaman. */
 .sheet-columns {
-  column-count: 2;
-  column-gap: 8mm;
-  column-fill: auto;
+  column-count: 3;
+  column-gap: 5mm;
+  /* `balance`, bukan `auto`. Dengan `auto` wadah multikolom memakai seluruh sisa tinggi
+     halaman walau isinya pendek, sehingga apa pun yang mengikutinya — di sini blok tanda
+     tangan — selalu terdorong ke halaman berikutnya. `balance` membuat wadahnya setinggi
+     isinya saja, dan sekalian meratakan ketiga kolom. */
+  column-fill: balance;
 }
 
 .sheet-columns > * {
   break-inside: avoid;
+}
+
+/* ── Pemadatan lembar A3 ────────────────────────────────────────────────────
+ * CPAR harus muat satu halaman: lembar yang terbagi dua tidak dapat ditempel
+ * berdampingan saat review, dan bagian yang paling sering dibandingkan — root cause
+ * dengan countermeasure-nya — justru yang terpisah.
+ *
+ * Pemadatan dilakukan di sini, bukan dengan menyunting tiap komponen, karena komponen
+ * yang sama dipakai lembar A4 (Quick Info, Monitoring) yang ukurannya sudah pas. Satu
+ * kelas induk plus pemilih elemen sudah cukup mengalahkan utilitas Tailwind yang
+ * spesifisitasnya hanya satu kelas — tanpa perlu !important.
+ */
+.sheet-a3-landscape td,
+.sheet-a3-landscape th {
+  padding: 0.7mm 1.2mm;
+}
+
+.sheet-a3-landscape h2 {
+  margin-top: 2mm;
+  margin-bottom: 1mm;
+  padding: 0.8mm 2mm;
+  font-size: 8pt;
+}
+
+/* Kotak pembungkus isi tiap section. */
+.sheet-a3-landscape .sheet-columns > div > div {
+  padding: 1.2mm 1.5mm;
+}
+
+/* Foto part: 32mm per foto menghabiskan sepertiga kolom. Pada lembar A3 yang dibaca
+   dari jarak papan, 18mm masih memperlihatkan letak cacatnya. */
+.sheet-a3-landscape img {
+  height: 18mm;
+}
+
+.sheet-a3-landscape p {
+  margin-bottom: 0;
+}
+
+/* Kop dan blok tanda tangan dirampingkan juga: keduanya memakan tinggi penuh lembar,
+   jadi tiap milimeter di sini bernilai tiga milimeter ruang kolom. */
+.sheet-a3-landscape header {
+  margin-bottom: 3mm;
+  padding-bottom: 2mm;
+}
+
+.sheet-a3-landscape .signature-block {
+  margin-top: 2.5mm;
+  /* Blok ini tidak boleh terbelah: judul kapasitas di satu halaman dan namanya di
+     halaman berikutnya membuat lembar persetujuan tidak terbaca sebagai satu kesatuan. */
+  break-inside: avoid;
+}
+
+.sheet-a3-landscape .signature-rule {
+  margin-top: 2mm;
+}
+
+.sheet-a3-landscape .signature-block td {
+  padding: 0.5mm 1.2mm;
+}
+
+/* Kotak "tidak ada foto". Pada lembar A3 ia hanya penanda bahwa fotonya memang tidak
+   ada, jadi tidak perlu setinggi foto yang sesungguhnya. */
+.sheet-a3-landscape .photo-slot {
+  height: 11mm;
 }
 
 /* Garis tabel form: satu kelas supaya ketebalannya seragam di seluruh lembar. */
