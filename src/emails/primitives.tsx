@@ -68,12 +68,14 @@ export function EmailShell({
           <tbody>
             <tr>
               <td align="center" style={{ padding: "24px 12px" }}>
+                <div data-mso="open" />
+                <div style={{ maxWidth: "600px", margin: "0 auto" }}>
                 <table
-                  width="600"
+                  width="100%"
                   cellPadding={0}
                   cellSpacing={0}
                   role="presentation"
-                  style={{ width: "600px", maxWidth: "100%", backgroundColor: COLORS.card, borderRadius: "12px", overflow: "hidden", border: `1px solid ${COLORS.border}` }}
+                  style={{ width: "100%", backgroundColor: COLORS.card, borderRadius: "12px", overflow: "hidden", border: `1px solid ${COLORS.border}` }}
                 >
                   <tbody>
                     <tr>
@@ -114,6 +116,8 @@ export function EmailShell({
                     </tr>
                   </tbody>
                 </table>
+                </div>
+                <div data-mso="close" />
               </td>
             </tr>
           </tbody>
@@ -123,9 +127,32 @@ export function EmailShell({
   );
 }
 
+/**
+ * Memasang lebar tetap khusus Outlook pada Windows.
+ *
+ * Kartu email dibuat cair (`width:100%` dengan `max-width:600px` pada div pembungkus)
+ * supaya muat di layar ponsel. Mesin render Outlook pada Windows adalah Word, dan Word
+ * mengabaikan `max-width` sama sekali — tanpa penyeimbang, email yang cair akan melebar
+ * mengikuti lebar jendela Outlook yang dimaksimalkan.
+ *
+ * Penyeimbangnya adalah "ghost table": tabel 600px yang hanya terlihat oleh Outlook,
+ * dibungkus conditional comment. React tidak dapat menghasilkan simpul komentar, jadi
+ * `EmailShell` menanam dua div penanda dan komentarnya dipasang di sini, pada HTML yang
+ * sudah jadi. Diuji di `tests/unit/email-shell.test.ts`.
+ */
+const MSO_OPEN =
+  '<!--[if mso]><table width="600" cellpadding="0" cellspacing="0" role="presentation" align="center"><tr><td><![endif]-->';
+const MSO_CLOSE = "<!--[if mso]></td></tr></table><![endif]-->";
+
+export function withOutlookGhostTable(html: string): string {
+  return html
+    .replace(/<div data-mso="open"[^>]*><\/div>/g, MSO_OPEN)
+    .replace(/<div data-mso="close"[^>]*><\/div>/g, MSO_CLOSE);
+}
+
 export function Paragraph({ children }: { children: ReactNode }) {
   return (
-    <p style={{ margin: "0 0 14px", fontSize: "14px", lineHeight: 1.6, color: COLORS.ink }}>
+    <p style={{ margin: "0 0 14px", fontSize: "14px", lineHeight: 1.6, color: COLORS.ink, overflowWrap: "break-word" }}>
       {children}
     </p>
   );
@@ -173,7 +200,10 @@ export function SummaryTable({ rows }: { rows: readonly (readonly [string, strin
           <tr key={label}>
             <td
               style={{
-                width: "180px",
+                // Persentase, bukan 180px: pada kartu selebar 600px hasilnya tetap
+                // 180px seperti sebelumnya, tetapi pada layar 320px kolom label ikut
+                // menyusut alih-alih menyisakan 100px untuk nilainya.
+                width: "30%",
                 padding: "9px 14px",
                 fontSize: "12px",
                 color: COLORS.muted,
@@ -189,6 +219,14 @@ export function SummaryTable({ rows }: { rows: readonly (readonly [string, strin
                 fontSize: "13px",
                 color: COLORS.ink,
                 verticalAlign: "top",
+                // Katup pengaman, bukan gaya: nomor klaim seperti NID/CC/26/99/0001
+                // tidak punya satu pun titik putus, dan pada layar 320px ia sendirian
+                // memaksa kartu melebihi layar. Pada kartu 600px aturan ini tidak
+                // pernah aktif, jadi tampilan di desktop sama persis. `anywhere`,
+                // bukan `break-word`: hanya `anywhere` yang ikut memperkecil lebar
+                // minimum tabel — `break-word` membungkus teks tetapi membiarkan
+                // kolomnya tetap selebar kata terpanjang.
+                overflowWrap: "anywhere",
                 borderTop: index === 0 ? "none" : `1px solid ${COLORS.border}`,
               }}
             >
@@ -211,7 +249,11 @@ export function ActionButton({ href, label }: { href: string; label: string }) {
               href={href}
               style={{
                 display: "inline-block",
-                padding: "11px 22px",
+                // 14px + 20px + 14px = 48px. Sebelumnya 39px — di bawah 44px yang
+                // disarankan untuk sasaran sentuh, dan tombol inilah satu-satunya
+                // jalan dari email kembali ke portal.
+                padding: "14px 24px",
+                lineHeight: "20px",
                 color: "#ffffff",
                 fontSize: "14px",
                 fontWeight: 600,

@@ -1,7 +1,15 @@
 import { render } from "@react-email/render";
 
 import type { NotificationType } from "@/generated/prisma/enums";
-import { ActionButton, AttachmentNote, EmailShell, Note, Paragraph, SummaryTable } from "@/emails/primitives";
+import {
+  ActionButton,
+  AttachmentNote,
+  EmailShell,
+  Note,
+  Paragraph,
+  SummaryTable,
+  withOutlookGhostTable,
+} from "@/emails/primitives";
 import type { ClaimEmailPayload, RenderedEmail } from "@/emails/types";
 
 /**
@@ -498,5 +506,7 @@ export async function renderClaimEmail(
   // dan pemindai keamanan membaca bagian teksnya.
   const [html, text] = await Promise.all([render(element), render(element, { plainText: true })]);
 
-  return { subject: renderSubject(type, payload), html, text };
+  // Komentar kondisional dipasang sesudah render karena React tidak dapat menghasilkan
+  // simpul komentar; versi teks tidak menyentuhnya sama sekali.
+  return { subject: renderSubject(type, payload), html: withOutlookGhostTable(html), text };
 }

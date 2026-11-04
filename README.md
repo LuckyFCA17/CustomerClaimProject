@@ -530,6 +530,7 @@ Tanpa itu foto tetap terunggah, hanya saja disimpan apa adanya tanpa diperkecil 
 | `pnpm serve` | `prisma generate` → migrasi → `build` → `start`; selalu membangun ulang |
 | `pnpm mail:sink` | Penangkap SMTP lokal di port 1025 + penampil email di 1080 |
 | `pnpm mail:test` | Mengirim satu contoh dari tiap template email; `--to`, `--only`, `--dry`, `--list` |
+| `pnpm mail:width` | Mengukur ke-15 template di 320/360/414px; gagal bila ada yang meluap |
 | `pnpm upload:check` | Menguji jalur simpan unggahan tanpa peramban; `--mb N` |
 | `pnpm login:check <email>` | Memeriksa satu akun langsung ke basis data; `--list`, `--password` |
 | `pnpm reminders` | Menjalankan tiga pengingat terjadwal lewat portal yang sedang hidup |
@@ -717,6 +718,26 @@ header `To:` tetap berbeda sehingga terlihat peran mana yang dinotifikasi.
 Yang tidak diuji `mail:test`: **siapa** penerimanya dan **kapan** emailnya dipicu. Itu logika
 `src/server/claim-notifications.ts`, dan hanya terbukti dengan menjalankan alur klaim sungguhan
 lalu membandingkannya dengan halaman `/notifications`.
+
+### Lebar email di ponsel
+
+```bash
+pnpm mail:width                    # ke-15 template, 320/360/414/800px
+pnpm mail:width --shots .shots     # simpan tangkapan layar 360px
+```
+
+Kartu email bersifat cair (`width:100%`) dengan batas 600px pada div pembungkus, bukan tabel
+selebar 600px. Perbedaannya tidak kelihatan di desktop dan menentukan segalanya di ponsel:
+versi lama memakai `width="600"` dengan `max-width:100%`, dan `max-width` itu tidak pernah
+bekerja karena sel induknya ikut melebar mengikuti isinya — 100% selalu berarti 600px. Di layar
+360px email menjadi 624px, lalu klien ponsel memperkecil seluruh email agar muat. Gejalanya
+bukan pesan galat, melainkan huruf yang mengecil.
+
+Outlook pada Windows memakai mesin Word, yang mengabaikan `max-width` sepenuhnya. Penyeimbangnya
+adalah *ghost table* 600px di dalam `<!--[if mso]>`, dipasang pada HTML jadi oleh
+`withOutlookGhostTable()` karena React tidak dapat menghasilkan simpul komentar. Keberadaannya
+dijaga `tests/unit/email-shell.test.ts`; lebarnya sendiri hanya dapat dibuktikan dengan mengukur,
+dan itulah tugas `pnpm mail:width`.
 
 ## Kontrol akses
 
