@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { forbidden, notFound } from "next/navigation";
-import { ClipboardCheck, ClipboardList, PencilLine, SquareArrowOutUpRight, XCircle } from "lucide-react";
+import { ClipboardCheck, ClipboardList, PencilLine, Printer, SquareArrowOutUpRight, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -131,7 +131,21 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
         })
       : [];
 
-  const canEdit = can(user, "claim.update", context);
+  // Satu tombol untuk dua hak: `claim.update` pada draft, `claim.amend` setelah terbit.
+  const canEdit = can(user, "claim.update", context) || can(user, "claim.amend", context);
+
+  /**
+   * Cetak lembar klaim.
+   *
+   * Menautkan ke halaman cetaknya, bukan memanggil pembuat PDF di server. Dua sebabnya:
+   * halaman itu dirender peramban yang sedang dipakai, jadi tidak perlu Chromium di
+   * server — di Termux tidak ada — dan hasilnya keluar seketika tanpa menunggu antrean
+   * pencetakan. `authorizePrint` menerima sesi pengguna, jadi tautannya tidak butuh token.
+   *
+   * Draft tidak ditawari: isinya baru lengkap setelah submit, dan lembar yang penuh "—"
+   * hanya membuang kertas.
+   */
+  const canPrintSheets = can(user, "claim.export", context) && claim.status !== "DRAFT";
   const canReview = can(user, "claim.review.approve", context);
   // Action Button A (§6 Modul 2) muncul hanya pada klaim yang sudah terbit, dan
   // Action Button B begitu CPAR ada — keduanya mengikuti matriks izin, bukan ditebak.
@@ -163,6 +177,24 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
                   Edit claim information
                 </Link>
               </Button>
+            ) : null}
+
+            {canPrintSheets ? (
+              <>
+                <Button asChild variant="outline">
+                  <a href={`/print/bad-news/${claim.id}?autoprint=1`} target="_blank" rel="noopener">
+                    <Printer aria-hidden />
+                    Print Bad News Information
+                  </a>
+                </Button>
+
+                <Button asChild variant="outline">
+                  <a href={`/print/quick-info/${claim.id}?autoprint=1`} target="_blank" rel="noopener">
+                    <Printer aria-hidden />
+                    Print Quick Information
+                  </a>
+                </Button>
+              </>
             ) : null}
 
             {canReview ? (

@@ -11,9 +11,10 @@ import { db, type DbTransaction } from "@/lib/db";
 import { readRequestContext, writeAuditLog } from "@/lib/audit";
 import { NotFoundError, ValidationError } from "@/lib/errors";
 import { nextClaimNo } from "@/lib/numbering";
-import { assertCan, type ClaimContext } from "@/lib/permissions";
+import { assertCan, can, type Actor, type ClaimContext } from "@/lib/permissions";
 import { requireActor } from "@/lib/session";
 import { claimFolder, saveUpload, storage } from "@/lib/storage";
+import { regenerateClaimDocuments } from "@/server/claim-documents";
 import {
   notifyClaimPublished,
   notifyClaimRevisionRequested,
@@ -74,6 +75,20 @@ async function loadClaim(claimId: string): Promise<ClaimWithContext> {
   if (!claim) throw new NotFoundError("Klaim tidak ditemukan.");
 
   return claim;
+}
+
+/**
+ * Satu dari dua hak menyunting isi klaim, mana pun yang berlaku pada statusnya.
+ *
+ * `claim.update` untuk draft, `claim.amend` untuk klaim yang sudah terbit. Keduanya
+ * tidak pernah berlaku bersamaan karena daftar statusnya terpisah, jadi memeriksa
+ * keduanya tidak melonggarkan apa pun — ia hanya menghindari penjaga yang menolak
+ * penyuntingan yang justru sudah diizinkan matriks.
+ */
+function assertCanEditClaimInfo(actor: Actor, context: ClaimContext): void {
+  if (can(actor, "claim.amend", context)) return;
+
+  assertCan(actor, "claim.update", context);
 }
 
 function failure(error: unknown): ActionResult {
@@ -164,6 +179,141 @@ export async function saveClaimDraft(claimId: string, input: unknown): Promise<A
   } catch (error) {
     return failure(error);
   }
+}
+
+/**
+ * Menyunting Claim Information pada klaim yang sudah terbit (§6 Modul 1).
+ *
+ * Berbeda dari `saveClaimDraft` dalam tiga hal, dan ketiganya disengaja:
+ *
+ *   · divalidasi `claimSubmitSchema`, bukan skema draft. Klaim yang sudah terbit tidak
+ *     boleh kembali setengah terisi — nomornya sudah beredar dan departemen lain sudah
+ *     mengerjakannya;
+ *   · menulis audit log beserta daftar field yang benar-benar berubah. Auto-save draft
+ *     sengaja tidak mencatat (asumsi A-17), tetapi perubahan pada klaim terbit adalah
+ *     peristiwa yang harus dapat ditelusuri setahun kemudian;
+ *   · mencetak ulang dokumennya. PDF adalah snapshot, jadi ia tidak ikut berubah
+ *     sendiri; versinya naik dan yang lama tetap tersimpan.
+ *
+ * Yang TIDAK perlu dilakukan di sini: menyalin apa pun ke CPAR. Section 1 CPAR membaca
+ * klaimnya langsung (lihat `server/cpar-problem.ts`), jadi perubahan di sini langsung
+ * terbaca di sana tanpa penyalinan yang bisa menyimpang.
+ */
+export async function amendClaim(claimId: string, input: unknown): Promise<ActionResult> {
+  try {
+    const actor = await requireActor();
+    const claim = await loadClaim(claimId);
+
+    assertCan(actor, "claim.amend", toContext(claim));
+
+    const parsed = claimSubmitSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        message: "Claim information harus tetap lengkap. Periksa field yang ditandai.",
+        fieldErrors: flattenZodErrors(parsed.error),
+      };
+    }
+
+    const { standard, actual, ...fields } = parsed.data;
+    const columns = toClaimColumns(fields);
+    const changed = changedFields(claim, columns);
+
+    if (changed.length === 0) {
+      return { ok: true, message: "Tidak ada perubahan untuk disimpan." };
+    }
+
+    const requestContext = await readRequestContext();
+
+    // Hanya field yang berubah yang ditulis. Menulis seluruh kolom akan menormalkan
+    // jam pada kolom tanggal yang sebenarnya tidak disunting siapa pun — perubahan
+    // yang tidak diminta, pada data yang sudah terbit.
+    const patch = Object.fromEntries(
+      changed.map(({ field }) => [field, columns[field as keyof typeof columns]]),
+    ) as Prisma.ClaimUncheckedUpdateInput;
+
+    await db.$transaction(async (tx) => {
+      await tx.claim.update({ where: { id: claimId }, data: patch });
+
+      await upsertPart(tx, claimId, "STANDARD", standard);
+      await upsertPart(tx, claimId, "ACTUAL", actual);
+
+      await writeAuditLog(
+        tx,
+        {
+          actorId: actor.id,
+          entityType: "Claim",
+          entityId: claimId,
+          claimId,
+          action: "claim.amend",
+          fromStatus: claim.status,
+          toStatus: claim.status,
+          // Nilai lama ikut dicatat, bukan hanya nama fieldnya: pertanyaan yang
+          // dibawa auditor selalu "sebelumnya tertulis apa", dan tanpa ini jawabannya
+          // sudah tertimpa.
+          payloadDiff: { changed },
+        },
+        requestContext,
+      );
+    });
+
+    // Dokumen dicetak ulang sesudah respons terkirim. Di lingkungan tanpa Chromium —
+    // Termux, misalnya — pencetakan gagal dan hanya tercatat di log; klaimnya sendiri
+    // sudah tersimpan di dalam transaksi di atas.
+    after(async () => {
+      await regenerateClaimDocuments(claimId, actor.id);
+    });
+
+    revalidatePath("/claims");
+    revalidatePath(`/claims/${claimId}`);
+    // Section 1 CPAR membaca klaim ini, jadi halamannya ikut basi.
+    revalidatePath(`/cpar/${claimId}`);
+
+    return {
+      ok: true,
+      message:
+        changed.length === 1
+          ? "1 field diperbarui. Dokumen dicetak ulang."
+          : `${changed.length} field diperbarui. Dokumen dicetak ulang.`,
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * Field yang benar-benar berubah, beserta nilai lamanya.
+ *
+ * Dibandingkan satu per satu, bukan menyimpan seluruh isian apa adanya: formulir
+ * mengirim semua field tiap kali disimpan, sehingga audit log tanpa perbandingan ini
+ * akan mencatat tiga puluh "perubahan" padahal yang disunting hanya satu.
+ */
+function changedFields(
+  before: Claim,
+  after: Prisma.ClaimUncheckedUpdateInput,
+): { field: string; from: string | null; to: string | null }[] {
+  const asText = (value: unknown): string | null => {
+    if (value === null || value === undefined || value === "") return null;
+
+    // Tanggal dibandingkan sebagai tanggal, bukan sebagai titik waktu. Formulir hanya
+    // mengirim Y-M-D, jadi hasil coerce-nya selalu tengah malam UTC; dibandingkan utuh,
+    // setiap klaim yang jamnya bukan tengah malam akan terbaca "berubah" pada keempat
+    // kolom tanggalnya setiap kali disimpan, padahal tanggalnya sama persis.
+    if (value instanceof Date) return value.toISOString().slice(0, 10);
+
+    return String(value);
+  };
+
+  const diff: { field: string; from: string | null; to: string | null }[] = [];
+
+  for (const [field, next] of Object.entries(after)) {
+    const from = asText((before as unknown as Record<string, unknown>)[field]);
+    const to = asText(next);
+
+    if (from !== to) diff.push({ field, from, to });
+  }
+
+  return diff;
 }
 
 // ─────────────────────── Submit claim information ───────────────────────
@@ -370,7 +520,10 @@ export async function uploadPartPhoto(formData: FormData): Promise<ActionResult>
     }
 
     const claim = await loadClaim(claimId);
-    assertCan(actor, "claim.update", toContext(claim));
+    // Foto standard dan actual adalah bagian dari Claim Information, jadi hak
+    // menyuntingnya mengikuti hak menyunting isinya: draft lewat `claim.update`,
+    // klaim yang sudah terbit lewat `claim.amend`.
+    assertCanEditClaimInfo(actor, toContext(claim));
 
     const part = await db.claimPart.findUnique({
       where: { claimId_side: { claimId, side } },
@@ -424,7 +577,10 @@ export async function deletePartPhoto(attachmentId: string): Promise<ActionResul
     if (!attachment?.claimId) throw new NotFoundError("Lampiran tidak ditemukan.");
 
     const claim = await loadClaim(attachment.claimId);
-    assertCan(actor, "claim.update", toContext(claim));
+    // Foto standard dan actual adalah bagian dari Claim Information, jadi hak
+    // menyuntingnya mengikuti hak menyunting isinya: draft lewat `claim.update`,
+    // klaim yang sudah terbit lewat `claim.amend`.
+    assertCanEditClaimInfo(actor, toContext(claim));
 
     // Soft delete: barisnya ditandai terhapus, berkasnya benar-benar dibuang karena
     // tidak ada dokumen lain yang merujuknya.

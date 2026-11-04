@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { AutoPrint } from "@/components/print/auto-print";
 import { formatDateTime } from "@/lib/format";
 
 /**
@@ -43,6 +44,9 @@ export function Sheet({
           menimpanya di sini. Satu route hanya pernah merender satu jenis dokumen,
           jadi tidak ada dua aturan @page yang bertabrakan. */}
       {size === "a4" ? null : <style>{`@page { size: ${paper.page}; margin: 0; }`}</style>}
+
+      {/* Membuka dialog cetak sendiri bila dibuka lewat tombol Print; diam bila tidak. */}
+      <AutoPrint />
 
       <section className={paper.className} data-draft={draft ? "true" : undefined}>
         {/*

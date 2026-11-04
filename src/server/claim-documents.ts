@@ -303,3 +303,26 @@ export async function generateClaimDocuments(
 
   return results;
 }
+
+/**
+ * Mencetak ulang seluruh dokumen sebuah klaim setelah Claim Information disunting.
+ *
+ * PDF adalah snapshot: ia tidak ikut berubah ketika klaimnya berubah. Tanpa pencetakan
+ * ulang, lembar Bad News yang beredar akan menyebut part yang salah tanpa satu pun
+ * petunjuk bahwa isinya sudah usang — justru karena PDF terlihat resmi.
+ *
+ * Versinya naik, yang lama tidak ditimpa: PDF yang terlanjur terkirim ke pelanggan harus
+ * tetap dapat ditelusuri apa isinya saat itu (kriteria penerimaan #6).
+ *
+ * Lembar CPAR ikut dicetak ulang bila CPAR-nya sudah ada, karena section 1-nya membaca
+ * klaim yang baru saja berubah.
+ */
+export async function regenerateClaimDocuments(
+  claimId: string,
+  actorId: string | null,
+): Promise<void> {
+  await generateClaimDocuments(claimId, actorId);
+
+  const cpar = await db.cpar.findUnique({ where: { claimId }, select: { id: true } });
+  if (cpar) await generateCparDocument(claimId, actorId);
+}

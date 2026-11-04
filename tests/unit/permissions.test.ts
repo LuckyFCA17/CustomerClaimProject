@@ -100,6 +100,65 @@ describe("Modul 1 — informasi klaim", () => {
     expect(can(admin, "master.manage")).toBe(true);
   });
 
+  /**
+   * Menyunting klaim yang sudah terbit.
+   *
+   * Dipisahkan dari claim.update karena batas statusnya berbeda, dan batas itulah yang
+   * menjaga tanda tangan di lembar CPAR tetap bermakna.
+   */
+  describe("claim.amend", () => {
+    const ISSUED: ClaimStatus[] = ["PUBLISHED", "CPAR_ISSUED", "CPAR_IN_PROGRESS", "CPAR_REVISION"];
+
+    it("membuka penyuntingan pada klaim terbit sampai sebelum verifikasi", () => {
+      for (const status of ISSUED) {
+        expect(can(qa, "claim.amend", claim(status)), status).toBe(true);
+        expect(can(qaHead, "claim.amend", claim(status)), status).toBe(true);
+        expect(can(admin, "claim.amend", claim(status)), status).toBe(true);
+      }
+    });
+
+    it("menutupnya begitu verifikasi berjalan atau selesai", () => {
+      // CPAR_UNDER_VERIFICATION: empat verifier sedang memutuskan atas isi yang
+      // terpampang. CPAR_APPROVED dan sesudahnya: tanda tangan sudah diberikan atas
+      // problem yang dinyatakan, dan mengubah pernyataan itu membuatnya menjaminkan
+      // sesuatu yang tidak pernah dibaca penandatangannya.
+      for (const status of [
+        "CPAR_UNDER_VERIFICATION",
+        "CPAR_APPROVED",
+        "CAPA_MONITORING",
+        "VERIFIED_CLOSED",
+        "IGNORED",
+      ] as ClaimStatus[]) {
+        expect(can(qa, "claim.amend", claim(status)), status).toBe(false);
+        expect(can(qaHead, "claim.amend", claim(status)), status).toBe(false);
+        expect(can(admin, "claim.amend", claim(status)), status).toBe(false);
+      }
+    });
+
+    it("tidak tumpang tindih dengan claim.update", () => {
+      // Draft tetap jalur claim.update, dan klaim terbit tetap jalur claim.amend;
+      // tidak ada status yang membuka keduanya sekaligus.
+      for (const status of ["DRAFT", "REVISION_REQUESTED"] as ClaimStatus[]) {
+        expect(can(qa, "claim.amend", claim(status)), status).toBe(false);
+        expect(can(qa, "claim.update", claim(status)), status).toBe(true);
+      }
+
+      for (const status of ISSUED) {
+        expect(can(qa, "claim.update", claim(status)), status).toBe(false);
+      }
+    });
+
+    it("tetap milik pembuatnya untuk QA Staff, dan tertutup bagi departemen pelaksana", () => {
+      const otherQa: Actor = { id: "u-qa-2", roles: ["QA"], departmentId: "dept-qa" };
+
+      expect(can(otherQa, "claim.amend", claim("PUBLISHED"))).toBe(false);
+      expect(can(prodHead, "claim.amend", claim("CPAR_IN_PROGRESS"))).toBe(false);
+      expect(can(prodStaff, "claim.amend", claim("CPAR_IN_PROGRESS"))).toBe(false);
+      expect(can(factoryMgr, "claim.amend", claim("PUBLISHED"))).toBe(false);
+      expect(can(presdir, "claim.amend", claim("PUBLISHED"))).toBe(false);
+    });
+  });
+
   it("membuka Action Button A hanya pada klaim yang sudah terbit", () => {
     expect(can(qa, "claim.followUp", claim("PUBLISHED"))).toBe(true);
     expect(can(qa, "claim.ignore", claim("PUBLISHED"))).toBe(true);

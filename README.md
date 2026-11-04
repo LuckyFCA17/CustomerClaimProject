@@ -814,6 +814,47 @@ RBAC ditegakkan di tiga lapis, dengan `src/lib/permissions.ts` sebagai sumber ke
 
 Matriks `ACTION × ROLE × STATUS` selengkapnya ada di [`PLAN.md` §2](./PLAN.md#2-matriks-permission-action--role--status).
 
+### Menyunting klaim: dua hak, bukan satu
+
+| Aksi | Status | Perilaku |
+|---|---|---|
+| `claim.update` | `DRAFT`, `REVISION_REQUESTED` | Auto-save tiap 30 detik, **tanpa** audit log (asumsi A-17) |
+| `claim.amend` | `PUBLISHED`, `CPAR_ISSUED`, `CPAR_IN_PROGRESS`, `CPAR_REVISION` | Simpan manual, audit log per field, dokumen dicetak ulang |
+
+Keduanya dipisah karena peristiwanya berbeda. Draft belum menjadi apa pun bagi siapa pun;
+mencatat tiap auto-save hanya akan menenggelamkan timeline klaim. Klaim yang sudah terbit
+dibaca dan dikerjakan departemen lain, jadi tiap perubahannya dicatat beserta **nilai lamanya** —
+pertanyaan auditor selalu "sebelumnya tertulis apa", dan tanpa itu jawabannya sudah tertimpa.
+
+Daftar statusnya berhenti sebelum verifikasi, dan itu disengaja:
+
+- **`CPAR_UNDER_VERIFICATION` tidak termasuk.** Empat verifier sedang memutuskan atas isi yang
+  terpampang; mengubahnya di tengah jalan membuat sebagian memutuskan atas dokumen yang berbeda
+  dari sebagian lainnya, tanpa seorang pun tahu;
+- **`CPAR_APPROVED` dan sesudahnya juga tidak.** Tanda tangan sudah diberikan atas problem yang
+  dinyatakan. Mengubah pernyataan itu setelahnya membuat blok tanda tangan di lembar CPAR
+  menjaminkan sesuatu yang tidak pernah dibaca penandatangannya. Jalurnya REVISE dari verifier —
+  siklus naik dan semua memeriksa ulang, yang memang maksudnya.
+
+**CPAR tidak perlu disalin ulang.** Section 1 CPAR membaca klaimnya langsung
+(`server/cpar-problem.ts`), jadi perbaikan pada Claim Information langsung terbaca di sana.
+Yang tidak ikut berubah sendiri adalah PDF, karena ia snapshot — karena itu `claim.amend`
+mencetak ulang Bad News, Quick Information, dan CPAR dengan nomor versi naik, dan versi lamanya
+tetap tersimpan.
+
+Yang ditulis hanya field yang benar-benar berubah. Formulir mengirim seluruh isian tiap kali
+disimpan, jadi tanpa perbandingan per field audit log akan mencatat tiga puluh "perubahan" untuk
+satu kata yang disunting — dan kolom tanggal akan ternormalkan jamnya tanpa ada yang meminta.
+
+### Mencetak lembar klaim
+
+Tombol **Print Bad News Information** dan **Print Quick Information** di halaman klaim menautkan
+ke halaman cetaknya (`/print/<doc>/<id>?autoprint=1`), bukan memanggil pembuat PDF di server.
+Halaman itu dirender peramban yang sedang dipakai, jadi tidak perlu Chromium di server — di
+Termux tidak ada — dan hasilnya keluar seketika. `authorizePrint` menerima sesi pengguna,
+sehingga tautannya tidak memerlukan token. Draft tidak ditawari: isinya baru lengkap setelah
+submit.
+
 ## State machine klaim
 
 `src/lib/claim-state.ts` memuat satu-satunya daftar perpindahan status yang sah. Perpindahan

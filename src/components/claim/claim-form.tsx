@@ -16,7 +16,7 @@ import { SelectNative } from "@/components/ui/select-native";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { claimSubmitSchema, type ClaimFormValues } from "@/schemas/claim";
-import { saveClaimDraft, submitClaim } from "@/server/actions/claim";
+import { amendClaim, saveClaimDraft, submitClaim } from "@/server/actions/claim";
 import { PartPanel, type PartPhoto } from "@/components/claim/part-panel";
 
 export interface MasterOption {
@@ -37,6 +37,16 @@ export interface ClaimFormProps {
     readonly actual: readonly PartPhoto[];
   };
   readonly reviewComment: string | null;
+  /**
+   * `draft` — klaim belum terbit: auto-save tiap 30 detik, tombolnya Submit.
+   * `amend`  — klaim sudah terbit: tanpa auto-save, tombolnya Simpan perubahan.
+   *
+   * Auto-save sengaja dimatikan pada `amend`. Pada draft ia menyelamatkan ketikan yang
+   * belum berarti apa-apa bagi siapa pun; pada klaim terbit ia akan menyiarkan setiap
+   * ketikan setengah jadi ke CPAR yang sedang dibaca departemen lain, dan menulis satu
+   * baris audit untuk tiap tiga puluh detik.
+   */
+  readonly mode?: "draft" | "amend";
 }
 
 const CLAIM_TYPES = [
@@ -78,7 +88,9 @@ export function ClaimForm({
   masters,
   photos,
   reviewComment,
+  mode = "draft",
 }: ClaimFormProps) {
+  const isAmend = mode === "amend";
   const router = useRouter();
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [isSaving, setSaving] = useState(false);
@@ -135,17 +147,21 @@ export function ClaimForm({
   // Auto-save hanya berjalan bila ada yang berubah, agar tidak membanjiri server
   // dengan penyimpanan kosong setiap 30 detik (asumsi A-17).
   useEffect(() => {
+    if (isAmend) return;
+
     const timer = setInterval(() => {
       if (isDirty) void persistDraft(true);
     }, AUTOSAVE_INTERVAL_MS);
 
     return () => clearInterval(timer);
-  }, [isDirty, persistDraft]);
+  }, [isAmend, isDirty, persistDraft]);
 
   async function onSubmit() {
     // Nilai mentah yang dikirim, bukan hasil transformasi resolver: server memvalidasi
     // ulang dengan skema yang sama, dan itulah pemeriksaan yang mengikat.
-    const result = await submitClaim(claimId, getValues());
+    const result = isAmend
+      ? await amendClaim(claimId, getValues())
+      : await submitClaim(claimId, getValues());
 
     if (!result.ok) {
       if (result.fieldErrors) {
@@ -154,11 +170,16 @@ export function ClaimForm({
         }
       }
 
-      toast.error("Submit claim information gagal", { description: result.message });
+      toast.error(
+        isAmend ? "Perubahan belum tersimpan" : "Submit claim information gagal",
+        { description: result.message },
+      );
       return;
     }
 
-    toast.success("Submit claim information", { description: result.message });
+    toast.success(isAmend ? "Claim information diperbarui" : "Submit claim information", {
+      description: result.message,
+    });
     router.push(`/claims/${claimId}`);
     router.refresh();
   }
@@ -402,20 +423,24 @@ export function ClaimForm({
       <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-nid-border bg-card/95 px-1 py-3 backdrop-blur">
         <Button type="submit" size="lg" disabled={isSubmitting}>
           {isSubmitting ? <Loader2 aria-hidden className="animate-spin" /> : <Send aria-hidden />}
-          Submit claim information
+          {isAmend ? "Simpan perubahan" : "Submit claim information"}
         </Button>
 
-        <Button type="button" variant="outline" onClick={() => void persistDraft(false)} disabled={isSaving}>
-          {isSaving ? <Loader2 aria-hidden className="animate-spin" /> : <Save aria-hidden />}
-          Save draft
-        </Button>
+        {isAmend ? null : (
+          <Button type="button" variant="outline" onClick={() => void persistDraft(false)} disabled={isSaving}>
+            {isSaving ? <Loader2 aria-hidden className="animate-spin" /> : <Save aria-hidden />}
+            Save draft
+          </Button>
+        )}
 
         <span aria-live="polite" className="text-xs text-muted-foreground">
-          {isSaving
-            ? "Menyimpan…"
-            : savedAt
-              ? `Tersimpan otomatis pukul ${savedAt}`
-              : "Draft tersimpan otomatis tiap 30 detik."}
+          {isAmend
+            ? "Perubahan langsung terbaca di CPAR, dan dokumennya dicetak ulang."
+            : isSaving
+              ? "Menyimpan…"
+              : savedAt
+                ? `Tersimpan otomatis pukul ${savedAt}`
+                : "Draft tersimpan otomatis tiap 30 detik."}
         </span>
       </div>
     </form>

@@ -46,6 +46,7 @@ export const ACTIONS = [
   "claim.view",
   "claim.create",
   "claim.update",
+  "claim.amend",
   "claim.discard",
   "claim.submit",
   "claim.review.approve",
@@ -134,6 +135,32 @@ export const PERMISSION_MATRIX: Record<Action, ActionRule> = {
   "claim.update": {
     roles: { QA: "OWNER", ADMIN: "ALL" },
     statuses: ["DRAFT", "REVISION_REQUESTED"],
+  },
+  /**
+   * Menyunting Claim Information setelah klaim terbit.
+   *
+   * Dipisahkan dari `claim.update`, bukan sekadar menambah status ke sana, karena
+   * keduanya peristiwa yang berbeda. `claim.update` menyimpan draft yang belum menjadi
+   * apa pun bagi siapa pun dan sengaja tidak menulis audit log (asumsi A-17). Menyunting
+   * klaim yang sudah terbit mengubah dokumen yang sudah dibaca, dirujuk, dan mungkin
+   * sedang dikerjakan departemen lain — setiap perubahannya dicatat.
+   *
+   * Status yang diizinkan berhenti sebelum verifikasi dimulai, dan itu disengaja:
+   *
+   *   · `CPAR_UNDER_VERIFICATION` tidak termasuk. Empat verifier sedang memutuskan atas
+   *     isi yang terpampang; mengubahnya di tengah jalan berarti sebagian memutuskan
+   *     atas dokumen yang berbeda dari sebagian lainnya, tanpa seorang pun tahu;
+   *   · `CPAR_APPROVED` dan sesudahnya juga tidak. Persetujuannya sudah diberikan atas
+   *     problem yang dinyatakan; mengubah pernyataan itu setelahnya membuat tanda tangan
+   *     yang tercetak di lembar CPAR menjaminkan sesuatu yang tidak pernah dibaca
+   *     penandatangannya.
+   *
+   * Bila klaim perlu diperbaiki pada tahap itu, jalurnya REVISE dari verifier — siklus
+   * naik dan semua memeriksa ulang, yang memang maksudnya.
+   */
+  "claim.amend": {
+    roles: { QA: "OWNER", QA_HEAD: "ALL", ADMIN: "ALL" },
+    statuses: ["PUBLISHED", "CPAR_ISSUED", "CPAR_IN_PROGRESS", "CPAR_REVISION"],
   },
   /**
    * Membuang draft yang belum pernah dikirim.

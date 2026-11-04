@@ -17,9 +17,14 @@ import {
  * Isi section 1 CPAR — Problem description.
  *
  * Section ini tidak diketik ulang. Seluruh keterangannya sudah dimasukkan QA pada
- * Issue Customer Claim Information, dan klaim tidak dapat diubah lagi setelah terbit,
- * jadi menyalinnya ke kotak teks hanya menciptakan salinan kedua yang bisa berbeda
- * dari aslinya. Yang dibaca di sini adalah klaimnya langsung.
+ * Issue Customer Claim Information, jadi menyalinnya ke kotak teks hanya menciptakan
+ * salinan kedua yang bisa berbeda dari aslinya. Yang dibaca di sini adalah klaimnya
+ * langsung.
+ *
+ * Sejak Claim Information dapat disunting setelah terbit (`claim.amend`), membaca
+ * langsung bukan lagi sekadar menghindari duplikasi — itulah yang membuat perbaikan
+ * pada klaim langsung terbaca di CPAR tanpa ada yang perlu menyalin ulang. Salinan
+ * statis akan diam-diam menjadi usang justru pada dokumen yang dipakai memutuskan.
  */
 
 export interface ProblemField {

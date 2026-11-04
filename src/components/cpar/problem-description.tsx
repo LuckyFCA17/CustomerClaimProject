@@ -7,8 +7,9 @@ import type { ProblemDescription, ProblemPart } from "@/server/cpar-problem";
  * Section 1 CPAR — Problem description, dibaca langsung dari klaimnya.
  *
  * Tidak ada kotak isian di sini. Seluruh keterangannya sudah dimasukkan QA saat
- * menerbitkan klaim, dan klaim tidak dapat diubah lagi setelah terbit; menyalinnya
- * ke kotak teks hanya menciptakan salinan kedua yang bisa berbeda dari aslinya.
+ * menerbitkan klaim; menyalinnya ke kotak teks hanya menciptakan salinan kedua yang
+ * bisa berbeda dari aslinya. Perbaikan pada klaim — lewat `claim.amend` — langsung
+ * terbaca di sini justru karena tidak ada salinan itu.
  */
 export function ProblemDescriptionPanel({ problem }: { problem: ProblemDescription }) {
   const filled = problem.fields.filter((field) => field.value !== null);

@@ -40,9 +40,17 @@ export default async function EditClaimPage({ params }: { params: Promise<{ id: 
       : null,
   };
 
-  // Klaim yang sudah lewat tahap draft tidak lagi bisa disunting; pengguna diarahkan
-  // ke halaman detail alih-alih diberi form yang setiap simpanannya akan ditolak server.
-  if (!can(user, "claim.update", context)) {
+  /**
+   * Satu halaman, dua mode.
+   *
+   * `claim.update` berlaku pada draft; `claim.amend` pada klaim yang sudah terbit.
+   * Daftar statusnya terpisah, jadi keduanya tidak pernah berlaku bersamaan — mode di
+   * bawah ini pasti tunggal. Yang tidak memegang keduanya diarahkan ke halaman detail
+   * alih-alih diberi formulir yang setiap simpanannya akan ditolak server.
+   */
+  const canAmend = can(user, "claim.amend", context);
+
+  if (!canAmend && !can(user, "claim.update", context)) {
     redirect(`/claims/${id}`);
   }
 
@@ -130,7 +138,9 @@ export default async function EditClaimPage({ params }: { params: Promise<{ id: 
             {claim.claimNo ?? draftLabel(claim.id)}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Bad News Information &amp; Quick Information for Abnormal Part.
+            {canAmend
+              ? "Klaim ini sudah terbit. Perubahan tercatat di audit log, langsung terbaca di CPAR, dan dokumennya dicetak ulang."
+              : "Bad News Information & Quick Information for Abnormal Part."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -152,6 +162,7 @@ export default async function EditClaimPage({ params }: { params: Promise<{ id: 
         }}
         photos={{ standard: photosFor("STANDARD"), actual: photosFor("ACTUAL") }}
         reviewComment={claim.status === "REVISION_REQUESTED" ? claim.reviewComment : null}
+        mode={canAmend ? "amend" : "draft"}
       />
     </div>
   );

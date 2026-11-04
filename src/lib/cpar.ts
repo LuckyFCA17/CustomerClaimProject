@@ -59,11 +59,11 @@ export const SECTION_INDEX: Record<CparSectionKey, number> = Object.fromEntries(
 /**
  * Section yang isinya diturunkan dari klaim, bukan diketik.
  *
- * Problem description sudah dimasukkan QA pada Issue Customer Claim Information, dan
- * klaim tidak dapat diubah lagi setelah terbit. Memintanya diketik ulang di sini hanya
- * menghasilkan salinan kedua yang bisa berbeda dari aslinya — dan menahan submit final
- * karena salinan itu kosong adalah penolakan atas pekerjaan yang sebenarnya sudah
- * selesai. Section seperti ini tidak pernah terhitung kurang.
+ * Problem description sudah dimasukkan QA pada Issue Customer Claim Information.
+ * Memintanya diketik ulang di sini hanya menghasilkan salinan kedua yang bisa berbeda
+ * dari aslinya — dan menahan submit final karena salinan itu kosong adalah penolakan
+ * atas pekerjaan yang sebenarnya sudah selesai. Section seperti ini tidak pernah
+ * terhitung kurang, dan ikut berubah sendiri bila klaimnya disunting.
  */
 export const DERIVED_SECTIONS = ["PROBLEM_DESCRIPTION"] as const satisfies readonly CparSectionKey[];
 
