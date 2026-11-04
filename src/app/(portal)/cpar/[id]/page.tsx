@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { forbidden, notFound } from "next/navigation";
-import { CalendarClock, FileText } from "lucide-react";
+import { CalendarClock, FileText, Printer } from "lucide-react";
 
 import {
   ActionPlanEditor,
@@ -28,6 +28,7 @@ import {
 import { VerificationPanel } from "@/components/cpar/verification-panel";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { StatusRail } from "@/components/shared/status-rail";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ACTION_ITEM_ENTITY,
@@ -330,6 +331,22 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
             <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium">
               Siklus {cpar.cycle}
             </span>
+
+            {/*
+              Menautkan ke halaman cetaknya, bukan memanggil pembuat PDF di server:
+              halaman itu dirender peramban yang sedang dipakai, jadi tidak perlu
+              Chromium di server dan hasilnya keluar seketika. Selama CPAR belum
+              disetujui seluruh verifier, lembarnya keluar berwatermark DRAFT — itu
+              ditentukan halaman cetaknya sendiri, bukan tombol ini.
+            */}
+            {can(user, "cpar.print", context) ? (
+              <Button asChild variant="outline" size="sm">
+                <a href={`/print/cpar/${id}?autoprint=1`} target="_blank" rel="noopener">
+                  <Printer aria-hidden />
+                  Print CPAR
+                </a>
+              </Button>
+            ) : null}
           </div>
         </div>
 

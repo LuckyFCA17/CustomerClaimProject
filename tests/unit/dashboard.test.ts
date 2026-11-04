@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { axisTicks, monthlySeries, paretoRows, percent } from "@/lib/dashboard";
+import {
+  MAX_MONTHS,
+  axisTicks,
+  monthlySeries,
+  paretoRows,
+  percent,
+  resolvePeriod,
+} from "@/lib/dashboard";
 
 /**
  * Angka dashboard diuji di sini, bukan lewat tangkapan layar: yang mudah salah bukan
@@ -137,5 +144,80 @@ describe("percent", () => {
     expect(percent(0.625)).toBe("63%");
     expect(percent(1)).toBe("100%");
     expect(percent(0)).toBe("0%");
+  });
+});
+
+/**
+ * Periode yang diminta lewat URL.
+ *
+ * Diuji agak teliti karena nilainya datang dari luar: bisa diketik tangan, bisa
+ * tertinggal dari tautan lama, dan yang keluar dari fungsi ini langsung menjadi batas
+ * query basis data serta jumlah kolom grafik.
+ */
+describe("resolvePeriod", () => {
+  const NOW_2026_10 = new Date("2026-10-20T03:00:00Z");
+
+  it("jatuh ke dua belas bulan terakhir bila tidak diminta apa pun", () => {
+    const period = resolvePeriod(undefined, undefined, NOW_2026_10);
+
+    expect(period.from).toBe("2025-11");
+    expect(period.to).toBe("2026-10");
+    expect(period.months).toBe(12);
+    expect(period.isDefault).toBe(true);
+  });
+
+  it("menghormati rentang yang diminta", () => {
+    const period = resolvePeriod("2026-01", "2026-06", NOW_2026_10);
+
+    expect(period.months).toBe(6);
+    expect(period.label).toBe("Januari 2026 – Juni 2026");
+    expect(period.isDefault).toBe(false);
+  });
+
+  it("menyebut satu bulan tanpa tanda pisah", () => {
+    expect(resolvePeriod("2026-03", "2026-03", NOW_2026_10).label).toBe("Maret 2026");
+    expect(resolvePeriod("2026-03", "2026-03", NOW_2026_10).months).toBe(1);
+  });
+
+  it("menukar rentang yang terbalik alih-alih menolaknya", () => {
+    const period = resolvePeriod("2026-06", "2026-01", NOW_2026_10);
+
+    expect(period.from).toBe("2026-01");
+    expect(period.to).toBe("2026-06");
+  });
+
+  it("mengabaikan nilai yang tidak berbentuk YYYY-MM", () => {
+    for (const bad of ["", "2026", "2026-13", "2026-00", "abcd-ef", "1999-05", "2101-05"]) {
+      const period = resolvePeriod(bad, undefined, NOW_2026_10);
+
+      expect(period.isDefault, bad).toBe(true);
+    }
+  });
+
+  it("memotong rentang yang terlalu panjang dari ujung awal", () => {
+    // Bulan terakhir yang diminta tetap terlihat; itu yang biasanya ingin dilihat orang.
+    const period = resolvePeriod("2000-01", "2026-10", NOW_2026_10);
+
+    expect(period.months).toBe(MAX_MONTHS);
+    expect(period.to).toBe("2026-10");
+    expect(period.from).toBe("2023-11");
+  });
+
+  it("memberi batas query yang mencakup bulan Jakarta seutuhnya", () => {
+    const period = resolvePeriod("2026-01", "2026-01", NOW_2026_10);
+
+    // 1 Januari 00.00 WIB = 31 Desember 17.00 UTC. Memakai tengah malam UTC akan
+    // membuang klaim yang masuk pada tujuh jam pertama bulan itu.
+    expect(period.start.toISOString()).toBe("2025-12-31T17:00:00.000Z");
+    expect(period.end.toISOString()).toBe("2026-01-31T17:00:00.000Z");
+  });
+
+  it("menghasilkan deret sepanjang periode yang diminta", () => {
+    const period = resolvePeriod("2026-01", "2026-06", NOW_2026_10);
+    const series = monthlySeries([], period.anchor, period.months);
+
+    expect(series).toHaveLength(6);
+    expect(series[0].key).toBe("2026-01");
+    expect(series[5].key).toBe("2026-06");
   });
 });

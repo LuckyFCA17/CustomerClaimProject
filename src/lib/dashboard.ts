@@ -82,6 +82,139 @@ function keyOf(year: number, month: number): string {
   return `${year}-${String(month + 1).padStart(2, "0")}`;
 }
 
+/** Nama bulan lengkap untuk pemilih periode; MONTH_SHORT terlalu singkat di daftar pilihan. */
+export const MONTH_NAMES = [
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
+] as const;
+
+/**
+ * Batas panjang periode.
+ *
+ * Tiga tahun sudah lebih panjang daripada yang pernah ditanyakan siapa pun di rapat
+ * bulanan, dan 36 kolom adalah batas sebuah grafik batang masih terbaca di layar ponsel.
+ * Tanpa batas ini satu URL yang salah ketik dapat meminta ribuan kolom.
+ */
+export const MAX_MONTHS = 36;
+
+const JAKARTA_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+export interface Period {
+  /** `2026-01` — nilai yang dipakai pemilih dan URL. */
+  readonly from: string;
+  readonly to: string;
+  /** Jumlah bulan dalam rentang, sudah dibatasi MAX_MONTHS. */
+  readonly months: number;
+  /** Batas bawah query, inklusif — awal bulan `from` menurut kalender Jakarta. */
+  readonly start: Date;
+  /** Batas atas query, eksklusif — awal bulan sesudah `to`. */
+  readonly end: Date;
+  /** Titik akhir yang diberikan ke `monthlySeries`: satu saat di dalam bulan `to`. */
+  readonly anchor: Date;
+  /** Benar bila periode ini sama dengan bawaan, sehingga URL tidak perlu memuatnya. */
+  readonly isDefault: boolean;
+  readonly label: string;
+}
+
+/** `2026-03` → { year: 2026, month: 2 }; apa pun yang lain → null. */
+function parseMonth(value: string | undefined): { year: number; month: number } | null {
+  if (!value) return null;
+
+  const match = /^(\d{4})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+
+  if (year < 2000 || year > 2100 || month < 0 || month > 11) return null;
+
+  return { year, month };
+}
+
+/** Awal bulan menurut kalender Jakarta, dinyatakan sebagai saat UTC. */
+function jakartaMonthStart(year: number, month: number): Date {
+  return new Date(Date.UTC(year, month, 1) - JAKARTA_OFFSET_MS);
+}
+
+/**
+ * Periode yang diminta lewat URL, dibersihkan sampai pasti masuk akal.
+ *
+ * Seluruh pembersihan terjadi di sini, bukan di komponen, karena `?from=` dan `?to=`
+ * datang dari URL — bisa diketik tangan, bisa tertinggal dari tautan lama. Yang keluar
+ * dari fungsi ini selalu rentang yang dapat digambar:
+ *
+ *   · nilai yang tidak berbentuk `YYYY-MM` diabaikan, jatuh ke bawaan;
+ *   · rentang terbalik ditukar, bukan ditolak — maksud penggunanya jelas;
+ *   · rentang yang terlalu panjang dipotong dari ujung awal, sehingga bulan terakhir
+ *     yang diminta tetap terlihat; itulah yang biasanya ingin dilihat orang.
+ */
+export function resolvePeriod(
+  fromRaw: string | undefined,
+  toRaw: string | undefined,
+  now: Date = new Date(),
+  defaultMonths: number = DEFAULT_MONTHS,
+): Period {
+  const today = toJakartaParts(now);
+  const parsedFrom = parseMonth(fromRaw);
+  const parsedTo = parseMonth(toRaw);
+
+  const fallbackEnd = { year: today.year, month: today.month };
+  const fallbackStartPoint = new Date(Date.UTC(today.year, today.month - (defaultMonths - 1), 1));
+  const fallbackStart = {
+    year: fallbackStartPoint.getUTCFullYear(),
+    month: fallbackStartPoint.getUTCMonth(),
+  };
+
+  let start = parsedFrom ?? fallbackStart;
+  let end = parsedTo ?? fallbackEnd;
+
+  const asIndex = (point: { year: number; month: number }) => point.year * 12 + point.month;
+
+  if (asIndex(start) > asIndex(end)) [start, end] = [end, start];
+
+  let months = asIndex(end) - asIndex(start) + 1;
+
+  if (months > MAX_MONTHS) {
+    const trimmed = new Date(Date.UTC(end.year, end.month - (MAX_MONTHS - 1), 1));
+    start = { year: trimmed.getUTCFullYear(), month: trimmed.getUTCMonth() };
+    months = MAX_MONTHS;
+  }
+
+  const from = keyOf(start.year, start.month);
+  const to = keyOf(end.year, end.month);
+  const isDefault =
+    from === keyOf(fallbackStart.year, fallbackStart.month) &&
+    to === keyOf(fallbackEnd.year, fallbackEnd.month);
+
+  const label =
+    from === to
+      ? `${MONTH_NAMES[start.month]} ${start.year}`
+      : `${MONTH_NAMES[start.month]} ${start.year} – ${MONTH_NAMES[end.month]} ${end.year}`;
+
+  return {
+    from,
+    to,
+    months,
+    start: jakartaMonthStart(start.year, start.month),
+    end: jakartaMonthStart(end.year, end.month + 1),
+    // Pertengahan bulan terakhir: `monthlySeries` hanya membaca tahun dan bulannya,
+    // dan titik tengah tidak mungkin tergelincir ke bulan sebelah oleh zona waktu.
+    anchor: new Date(Date.UTC(end.year, end.month, 15, 12)),
+    isDefault,
+    label,
+  };
+}
+
 export interface ParetoRow {
   readonly label: string;
   readonly count: number;

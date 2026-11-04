@@ -3,12 +3,14 @@ import Link from "next/link";
 
 import { MonthlyColumns } from "@/components/dashboard/monthly-columns";
 import { ParetoBars } from "@/components/dashboard/pareto-bars";
+import { PeriodFilter } from "@/components/dashboard/period-filter";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ROLE_LABEL } from "@/config/navigation";
 import { availableTransitions } from "@/lib/claim-state";
-import { DEFAULT_MONTHS, monthlySeries, paretoRows } from "@/lib/dashboard";
+import { monthlySeries, paretoRows, resolvePeriod } from "@/lib/dashboard";
+import { toJakartaParts } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { draftLabel } from "@/lib/numbering";
@@ -29,26 +31,45 @@ const ACTION_ROWS = 8;
  * melihat dashboard yang berbeda pula — bukan satu ringkasan global yang kebetulan
  * disembunyikan sebagian di halaman lain.
  */
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await getPortalUser();
   const where = visibleClaimsWhere(user);
   const now = new Date();
 
-  // Awal bulan, 11 bulan ke belakang: rentang yang sama dipakai grafik dan pareto,
-  // supaya keduanya menjawab pertanyaan tentang periode yang sama.
-  const windowStart = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (DEFAULT_MONTHS - 1), 1),
-  );
+  const query = await searchParams;
+  const one = (value: string | string[] | undefined) =>
+    Array.isArray(value) ? value[0] : value;
 
-  const [recent, ncGroups, ncNames, openClaims, overdueCpar, closedRecently, actionable] =
-    await Promise.all([
+  // Satu periode dipakai grafik dan pareto, supaya keduanya menjawab pertanyaan
+  // tentang rentang waktu yang sama. Nilainya dibersihkan di `resolvePeriod`, karena
+  // ia datang dari URL dan langsung menjadi batas query.
+  const period = resolvePeriod(one(query.from), one(query.to), now);
+
+  const [
+    recent,
+    ncGroups,
+    ncNames,
+    openClaims,
+    overdueCpar,
+    closedRecently,
+    actionable,
+    oldestClaim,
+  ] = await Promise.all([
       db.claim.findMany({
-        where: { ...where, createdAt: { gte: windowStart } },
+        where: { ...where, createdAt: { gte: period.start, lt: period.end } },
         select: { createdAt: true },
       }),
       db.claim.groupBy({
         by: ["ncDetailId"],
-        where: { ...where, createdAt: { gte: windowStart }, ncDetailId: { not: null } },
+        where: {
+          ...where,
+          createdAt: { gte: period.start, lt: period.end },
+          ncDetailId: { not: null },
+        },
         _count: { _all: true },
       }),
       db.nonConformanceDetail.findMany({ select: { id: true, name: true } }),
@@ -88,12 +109,37 @@ export default async function DashboardPage() {
           },
         },
       }),
+      // Hanya untuk mengetahui sejak tahun berapa pemilih periode perlu menawarkan.
+      db.claim.findFirst({
+        where,
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true },
+      }),
     ]);
 
   const series = monthlySeries(
     recent.map((claim) => claim.createdAt),
-    now,
+    period.anchor,
+    period.months,
   );
+
+  /**
+   * Tahun yang boleh dipilih.
+   *
+   * Dari tahun klaim terlama sampai tahun berjalan — menawarkan tahun yang tidak punya
+   * satu pun klaim hanya menghasilkan grafik kosong yang terlihat seperti kerusakan.
+   * Tahun periode yang sedang aktif selalu ikut, supaya tautan lama tetap dapat
+   * menampilkan pilihannya sendiri.
+   */
+  const thisYear = toJakartaParts(now).year;
+  const oldestClaimYear = oldestClaim ? toJakartaParts(oldestClaim.createdAt).year : null;
+  const years = [
+    ...new Set([
+      ...range(oldestClaimYear ?? thisYear, thisYear),
+      Number(period.from.slice(0, 4)),
+      Number(period.to.slice(0, 4)),
+    ]),
+  ].sort((a, b) => b - a);
 
   const nameById = new Map(ncNames.map((detail) => [detail.id, detail.name]));
   const pareto = paretoRows(
@@ -201,12 +247,30 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Periode grafik</CardTitle>
+          <CardDescription>
+            Berlaku untuk kedua grafik di bawah. Kartu angka di atas tidak ikut berubah —
+            semuanya menjawab pertanyaan tentang keadaan sekarang, bukan tentang periode.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PeriodFilter
+            from={period.from}
+            to={period.to}
+            years={years}
+            isDefault={period.isDefault}
+          />
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Klaim per bulan</CardTitle>
             <CardDescription>
-              Dua belas bulan terakhir, menurut tanggal klaim dicatat (kalender Jakarta).
+              {period.label}, menurut tanggal klaim dicatat (kalender Jakarta).
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -218,8 +282,8 @@ export default async function DashboardPage() {
           <CardHeader>
             <CardTitle>Pareto non-conformance detail</CardTitle>
             <CardDescription>
-              Sebab terbanyak dalam dua belas bulan terakhir. Yang berwarna aksen adalah
-              sebab yang bersama-sama menjelaskan 80% kasus.
+              Sebab terbanyak pada {period.label}. Yang berwarna aksen adalah sebab yang
+              bersama-sama menjelaskan 80% kasus.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -248,6 +312,15 @@ interface ActionableClaim {
  * membuat dashboard menjanjikan tindakan yang akan ditolak begitu tombolnya ditekan —
  * misalnya meminta seluruh Dept. Head mengisi CPAR milik departemen lain.
  */
+/** Deret tahun menaik, kedua ujungnya ikut. */
+function range(from: number, to: number): number[] {
+  const years: number[] = [];
+
+  for (let year = Math.min(from, to); year <= Math.max(from, to); year += 1) years.push(year);
+
+  return years;
+}
+
 function pendingActions(actor: Actor, claim: ActionableClaim): readonly string[] {
   const context: ClaimContext = {
     status: claim.status,

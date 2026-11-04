@@ -846,14 +846,43 @@ Yang ditulis hanya field yang benar-benar berubah. Formulir mengirim seluruh isi
 disimpan, jadi tanpa perbandingan per field audit log akan mencatat tiga puluh "perubahan" untuk
 satu kata yang disunting — dan kolom tanggal akan ternormalkan jamnya tanpa ada yang meminta.
 
-### Mencetak lembar klaim
+### Mencetak lembar
 
-Tombol **Print Bad News Information** dan **Print Quick Information** di halaman klaim menautkan
-ke halaman cetaknya (`/print/<doc>/<id>?autoprint=1`), bukan memanggil pembuat PDF di server.
+Tombol **Print Bad News Information** dan **Print Quick Information** di halaman klaim, serta
+**Print CPAR** di halaman CPAR, menautkan ke halaman cetaknya (`/print/<doc>/<id>?autoprint=1`),
+bukan memanggil pembuat PDF di server.
 Halaman itu dirender peramban yang sedang dipakai, jadi tidak perlu Chromium di server — di
 Termux tidak ada — dan hasilnya keluar seketika. `authorizePrint` menerima sesi pengguna,
 sehingga tautannya tidak memerlukan token. Draft tidak ditawari: isinya baru lengkap setelah
-submit.
+submit. Tombol Print CPAR mengikuti izin `cpar.print`, jadi ia baru muncul sejak CPAR terbit;
+selama belum disetujui seluruh verifier lembarnya keluar berwatermark DRAFT — itu ditentukan
+halaman cetaknya, bukan tombolnya.
+
+### Periode grafik dashboard
+
+Kedua grafik — Klaim per bulan dan Pareto non-conformance detail — mengikuti satu pemilih
+periode bulan/tahun. Periodenya hidup di URL (`/dashboard?from=2026-01&to=2026-06`), bukan di
+state komponen: halaman dashboard adalah server component yang menghitung angkanya di basis
+data, jadi periode memang harus sampai ke server; tautannya dapat dikirim ke orang lain dan
+menampilkan periode yang sama; dan tombol kembali peramban mengembalikan periode sebelumnya
+tanpa kode tambahan.
+
+Kartu angka di atasnya sengaja **tidak** ikut berubah. Keempatnya menjawab pertanyaan tentang
+keadaan sekarang — berapa yang menunggu Anda, berapa yang lewat tenggat — dan angka itu tidak
+punya arti bila disaring ke periode yang sudah lewat.
+
+`resolvePeriod()` membersihkan nilai dari URL sebelum dipakai, karena ia bisa diketik tangan atau
+tertinggal dari tautan lama:
+
+| Masukan | Hasil |
+|---|---|
+| kosong atau bukan `YYYY-MM` | bawaan: dua belas bulan terakhir |
+| rentang terbalik | ditukar — maksud penggunanya jelas |
+| lebih panjang dari 36 bulan | dipotong dari ujung awal, bulan terakhir tetap terlihat |
+
+Batas querynya memakai awal bulan **kalender Jakarta**, bukan tengah malam UTC: 1 Januari 00.00
+WIB adalah 31 Desember 17.00 UTC, jadi batas UTC akan membuang klaim yang masuk pada tujuh jam
+pertama setiap bulan.
 
 ## State machine klaim
 
