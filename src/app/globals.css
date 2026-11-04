@@ -212,13 +212,37 @@
   margin-top: 8mm;
 }
 
-/* Form 5 (R3) PR-QA-ISO-07 dicetak mendatar; ukuran kertasnya diatur halamannya sendiri. */
+/* Form 5 (R3) PR-QA-ISO-07 dicetak mendatar; ukuran kertasnya diatur komponen Sheet. */
 .sheet-landscape {
   width: 297mm;
   min-height: 210mm;
   padding: 5mm 6mm;
   font-size: 7.5pt;
   line-height: 1.25;
+}
+
+/* CPAR dicetak A3 mendatar: delapan section beserta tabel action plan-nya tidak terbaca
+   bila dipadatkan ke A4, dan lembar inilah yang ditempel di papan saat review.
+   Lebarnya dipakai dua kolom, jadi panjang barisnya tetap sekitar selebar A4 — kolom
+   selebar 400mm akan menyulitkan mata kembali ke awal baris berikutnya. */
+.sheet-a3-landscape {
+  width: 420mm;
+  min-height: 297mm;
+  padding: 10mm 12mm;
+  font-size: 9pt;
+  line-height: 1.4;
+}
+
+/* Aliran dua kolom untuk isi lembar A3. `break-inside: avoid` dipasang pada tiap section
+   supaya satu section tidak terbelah di tengah antar-kolom maupun antar-halaman. */
+.sheet-columns {
+  column-count: 2;
+  column-gap: 8mm;
+  column-fill: auto;
+}
+
+.sheet-columns > * {
+  break-inside: avoid;
 }
 
 /* Garis tabel form: satu kelas supaya ketebalannya seragam di seluruh lembar. */
@@ -256,6 +280,16 @@
 @media print {
   .print-root {
     background: #ffffff;
+  }
+
+  /* Watermark diulang tiap halaman, bukan sekali untuk seluruh lembar.
+     `position: absolute` mengikat ke kotak .sheet yang tingginya beberapa halaman,
+     sehingga DRAFT tercetak satu kali di tengah lembar — pada CPAR A3 tiga halaman ia
+     muncul terpotong di halaman kedua saja, dan halaman pertama yang paling mungkin
+     diedarkan justru tidak bertanda. Dalam paged media Chromium, `fixed` berarti
+     "sekali per halaman". */
+  .sheet[data-draft="true"]::before {
+    position: fixed;
   }
 
   .sheet {

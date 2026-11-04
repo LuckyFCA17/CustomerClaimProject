@@ -7,6 +7,7 @@ import {
   SignatureStrip,
   SocializationGrid,
 } from "@/components/print/quality-alert";
+import { Sheet } from "@/components/print/sheet";
 import { formatDate } from "@/lib/format";
 import { periodLabel, splitQty } from "@/lib/quality-alert";
 import { draftLabel } from "@/lib/numbering";
@@ -59,11 +60,7 @@ export default async function BadNewsPrintPage({
     part?.appearanceItem?.trim() || part?.dimensionItem?.trim() || null;
 
   return (
-    <>
-      {/* Lembar ini mendatar; aturan @page di globals.css dibuat untuk dokumen tegak. */}
-      <style>{`@page { size: A4 landscape; margin: 0; }`}</style>
-
-      <section className="sheet sheet-landscape" data-draft={isDraft ? "true" : undefined}>
+    <Sheet size="a4-landscape" draft={isDraft}>
         <FormMasthead documentNo={claim.claimNo ?? draftLabel(claim.id)} issueDate={issueDate} />
 
         <SignatureStrip
@@ -289,8 +286,7 @@ export default async function BadNewsPrintPage({
             melalui NCC Portal
           </span>
         </div>
-      </section>
-    </>
+    </Sheet>
   );
 }
 

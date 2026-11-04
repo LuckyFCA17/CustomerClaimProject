@@ -30,6 +30,7 @@
     "mail:sink": "node scripts/mail-sink.mjs",
     "mail:test": "tsx --tsconfig scripts/tsconfig.json scripts/mail-test.mts",
     "mail:width": "tsx --tsconfig scripts/tsconfig.json scripts/mail-width.mts",
+    "pdf:check": "tsx --tsconfig scripts/tsconfig.json scripts/pdf-check.mts",
     "upload:check": "tsx --tsconfig scripts/tsconfig.json scripts/upload-check.mts",
     "reminders": "node scripts/reminders.mjs",
     "db:apply-sql": "node scripts/apply-migrations.mjs"

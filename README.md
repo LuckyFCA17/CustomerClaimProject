@@ -589,6 +589,26 @@ untuk layar dan kertas, sehingga `?preview=1` di peramban memang menggambarkan h
 |---|---|---|
 | Bad News Information | A4 **mendatar** | Form 5 (R3) PR-QA-ISO-07 — Quality Alert, lengkap dengan grid sosialisasi operator |
 | Quick Information for Abnormal Part | A4 tegak | Foto besar berdampingan untuk ditempel di line produksi |
+| Corrective & Preventive Action Report | **A3 mendatar** | Delapan section CPAR dalam dua kolom, beserta fishbone, 5-Why, dan tabel action plan |
+| CAPA Implementation Monitoring | A4 tegak | Periode pemantauan dan penilaian efektivitas |
+| A3 Improvement Report | A4 tegak | Lima blok A3 berdampingan |
+
+Ukuran kertas ditentukan `@page size` di CSS, **bukan** argumen `format` Puppeteer: `renderPdf`
+memakai `preferCSSPageSize: true`, sehingga CSS-lah yang menang. Pasangan `@page` dan lebar
+`.sheet` dipegang satu tempat — prop `size` pada komponen `Sheet` — karena bila keduanya berbeda,
+pratinjau terlihat benar sementara PDF-nya terpotong, dan itu baru ketahuan setelah dicetak.
+
+CPAR memakai A3 mendatar sejak lembarnya memuat fishbone, tabel 5-Why, dan tabel action plan:
+dipadatkan ke A4 semuanya terbaca terlalu kecil, padahal lembar inilah yang ditempel saat review.
+Lebar A3 dipakai sebagai **dua kolom**, bukan satu baris selebar 400mm — baris sepanjang itu
+menyulitkan mata kembali ke awal baris berikutnya.
+
+```bash
+pnpm pdf:check --claim <claimId>              # kelima dokumen + ukuran kertasnya
+pnpm pdf:check --claim <claimId> --out ./pdf  # sekalian simpan berkasnya
+```
+
+Perlu Chromium; di Termux tidak ada, jadi perintah ini hanya jalan di mesin yang punya.
 
 Lembar Bad News meniru formulir terkendali NID apa adanya: urutan baris Section A, pembagian
 Section B standard–actual, pita peringatan berbahasa Indonesia yang sudah tercetak di sana, sampai

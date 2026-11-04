@@ -10,11 +10,44 @@ import { formatDateTime } from "@/lib/format";
  * perlahan berbeda satu sama lain.
  */
 
-export function Sheet({ draft, children }: { draft?: boolean; children: ReactNode }) {
+/**
+ * Ukuran kertas per dokumen.
+ *
+ * Dipasangkan di satu tempat karena dua hal harus selalu cocok dan dulu tidak:
+ * `@page size` yang menentukan ukuran PDF, dan lebar `.sheet` yang menentukan tata letak
+ * di layar. Bila keduanya berbeda, pratinjau terlihat benar sementara PDF-nya terpotong —
+ * dan itu baru ketahuan setelah dicetak.
+ */
+const PAPER = {
+  a4: { page: "A4", className: "sheet" },
+  "a4-landscape": { page: "A4 landscape", className: "sheet sheet-landscape" },
+  "a3-landscape": { page: "A3 landscape", className: "sheet sheet-a3-landscape" },
+} as const;
+
+export type PaperSize = keyof typeof PAPER;
+
+export function Sheet({
+  draft,
+  size = "a4",
+  children,
+}: {
+  draft?: boolean;
+  size?: PaperSize;
+  children: ReactNode;
+}) {
+  const paper = PAPER[size];
+
   return (
-    <section className="sheet" data-draft={draft ? "true" : undefined}>
-      {children}
-    </section>
+    <>
+      {/* Aturan @page di globals.css dibuat untuk A4 tegak; dokumen berukuran lain
+          menimpanya di sini. Satu route hanya pernah merender satu jenis dokumen,
+          jadi tidak ada dua aturan @page yang bertabrakan. */}
+      {size === "a4" ? null : <style>{`@page { size: ${paper.page}; margin: 0; }`}</style>}
+
+      <section className={paper.className} data-draft={draft ? "true" : undefined}>
+        {children}
+      </section>
+    </>
   );
 }
 
@@ -82,7 +115,7 @@ export function FieldGrid({
   columns = 2,
 }: {
   rows: readonly (readonly [string, string | null | undefined])[];
-  columns?: 1 | 2;
+  columns?: 1 | 2 | 3 | 4;
 }) {
   return (
     <table className="w-full border-collapse text-[9pt]">
@@ -92,8 +125,11 @@ export function FieldGrid({
             {group.map(([label, value]) => (
               <td
                 key={label}
-                className="w-1/2 border border-[#e4e7eb] px-[3mm] py-[1.8mm] align-top"
-                colSpan={group.length === 1 && columns === 2 ? 2 : 1}
+                className="border border-[#e4e7eb] px-[3mm] py-[1.8mm] align-top"
+                style={{ width: `${100 / columns}%` }}
+                // Baris terakhir yang tidak penuh direntangkan, bukan disusul sel kosong:
+                // kotak kosong di tengah form terbaca seperti isian yang terlewat.
+                colSpan={group.length < columns ? columns - group.length + 1 : 1}
               >
                 <div className="text-[7.5pt] uppercase tracking-wide text-[#6b7280]">{label}</div>
                 <div className="mt-[0.5mm] whitespace-pre-line break-words">{value || "—"}</div>

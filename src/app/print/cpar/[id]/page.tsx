@@ -32,11 +32,15 @@ import {
 export const dynamic = "force-dynamic";
 
 /**
- * Corrective & Preventive Action Request (§9).
+ * Corrective & Preventive Action Report (§9).
  *
  * Isi delapan section dicetak apa adanya dalam urutan form, masing-masing dengan nama
  * pengisi dan waktunya — itulah yang membedakan lembar ini dari sekadar ringkasan:
  * auditor perlu tahu siapa yang menyatakan apa, bukan hanya apa yang dinyatakan.
+ *
+ * Dicetak A3 mendatar. Delapan section beserta tabel action plan, why-why, dan foto
+ * part-nya tidak terbaca bila dipadatkan ke A4, dan lembar inilah yang ditempel saat
+ * review. Lebar A3 dipakai sebagai dua kolom, bukan satu baris selebar 400mm.
  *
  * Selama belum disetujui seluruh verifier, lembar diberi watermark DRAFT lewat
  * `Sheet draft`, supaya salinan yang beredar lebih awal tidak tertukar dengan yang sah.
@@ -101,9 +105,9 @@ export default async function CparPrintPage({
   const earlierCycles = cpar.verifications.filter((entry) => entry.cycle < cpar.cycle);
 
   return (
-    <Sheet draft={isDraft}>
+    <Sheet size="a3-landscape" draft={isDraft}>
       <FormHeader
-        formTitle="Corrective & Preventive Action Request"
+        formTitle="Corrective & Preventive Action Report"
         formCode="FM-QA-03 Rev.00 · CPAR"
         documentNo={cpar.cparNo}
         status={`${statusMeta(claim.status).label} · siklus ${cpar.cycle}`}
@@ -111,6 +115,7 @@ export default async function CparPrintPage({
       />
 
       <FieldGrid
+        columns={4}
         rows={[
           ["Claim No.", claim.claimNo],
           ["Type of claim", claim.type ? (TYPE_LABEL[claim.type] ?? claim.type) : null],
@@ -146,6 +151,7 @@ export default async function CparPrintPage({
         ]}
       />
 
+      <div className="sheet-columns mt-[4mm]">
       {sections.map(({ key, record }) => (
         <div key={key} className="break-inside-avoid">
           <SectionTitle>
@@ -184,6 +190,7 @@ export default async function CparPrintPage({
           </div>
         </div>
       ))}
+      </div>
 
       {earlierCycles.length > 0 ? (
         <>

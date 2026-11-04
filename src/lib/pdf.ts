@@ -27,7 +27,7 @@ export const DOCUMENT_ROUTE: Record<DocumentKind, string> = {
 export const DOCUMENT_TITLE: Record<DocumentKind, string> = {
   BAD_NEWS: "Bad News Information Form",
   QUICK_INFO: "Quick Information for Abnormal Part",
-  CPAR: "Corrective & Preventive Action Request",
+  CPAR: "Corrective & Preventive Action Report",
   MONITORING: "CAPA Implementation Monitoring",
   A3: "A3 Improvement Report",
 };
