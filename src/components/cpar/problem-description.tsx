@@ -96,7 +96,7 @@ function PartCard({ part }: { part: ProblemPart }) {
                 <img
                   src={photo.url}
                   alt={photo.caption ?? `Foto ${part.title}`}
-                  className="h-28 w-full rounded-md border border-nid-border object-cover"
+                  className="h-28 w-full rounded-md border border-nid-border bg-secondary object-contain"
                 />
                 {photo.caption ? (
                   <figcaption className="mt-1 text-[11px] leading-tight text-muted-foreground">

@@ -211,6 +211,12 @@ const PHOTO_COLUMNS = ["grid-cols-1", "grid-cols-1", "grid-cols-2", "grid-cols-3
  * Jumlah kolom mengikuti jumlah foto, bukan selalu tiga: satu foto yang dipaksa masuk
  * kolom sepertiga tercetak kecil dan sulit dibaca dari jarak baca kertas — padahal
  * fotolah isi terpenting lembar ini.
+ *
+ * `object-contain`, bukan `object-cover`. Cover memenuhi kotak dengan memotong sisi yang
+ * berlebih, dan pada foto cacat yang dipotong bisa justru retakannya — foto yang diunggah
+ * pelanggan jarang berbanding 4:3, dan bagian yang menarik sering ada di tepi. Lembar ini
+ * dipakai memutuskan klaim; lebih baik ada pita kosong di sisi foto daripada ada bagian
+ * part yang tidak pernah terlihat pembacanya.
  */
 export function PhotoRow({
   photos,
@@ -244,7 +250,7 @@ export function PhotoRow({
           <img
             src={photo.src}
             alt={photo.caption ?? ""}
-            className={`${height} w-full rounded-[1mm] border border-[#e4e7eb] object-cover`}
+            className={`${height} w-full rounded-[1mm] border border-[#e4e7eb] bg-[#f4f5f7] object-contain`}
           />
           {photo.caption ? (
             <figcaption className="mt-[0.8mm] text-[7pt] leading-tight text-[#6b7280]">

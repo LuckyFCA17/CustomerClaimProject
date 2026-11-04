@@ -66,13 +66,14 @@ function PartBlock({ part }: { part: ProblemPart }) {
         {part.photos.length > 0 ? (
           <div className="grid grid-cols-2 gap-[1.5mm]">
             {part.photos.slice(0, 2).map((photo) => (
+              /* object-contain: foto cacat tidak boleh dipotong, lihat PhotoRow. */
               /* eslint-disable-next-line @next/next/no-img-element -- Puppeteer mencetak
                  halaman statis; pengoptimal gambar Next tidak ikut berjalan di sana. */
               <img
                 key={photo.id}
                 src={photo.url}
                 alt={photo.caption ?? part.title}
-                className="h-[28mm] w-full border border-[#e4e7eb] object-cover"
+                className="h-[28mm] w-full border border-[#e4e7eb] bg-[#f4f5f7] object-contain"
               />
             ))}
           </div>

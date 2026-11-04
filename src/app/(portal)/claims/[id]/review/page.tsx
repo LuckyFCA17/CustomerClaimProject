@@ -115,7 +115,7 @@ export default async function ReviewClaimPage({ params }: { params: Promise<{ id
                           width={320}
                           height={240}
                           unoptimized
-                          className="aspect-[4/3] w-full object-cover"
+                          className="aspect-[4/3] w-full bg-secondary object-contain"
                         />
                       </li>
                     ))}
