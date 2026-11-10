@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  CalendarClock,
   ChevronLeft,
   ChevronRight,
   CircleCheckBig,
@@ -13,6 +12,7 @@ import {
 import { ClaimFilters, type CustomerOption } from "@/components/claims/claim-filters";
 import { EvidenceFilters, PendingEvidenceTable } from "@/components/cpar/pending-evidence";
 import { StatRow, StatTile } from "@/components/shared/stat-tile";
+import { DueChip } from "@/components/shared/due-chip";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { closureTiming } from "@/config/claim-status";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,6 @@ import {
   sortEvidenceRows,
   tallyEvidence,
 } from "@/lib/evidence-requests";
-import { formatDate } from "@/lib/format";
 import { visibleClaimsWhere } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
 import { loadEvidenceRequests } from "@/server/evidence-requests";
@@ -234,10 +233,7 @@ export default async function CparDashboardPage({
             </div>
           ) : (
             <ul className="divide-y divide-nid-border">
-              {cpars.map((cpar) => {
-                const overdue = cpar.dueDate < now && !cpar.submittedAt;
-
-                return (
+              {cpars.map((cpar) => (
                   <li key={cpar.id}>
                     <Link
                       href={`/cpar/${cpar.claim.id}`}
@@ -264,16 +260,13 @@ export default async function CparDashboardPage({
                         </span>
                       ) : null}
 
-                      <span className="flex items-center gap-1 text-xs tabular text-muted-foreground">
-                        <CalendarClock aria-hidden className="size-3.5" />
-                        {formatDate(cpar.dueDate)}
-                        {overdue ? (
-                          <span className="flex items-center gap-1 rounded-full bg-[var(--status-danger-bg)] px-1.5 py-0.5 font-medium text-[var(--status-danger)]">
-                            <TriangleAlert aria-hidden className="size-3" />
-                            lewat
-                          </span>
-                        ) : null}
-                      </span>
+                      {/* Tenggat yang sudah dipenuhi tidak lagi diperingatkan: begitu
+                          CPAR dikirim, yang menarik bukan lagi sisa harinya. */}
+                      <DueChip
+                        dueDate={cpar.dueDate}
+                        now={now}
+                        settled={cpar.submittedAt !== null}
+                      />
 
                       {/* Pada klaim yang sudah ditutup, badge-nya menyebutkan sekalian
                           apakah penutupannya di dalam tenggat atau melewatinya. */}
@@ -284,8 +277,7 @@ export default async function CparDashboardPage({
                       />
                     </Link>
                   </li>
-                );
-              })}
+              ))}
             </ul>
           )}
         </CardContent>

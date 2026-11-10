@@ -5,7 +5,9 @@ import { ChevronLeft, ChevronRight, FilePlus2, Sheet } from "lucide-react";
 import { ClaimFilters, type CustomerOption } from "@/components/claims/claim-filters";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { DueChip } from "@/components/shared/due-chip";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { closureTiming } from "@/config/claim-status";
 import { db } from "@/lib/db";
 import {
   type ParamValue,
@@ -50,6 +52,9 @@ export default async function ClaimsPage({
 }) {
   const [user, params] = await Promise.all([getPortalUser(), searchParams]);
   const query = parseClaimQuery(params);
+  // Satu `now` untuk seluruh daftar: dua baris pada halaman yang sama tidak boleh
+  // dihitung terhadap detik yang berbeda.
+  const now = new Date();
 
   const where = { AND: [visibleClaimsWhere(user), claimFilterWhere(query)] };
 
@@ -73,6 +78,7 @@ export default async function ClaimsPage({
       id: true,
       claimNo: true,
       status: true,
+      closedAt: true,
       type: true,
       partName: true,
       internalPartNo: true,
@@ -80,7 +86,14 @@ export default async function ClaimsPage({
       createdAt: true,
       customer: { select: { name: true } },
       createdBy: { select: { name: true } },
-      cpar: { select: { cparNo: true, responsibleDept: { select: { code: true } } } },
+      cpar: {
+        select: {
+          cparNo: true,
+          dueDate: true,
+          submittedAt: true,
+          responsibleDept: { select: { code: true } },
+        },
+      },
     },
   });
 
@@ -187,7 +200,20 @@ export default async function ClaimsPage({
                       </span>
                     </span>
 
-                    <StatusBadge status={claim.status} showHint />
+                    {/* Tenggat klaim adalah tenggat CPAR-nya; klaim yang belum
+                        menerbitkan CPAR memang belum punya tenggat, jadi chip-nya
+                        tidak muncul sama sekali. */}
+                    <DueChip
+                      dueDate={claim.cpar?.dueDate}
+                      now={now}
+                      settled={claim.cpar?.submittedAt !== null}
+                    />
+
+                    <StatusBadge
+                      status={claim.status}
+                      closure={closureTiming(claim.closedAt, claim.cpar?.dueDate)}
+                      showHint
+                    />
                   </Link>
                 </li>
               ))}

@@ -905,11 +905,38 @@ Perbandingannya memakai **tanggal kalender Jakarta**, bukan titik waktu. `dueDat
 akhir jam kerja (17.00 WIB), jadi perbandingan antar-instant akan menyebut klaim yang ditutup
 pukul 19.00 pada hari tenggatnya sebagai terlambat — padahal tanggalnya sama.
 
-Di modul Claims, badge-nya tetap **Verified closed**. Pemisahannya memang milik CPAR: status
-klaimnya verified closed, sedangkan tepat-waktu atau tidak adalah capaian CPAR-nya.
+Berlaku di keempat tempat yang menampilkannya: daftar dan detail Claims, daftar dan detail CPAR.
 
 Penyaring status di dasbor tetap bekerja pada enum, jadi "Verified closed" masih muncul sebagai
 pilihan filter — ia menyaring kedua-duanya.
+
+## Peringatan tenggat di tabel
+
+Baris pada daftar Claims dan daftar CPAR mencetak tanggal tenggat beserta chip peringatan:
+
+| Chip | Syarat | Warna |
+|---|---|---|
+| `H-2`, `H-1` | tenggat kurang dari `DUE_SOON_DAYS` hari lagi | kuning |
+| `jatuh tempo hari ini` | tenggatnya hari ini | merah |
+| `lewat N hari` | sudah melewati tenggat | merah |
+
+Satu aturan, `src/lib/due-date.ts`, dipakai kedua tabel. Kalau masing-masing menghitungnya
+sendiri, dua tabel yang menampilkan tenggat yang sama pada akhirnya akan menyebutnya berbeda —
+dan yang satu akan diam-diam berhenti memperingatkan.
+
+Tidak ada chip pada tiga keadaan, dan ketiganya disengaja:
+
+- **tidak ada tenggatnya.** Tenggat klaim adalah tenggat CPAR-nya; klaim yang CPAR-nya belum
+  terbit memang belum punya;
+- **pekerjaannya sudah selesai** — CPAR sudah dikirim. Tenggat yang sudah dipenuhi tidak boleh
+  terus berteriak merah di daftar; yang menarik setelah itu adalah ketepatan waktunya, dan itu
+  sudah dijawab badge **Closed under/overdue due date**;
+- **masih jauh.** Baris yang semuanya berwarna sama saja tidak memberi tahu apa pun — peringatan
+  hanya berarti kalau ia jarang.
+
+Perbandingannya per **tanggal kalender Jakarta**, sama seperti ketepatan waktu penutupan: CPAR
+yang masih dikerjakan pukul 19.00 pada hari tenggatnya belum "lewat", karena harinya belum
+berganti bagi orang yang mengerjakannya.
 
 ## Syarat submit CPAR final
 

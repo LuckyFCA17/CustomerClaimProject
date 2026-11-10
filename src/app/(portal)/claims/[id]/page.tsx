@@ -6,7 +6,9 @@ import { ClipboardCheck, ClipboardList, PencilLine, Printer, SquareArrowOutUpRig
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DueChip } from "@/components/shared/due-chip";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { closureTiming } from "@/config/claim-status";
 import { StatusRail } from "@/components/shared/status-rail";
 import { ClaimTimeline, type TimelineEntry } from "@/components/claim/claim-timeline";
 import { ClaimDocuments } from "@/components/claim/claim-documents";
@@ -66,6 +68,7 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
           cparNo: true,
           cycle: true,
           dueDate: true,
+          submittedAt: true,
           responsibleDeptId: true,
           responsibleDept: { select: { code: true, name: true } },
           cftMembers: { select: { departmentId: true } },
@@ -168,7 +171,17 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={claim.status} showHint />
+            <DueChip
+              dueDate={claim.cpar?.dueDate}
+              now={new Date()}
+              settled={claim.cpar?.submittedAt !== null}
+            />
+
+            <StatusBadge
+              status={claim.status}
+              closure={closureTiming(claim.closedAt, claim.cpar?.dueDate)}
+              showHint
+            />
 
             {canEdit ? (
               <Button asChild variant="outline">
