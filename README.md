@@ -954,7 +954,7 @@ berganti bagi orang yang mengerjakannya.
 
 ### Dua blok persetujuan pada lembar CPAR
 
-Lembar CPAR memuat dua blok yang sengaja dipisah:
+Lembar CPAR memuat dua blok yang sengaja dipisah, dicetak **berdampingan** di kaki lembar:
 
 | Blok | Isi | Kolom |
 |---|---|---|
@@ -969,6 +969,11 @@ meminta tanda tangan basah.
 
 Kolom pelanggan dicetak kosong sepenuhnya. Portal tidak mengetahui siapa yang akan
 menandatangani di sana, dan menebaknya akan membuat lembar berbohong.
+
+Lebar keduanya 4:3 mengikuti jumlah kolomnya, sehingga ketujuh kotak tanda tangan sama lebar dan
+terbaca sebagai satu deretan. Keduanya diberi judul satu baris — "Internal approval" dan
+"Customer approval" — supaya tabelnya sejajar; tanpa judul di blok internal, tabelnya naik satu
+baris dan kotaknya tidak lagi segaris dengan kotak di sebelahnya.
 
 ## Syarat submit CPAR final
 

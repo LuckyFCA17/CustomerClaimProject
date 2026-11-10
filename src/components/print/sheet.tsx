@@ -176,9 +176,21 @@ export interface Signatory {
  * yang tercatat portal. Kolom yang belum disetujui tetap dicetak kosong supaya lembarnya
  * tidak berubah tinggi setelah ditandatangani.
  */
-export function SignatureBlock({ signatories }: { signatories: readonly Signatory[] }) {
+export function SignatureBlock({
+  signatories,
+  title,
+  className = "mt-[6mm]",
+}: {
+  signatories: readonly Signatory[];
+  /** Judul di atas tabel; dipakai saat blok ini berdampingan dengan blok lain. */
+  title?: string;
+  /** Mengganti jarak atas bawaan — pemanggil yang menatanya sendiri mengirim "". */
+  className?: string;
+}) {
   return (
-    <div className="signature-block mt-[6mm]">
+    <div className={`signature-block ${className}`}>
+      {title ? <ApprovalHeading title={title} /> : null}
+
       <table className="w-full border-collapse text-center text-[8.5pt]">
         <tbody>
           <tr>
@@ -223,17 +235,14 @@ export const CUSTOMER_APPROVAL_ROLES = ["Received by", "Checked by", "Approved b
 
 export function CustomerApproval({
   roles = CUSTOMER_APPROVAL_ROLES,
+  className = "mt-[4mm]",
 }: {
   roles?: readonly string[];
+  className?: string;
 }) {
   return (
-    <div className="signature-block customer-approval mt-[4mm]">
-      <div className="mb-[1.5mm] flex flex-wrap items-baseline gap-x-[3mm]">
-        <span className="text-[8pt] font-semibold uppercase tracking-wide">Customer approval</span>
-        <span className="text-[7.5pt] text-[#6b7280]">
-          Diisi dan ditandatangani pihak pelanggan.
-        </span>
-      </div>
+    <div className={`signature-block customer-approval ${className}`}>
+      <ApprovalHeading title="Customer approval" note="Diisi dan ditandatangani pihak pelanggan." />
 
       <table className="w-full border-collapse text-center text-[8.5pt]">
         <tbody>
@@ -250,6 +259,23 @@ export function CustomerApproval({
           </tr>
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * Judul satu baris di atas tabel persetujuan.
+ *
+ * Tingginya selalu sama untuk kedua blok, termasuk ketika yang satu punya keterangan
+ * dan yang lain tidak. Itulah yang membuat kedua tabel tetap sebaris ketika keduanya
+ * diletakkan berdampingan — tanpa judul di blok internal, tabelnya akan naik satu baris
+ * dan kedua kotak tanda tangan tidak lagi sejajar.
+ */
+function ApprovalHeading({ title, note }: { title: string; note?: string }) {
+  return (
+    <div className="mb-[1.5mm] flex flex-wrap items-baseline gap-x-[3mm]">
+      <span className="text-[8pt] font-semibold uppercase tracking-wide">{title}</span>
+      {note ? <span className="text-[7.5pt] text-[#6b7280]">{note}</span> : null}
     </div>
   );
 }

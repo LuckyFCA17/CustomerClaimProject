@@ -236,8 +236,22 @@ export default async function CparPrintPage({
         </>
       ) : null}
 
-      <SignatureBlock signatories={signatories} />
-      <CustomerApproval />
+      {/*
+        Kedua blok berdampingan, bukan bertumpuk.
+
+        Lebarnya 4:3 mengikuti jumlah kolomnya, sehingga seluruh kotak tanda tangan —
+        tujuh buah — sama lebar dan terbaca sebagai satu deretan. Jarak atasnya diatur
+        baris ini, bukan oleh masing-masing blok, supaya kedua tabel benar-benar sebaris.
+      */}
+      <div className="mt-[5mm] flex items-start gap-[4mm] break-inside-avoid">
+        <div className="flex-[4]">
+          <SignatureBlock signatories={signatories} title="Internal approval" className="" />
+        </div>
+
+        <div className="flex-[3]">
+          <CustomerApproval className="" />
+        </div>
+      </div>
     </Sheet>
   );
 }
