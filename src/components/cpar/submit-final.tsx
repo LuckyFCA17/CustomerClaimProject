@@ -19,9 +19,13 @@ import { submitCparFinal } from "@/server/actions/cpar-filling";
 /**
  * Submit CPAR final beserta pop-up "Submission incomplete" (kriteria penerimaan #7).
  *
- * Tombolnya sengaja tidak dinonaktifkan ketika masih ada section kosong. Tombol mati
- * tidak memberi tahu apa yang kurang — sedangkan menekannya memunculkan daftar section
- * yang masih harus diisi, yang justru merupakan jawaban yang dicari.
+ * Tombolnya sengaja tidak dinonaktifkan ketika masih ada yang kurang. Tombol mati tidak
+ * memberi tahu apa yang kurang — sedangkan menekannya memunculkan daftarnya, yang justru
+ * merupakan jawaban yang dicari.
+ *
+ * Daftar itu memuat dua hal: section wajib yang masih kosong, dan evidence yang belum
+ * dilampirkan. Keduanya datang sudah berupa kalimat dari server, jadi komponen ini tidak
+ * perlu tahu bedanya.
  */
 export function SubmitFinal({ claimId, cparNo }: { claimId: string; cparNo: string }) {
   const router = useRouter();
@@ -66,13 +70,17 @@ export function SubmitFinal({ claimId, cparNo }: { claimId: string; cparNo: stri
               Submission incomplete
             </DialogTitle>
             <DialogDescription>
-              {cparNo} belum dapat dikirim ke verifikasi. Section wajib berikut masih kosong:
+              {cparNo} belum dapat dikirim ke verifikasi. Berikut yang masih kurang —
+              section wajib yang kosong, dan evidence yang belum dilampirkan:
             </DialogDescription>
           </DialogHeader>
 
-          <ul className="list-inside list-disc space-y-1 rounded-lg bg-secondary px-4 py-3 text-sm">
-            {(missing ?? []).map((section) => (
-              <li key={section}>{section}</li>
+          {/* Daftarnya bisa panjang — satu action plan dengan sepuluh baris berarti
+              sepuluh evidence. Dibatasi tingginya supaya tombol di bawahnya tetap
+              terjangkau tanpa menggulir seluruh dialog. */}
+          <ul className="max-h-64 list-inside list-disc space-y-1 overflow-y-auto rounded-lg bg-secondary px-4 py-3 text-sm">
+            {(missing ?? []).map((entry) => (
+              <li key={entry}>{entry}</li>
             ))}
           </ul>
 

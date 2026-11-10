@@ -1,6 +1,15 @@
 import { expect, test } from "@playwright/test";
 
-import { act, fillClaimForm, fillCparSections, login, loginAs, USERS } from "./portal";
+import {
+  PHOTO,
+  act,
+  expectStatus,
+  fillClaimForm,
+  fillCparSections,
+  login,
+  loginAs,
+  USERS,
+} from "./portal";
 
 /**
  * Happy path penuh (§7 Fase 8): satu klaim dari draft kosong sampai Verified Closed.
@@ -104,6 +113,55 @@ test("Production Dept. Head mengisi seluruh section CPAR", async ({ page }) => {
   }
 
   await expect(page.locator("body")).toContainText(/CPAR in progress/i);
+});
+
+test("CPAR ditolak selama evidence belum dilampirkan", async ({ page }) => {
+  await loginAs(page, USERS.qaHead);
+
+  await page.goto(`/cpar/${claimUrl.split("/").pop()}`);
+  await page.waitForLoadState("networkidle");
+
+  // Seluruh section sudah terisi pada uji sebelumnya, dan belum satu pun evidence
+  // diunggah — justru keadaan yang dijaga aturan ini. Tanpa uji di titik ini, gerbangnya
+  // hanya terbukti lewat unit test dan tidak pernah lewat alur yang sebenarnya.
+  await act(page, /Submit CPAR final report/i);
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toHaveCount(1);
+  await expect(dialog).toContainText("Initial Document Request");
+  await expect(dialog).toContainText("Permanent countermeasure");
+
+  // Yang penting bukan hanya pop-upnya muncul, melainkan klaimnya tidak berpindah.
+  await expectStatus(page, /CPAR in progress/i);
+});
+
+test("evidence dilampirkan untuk dokumen awal dan tiap baris action plan", async ({ page }) => {
+  await loginAs(page, USERS.prodHead);
+
+  const cparUrl = `/cpar/${claimUrl.split("/").pop()}`;
+  await page.goto(cparUrl);
+  await page.waitForLoadState("networkidle");
+
+  // Dua dokumen awal yang diminta saat follow up, plus satu baris pada masing-masing
+  // action plan. Keempatnya memakai input yang menerima PDF; input foto part ada di
+  // halaman klaim, bukan di sini.
+  const uploads = page.locator('input[type="file"][accept*="pdf"]');
+  const total = await uploads.count();
+
+  expect(total).toBeGreaterThan(0);
+
+  for (let index = 0; index < total; index += 1) {
+    await uploads.nth(index).setInputFiles(PHOTO);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(1200);
+  }
+
+  await page.goto(cparUrl);
+  await page.waitForLoadState("networkidle");
+
+  // Kartu submit menyebutkan sisa pekerjaannya; kosongnya kalimat itu adalah tanda
+  // kedua syarat sudah terpenuhi.
+  await expect(page.locator("body")).not.toContainText(/evidence belum dilampirkan/i);
 });
 
 test("QA Dept. Head mengirim CPAR ke rantai verifikasi", async ({ page }) => {

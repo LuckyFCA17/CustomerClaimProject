@@ -230,6 +230,43 @@ export function missingSectionLabels(sections: readonly SectionState[]): readonl
   return missingRequiredSections(sections).map(sectionLabel);
 }
 
+/**
+ * Satu kotak evidence yang diminta CPAR: dokumen awal, atau satu baris action plan.
+ *
+ * `fileCount` saja yang menentukan terpenuhi atau belum — bukan centang terpisah.
+ * Keadaan "sudah ditandai selesai tetapi berkasnya tidak ada" tidak mungkin terjadi
+ * kalau tidak ada yang bisa dicentang.
+ */
+export interface EvidenceSlot {
+  /** Bagian CPAR yang memintanya, mis. "Permanent countermeasure". */
+  readonly sectionLabel: string;
+  /** Nama dokumen atau bunyi tindakannya. */
+  readonly title: string;
+  readonly fileCount: number;
+}
+
+/**
+ * Evidence yang masih kosong, sebagai kalimat siap tampil.
+ *
+ * CPAR tidak boleh dikirim ke verifikasi selama masih ada kotak evidence yang kosong:
+ * verifier menilai "tindakan ini sudah dikerjakan" dari buktinya, dan tanpa berkas yang
+ * dinilai hanya janji. Aturan ini sengaja tidak membedakan tindakan yang tenggatnya
+ * belum tiba — yang belum dapat dibuktikan belum dapat diverifikasi.
+ *
+ * Judul tindakan dipotong supaya daftar di pop-up tetap terbaca; satu baris action plan
+ * boleh berisi kalimat panjang, dan sepuluh di antaranya akan menenggelamkan daftarnya.
+ */
+export function missingEvidenceLabels(slots: readonly EvidenceSlot[]): readonly string[] {
+  return slots
+    .filter((slot) => slot.fileCount === 0)
+    .map((slot) => {
+      const title = slot.title.trim() || "(tanpa judul)";
+      const short = title.length > 60 ? `${title.slice(0, 57).trimEnd()}…` : title;
+
+      return `${slot.sectionLabel} — ${short}`;
+    });
+}
+
 // ─────────────────────── Rantai verifikasi ───────────────────────
 
 export const VERIFIER_CAPACITY_LABEL: Record<string, string> = {

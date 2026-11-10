@@ -5,6 +5,7 @@ import {
   ACTION_PLAN_SECTIONS,
   INITIAL_DOCUMENT_ENTITY,
   SECTION_LABEL,
+  type EvidenceSlot,
 } from "@/lib/cpar";
 import { db } from "@/lib/db";
 import type { EvidenceRequestRow } from "@/lib/evidence-requests";
@@ -137,4 +138,76 @@ export async function loadEvidenceRequests(actor: Actor): Promise<EvidenceReques
   }
 
   return rows;
+}
+
+/**
+ * Kotak evidence milik satu CPAR, untuk gerbang submit final.
+ *
+ * Sumbernya sama persis dengan `loadEvidenceRequests` — dokumen awal yang diminta dan
+ * tiap baris action plan — tetapi tanpa penyaringan izin dan tanpa status klaim: yang
+ * ditanyakan di sini bukan "apa yang boleh saya kerjakan", melainkan "apa yang masih
+ * kurang pada CPAR ini". Keduanya hidup di berkas yang sama supaya definisi "apa saja
+ * yang dianggap evidence" tidak pernah bercabang; kalau satu sumber bertambah, kedua
+ * pemakainya ikut berubah.
+ */
+export async function loadCparEvidenceSlots(claimId: string): Promise<EvidenceSlot[]> {
+  const cpar = await db.cpar.findUnique({
+    where: { claimId },
+    select: {
+      initialDocuments: {
+        select: { initialDocumentId: true, initialDocument: { select: { name: true } } },
+      },
+      sections: {
+        where: { key: { in: [...ACTION_PLAN_SECTIONS] } },
+        select: { key: true, data: true },
+      },
+    },
+  });
+
+  if (!cpar) return [];
+
+  const targets = [
+    ...cpar.initialDocuments.map((entry) => entry.initialDocumentId),
+    ...cpar.sections.flatMap((section) =>
+      readActionPlan(section.data)
+        .items.map((item) => item.id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+
+  if (targets.length === 0) return [];
+
+  // Disaring dengan claimId juga: id dokumen yang diminta berulang di banyak klaim,
+  // jadi menghitung tanpa itu akan menganggap berkas klaim lain sebagai bukti di sini.
+  const counts = await db.attachment.groupBy({
+    by: ["entityId"],
+    where: {
+      entityType: { in: [INITIAL_DOCUMENT_ENTITY, ACTION_ITEM_ENTITY] },
+      entityId: { in: targets },
+      claimId,
+    },
+    _count: { _all: true },
+  });
+
+  const fileCount = new Map(counts.map((row) => [row.entityId, row._count._all]));
+
+  const slots: EvidenceSlot[] = cpar.initialDocuments.map((entry) => ({
+    sectionLabel: "Initial Document Request",
+    title: entry.initialDocument.name,
+    fileCount: fileCount.get(entry.initialDocumentId) ?? 0,
+  }));
+
+  for (const section of cpar.sections) {
+    for (const item of readActionPlan(section.data).items) {
+      if (!item.id) continue;
+
+      slots.push({
+        sectionLabel: SECTION_LABEL[section.key],
+        title: item.action,
+        fileCount: fileCount.get(item.id) ?? 0,
+      });
+    }
+  }
+
+  return slots;
 }

@@ -14,6 +14,7 @@ import {
   verificationProgress,
   verifierCapacity,
   verifierCapacities,
+  missingEvidenceLabels,
 } from "@/lib/cpar";
 
 /**
@@ -351,5 +352,62 @@ describe("verifierCapacity — kapasitas User Dept. Head", () => {
   it("mengembalikan kapasitas pertama menurut urutan verifier wajib bila role rangkap", () => {
     // Rina memegang QA_HEAD sekaligus QA; yang mengisi rantai adalah QA_HEAD.
     expect(verifierCapacity(["QA", "QA_HEAD"], "d-qa", cpar)).toBe("QA_HEAD");
+  });
+});
+
+/**
+ * Gerbang evidence pada submit final.
+ *
+ * Aturannya: CPAR tidak dapat dikirim ke verifikasi selama masih ada kotak evidence
+ * yang kosong. Verifier menilai "tindakan ini sudah dikerjakan" dari buktinya; tanpa
+ * berkas, yang dinilai hanya janji.
+ */
+describe("missingEvidenceLabels", () => {
+  const slot = (title: string, fileCount: number, sectionLabel = "Permanent countermeasure") => ({
+    sectionLabel,
+    title,
+    fileCount,
+  });
+
+  it("melewatkan CPAR yang seluruh evidence-nya sudah dilampirkan", () => {
+    expect(
+      missingEvidenceLabels([slot("Pasang poka-yoke", 1), slot("Revisi WI", 3)]),
+    ).toEqual([]);
+  });
+
+  it("tidak menahan CPAR yang memang tidak meminta evidence apa pun", () => {
+    expect(missingEvidenceLabels([])).toEqual([]);
+  });
+
+  it("menyebut bagian dan judulnya, bukan sekadar jumlahnya", () => {
+    // Daftar yang hanya berbunyi "3 evidence kurang" memaksa orang mencari sendiri
+    // yang mana; yang dicari justru barisnya.
+    expect(
+      missingEvidenceLabels([
+        slot("4M Change Sheet", 0, "Initial Document Request"),
+        slot("Pasang poka-yoke", 1),
+        slot("Revisi WI-PRD-014", 0, "Standardization & horizontal deployment"),
+      ]),
+    ).toEqual([
+      "Initial Document Request — 4M Change Sheet",
+      "Standardization & horizontal deployment — Revisi WI-PRD-014",
+    ]);
+  });
+
+  it("memotong judul yang terlalu panjang", () => {
+    const [label] = missingEvidenceLabels([slot("A".repeat(100), 0)]);
+
+    // Yang dibatasi judulnya, bukan seluruh kalimat: nama bagian di depan punya
+    // panjangnya sendiri dan memang harus tetap utuh.
+    const title = label.split(" — ")[1];
+
+    expect(title).toHaveLength(58); // 57 karakter + elipsis
+    expect(title.endsWith("…")).toBe(true);
+  });
+
+  it("tetap menyebut baris yang judulnya kosong", () => {
+    expect(missingEvidenceLabels([slot("   ", 0)])).toEqual([
+      "Permanent countermeasure — (tanpa judul)",
+    ]);
   });
 });

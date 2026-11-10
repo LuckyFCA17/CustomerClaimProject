@@ -15,6 +15,7 @@ import {
   INITIAL_DOCUMENT_ENTITY,
   SECTION_LABEL,
   isActionPlanSection,
+  missingEvidenceLabels,
   missingRequiredSections,
   verificationProgress,
   verifierCapacities,
@@ -46,6 +47,7 @@ import {
   type TemporaryActionEntry,
   temporaryActionSchema,
 } from "@/schemas/temporary-action";
+import { loadCparEvidenceSlots } from "@/server/evidence-requests";
 import {
   notifyCparApproved,
   notifyCparRevisionRequested,
@@ -1136,10 +1138,25 @@ export async function submitCparFinal(claimId: string): Promise<ActionResult> {
     assertCan(actor, "cpar.submitFinal", context);
     assertTransition(cpar.claim.status, "CPAR_UNDER_VERIFICATION", actor.roles);
 
-    const missing = missingRequiredSections(cpar.sections);
+    /**
+     * Dua gerbang, dilaporkan sekaligus.
+     *
+     * Section yang kosong dan evidence yang belum dilampirkan diperiksa bersama lalu
+     * dilaporkan dalam satu daftar — bukan berurutan. Melaporkannya satu per satu
+     * membuat orang mengisi section, menekan submit lagi, dan baru saat itu mengetahui
+     * ada sepuluh evidence yang juga kurang.
+     *
+     * Evidence diperiksa di server, bukan hanya disembunyikan di UI: `submitCparFinal`
+     * adalah server action yang dapat dipanggil langsung, dan inilah pemeriksaan yang
+     * mengikat.
+     */
+    const missing = [
+      ...missingRequiredSections(cpar.sections).map((key) => SECTION_LABEL[key]),
+      ...missingEvidenceLabels(await loadCparEvidenceSlots(claimId)),
+    ];
 
     if (missing.length > 0) {
-      throw new SubmissionIncompleteError(missing.map((key) => SECTION_LABEL[key]));
+      throw new SubmissionIncompleteError(missing);
     }
 
     const requestContext = await readRequestContext();

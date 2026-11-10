@@ -884,6 +884,33 @@ Batas querynya memakai awal bulan **kalender Jakarta**, bukan tengah malam UTC: 
 WIB adalah 31 Desember 17.00 UTC, jadi batas UTC akan membuang klaim yang masuk pada tujuh jam
 pertama setiap bulan.
 
+## Syarat submit CPAR final
+
+CPAR tidak dapat dikirim ke rantai verifikasi selama masih ada yang kurang, dan "kurang" berarti
+**dua hal sekaligus**:
+
+1. **Section wajib yang kosong** — `missingRequiredSections()`;
+2. **Evidence yang belum dilampirkan** — `missingEvidenceLabels()`. Satu kotak evidence untuk tiap
+   dokumen pada Initial Document Request, dan satu untuk tiap baris Permanent countermeasure serta
+   Standardization & horizontal deployment.
+
+Terpenuhi atau belum ditentukan **dari ada tidaknya berkas**, bukan dari centang terpisah: keadaan
+"sudah ditandai selesai tetapi berkasnya tidak ada" tidak mungkin terjadi kalau tidak ada yang bisa
+dicentang. Baris yang tanggal implementasinya belum tiba tetap dihitung — yang belum dapat
+dibuktikan belum dapat diverifikasi.
+
+Keduanya diperiksa **bersama** lalu dilaporkan dalam satu daftar, bukan berurutan. Melaporkannya
+satu per satu membuat orang mengisi section, menekan submit lagi, dan baru saat itu mengetahui ada
+sepuluh evidence yang juga kurang.
+
+Pemeriksaannya ada di `submitCparFinal` — server action yang dapat dipanggil langsung, jadi
+menyembunyikan tombolnya saja tidak cukup. Tombolnya sendiri sengaja **tidak** dinonaktifkan:
+tombol mati tidak memberi tahu apa yang kurang, sedangkan menekannya memunculkan daftarnya.
+
+Definisi "apa saja yang dianggap evidence" hidup di satu tempat, `server/evidence-requests.ts`,
+dipakai bersama oleh tabel evidence pending di dasbor dan oleh gerbang ini — supaya menambah satu
+sumber evidence tidak pernah mengubah hanya separuh portal.
+
 ## State machine klaim
 
 `src/lib/claim-state.ts` memuat satu-satunya daftar perpindahan status yang sah. Perpindahan

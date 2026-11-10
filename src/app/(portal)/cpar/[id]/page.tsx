@@ -32,9 +32,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ACTION_ITEM_ENTITY,
+  ACTION_PLAN_SECTIONS,
+  SECTION_LABEL,
   INITIAL_DOCUMENT_ENTITY,
   SECTION_ORDER,
   type ActionPlanSectionKey,
+  missingEvidenceLabels,
   missingSectionLabels,
   requiredVerifiers,
   verificationProgress,
@@ -276,7 +279,25 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
   );
 
   const progress = verificationProgress(verifications, cpar.cycle);
-  const missing = missingSectionLabels(sections);
+
+  // Dua syarat submit final, dihitung di sini supaya kartu di bawah menyebutkan
+  // keduanya sebelum tombolnya ditekan — bukan hanya sesudahnya lewat pop-up.
+  const missingSections = missingSectionLabels(sections);
+  const missingEvidence = missingEvidenceLabels([
+    ...requestedDocuments.map((document) => ({
+      sectionLabel: "Initial Document Request",
+      title: document.name,
+      fileCount: document.files.length,
+    })),
+    ...ACTION_PLAN_SECTIONS.flatMap((key) =>
+      actionPlans[key].items.map((item) => ({
+        sectionLabel: SECTION_LABEL[key],
+        title: item.action,
+        fileCount: (actionItemEvidence[item.id ?? ""] ?? []).length,
+      })),
+    ),
+  ]);
+  const missing = [...missingSections, ...missingEvidence];
 
   const canSubmit = can(user, "cpar.submitFinal", context);
   // Seluruh kapasitas yang dipegang, bukan satu. QA Dept. Head yang sekaligus ditunjuk
@@ -521,8 +542,17 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
             <CardTitle>Submit final report</CardTitle>
             <CardDescription>
               {missing.length === 0
-                ? "Seluruh section wajib sudah terisi. Mengirim CPAR mengunci isinya dan membuka rantai verifikasi."
-                : `Masih ada ${missing.length} section wajib yang kosong.`}
+                ? "Seluruh section wajib terisi dan seluruh evidence sudah dilampirkan. Mengirim CPAR mengunci isinya dan membuka rantai verifikasi."
+                : [
+                    missingSections.length > 0
+                      ? `${missingSections.length} section wajib masih kosong`
+                      : null,
+                    missingEvidence.length > 0
+                      ? `${missingEvidence.length} evidence belum dilampirkan`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
             </CardDescription>
           </CardHeader>
           <CardContent>
