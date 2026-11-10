@@ -121,76 +121,94 @@ const ONE_PAGE: ReadonlySet<DocumentKind> = new Set<DocumentKind>(["CPAR"]);
 const MIN_FIT = 0.65;
 
 /**
- * Menyusutkan isi lembar secukupnya sampai muat satu halaman.
+ * Batas atas pembesaran.
  *
- * Tata letaknya sendiri sudah dipadatkan sampai CPAR terisi penuh muat dengan sisa
- * sekitar 8mm. Sisa setipis itu habis oleh satu action plan yang panjang atau riwayat
- * siklus yang banyak, dan ketika habis tidak ada tanda apa pun — lembarnya hanya
- * menjadi dua halaman. Fungsi ini yang menutup selisihnya.
+ * 1,45 membuat huruf 7,5pt menjadi sekitar 10,9pt — masih terbaca sebagai formulir, bukan
+ * poster. Tanpa batas, CPAR yang hampir seluruh sectionnya berisi "—" akan dibesarkan
+ * sampai hurufnya janggal, dan dua lembar yang ditempel berdampingan akan terlihat
+ * berasal dari dokumen yang berbeda.
+ */
+const MAX_FIT = 1.45;
+
+/**
+ * Menyesuaikan isi lembar sampai memenuhi satu halaman — mengecilkan maupun membesarkan.
  *
- * Dicari lewat bagi dua, bukan sekali hitung, karena dua alasan. `zoom` mengalirkan
- * ulang teks, sehingga tinggi tidak berbanding lurus dengan faktor yang dipasang — satu
- * kali hitung meleset. Dan yang dicari adalah faktor **terbesar** yang masih muat, bukan
- * yang pertama kebetulan muat: menyusut berlebihan menyisakan lembar setengah kosong
- * dengan huruf yang lebih kecil daripada seharusnya.
+ * Dua masalah yang ditangani fungsi yang sama, karena keduanya pertanyaan yang sama:
+ * "faktor terbesar yang isinya masih muat satu halaman".
+ *
+ *   · CPAR yang penuh meluap ke halaman kedua. Tata letaknya sendiri sudah dipadatkan
+ *     sampai muat dengan sisa sekitar 8mm, dan sisa setipis itu habis oleh satu action
+ *     plan yang panjang;
+ *   · CPAR yang isiannya sedikit berhenti di dua pertiga halaman dan menyisakan pita
+ *     kosong di bawahnya. Lembarnya tetap selembar A3 yang ditempel di papan, jadi ruang
+ *     yang tidak terpakai itu hanya membuat hurufnya lebih kecil daripada yang bisa.
+ *
+ * Dicari lewat bagi dua, bukan sekali hitung: `zoom` mengalirkan ulang teks, jadi tinggi
+ * tidak berbanding lurus dengan faktornya. Percobaan pertama selalu pada 1, sehingga
+ * pencariannya menuruni rentang bila lembarnya meluap dan menaikinya bila masih longgar —
+ * tanpa cabang terpisah.
  *
  * Seluruhnya berjalan di dalam peramban sebagai perhitungan tata letak; tidak ada
  * pencetakan ulang, jadi biayanya kecil.
  */
-async function fitToOnePage(page: Page): Promise<{ fit: number; fits: boolean }> {
-  return page.evaluate(async (minFit: number) => {
-    const sheet = document.querySelector<HTMLElement>(".sheet");
-    if (!sheet) return { fit: 1, fits: true };
+async function fitToPage(page: Page): Promise<{ fit: number; fits: boolean }> {
+  return page.evaluate(
+    async ([minFit, maxFit]: readonly [number, number]) => {
+      const sheet = document.querySelector<HTMLElement>(".sheet");
+      if (!sheet) return { fit: 1, fits: true };
 
-    // Tinggi satu halaman sama dengan min-height lembar, menurut konstruksinya —
-    // dibaca dari sana supaya tetap benar bila ukuran kertasnya berubah.
-    const pageHeight = Number.parseFloat(getComputedStyle(sheet).minHeight);
-    if (!Number.isFinite(pageHeight) || pageHeight <= 0) return { fit: 1, fits: true };
+      // Tinggi satu halaman sama dengan min-height lembar, menurut konstruksinya —
+      // dibaca dari sana supaya tetap benar bila ukuran kertasnya berubah.
+      const pageHeight = Number.parseFloat(getComputedStyle(sheet).minHeight);
+      if (!Number.isFinite(pageHeight) || pageHeight <= 0) return { fit: 1, fits: true };
 
-    // Satu piksel kelonggaran: pembulatan tata letak tidak perlu memicu penyusutan
-    // yang tidak akan terlihat siapa pun.
-    const slack = 1;
+      // Satu piksel kelonggaran: pembulatan tata letak tidak perlu menggeser faktornya.
+      const slack = 1;
 
-    // Fungsi bantu bernama sengaja dihindari di seluruh blok ini: evaluate() mengirim
-    // fungsi ini ke peramban sebagai teks, dan esbuild membungkus fungsi bernama dengan
-    // helper __name yang tidak ada di sana.
-    sheet.style.setProperty("--fit", "1");
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+      // Fungsi bantu bernama sengaja dihindari di seluruh blok ini: evaluate() mengirim
+      // fungsi ini ke peramban sebagai teks, dan esbuild membungkus fungsi bernama dengan
+      // helper __name yang tidak ada di sana.
+      let low = minFit;
+      let high = maxFit;
+      let best = 0;
+      let candidate = 1;
 
-    if (sheet.getBoundingClientRect().height <= pageHeight + slack) {
-      return { fit: 1, fits: true };
-    }
+      // Satu percobaan di 1 plus delapan kali bagi dua mempersempit selisihnya ke bawah
+      // 0,4% — jauh lebih halus daripada yang dapat dibedakan mata pada hasil cetak.
+      for (let pass = 0; pass < 9; pass += 1) {
+        sheet.style.setProperty("--fit", String(candidate));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
 
-    sheet.style.setProperty("--fit", String(minFit));
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+        if (sheet.getBoundingClientRect().height <= pageHeight + slack) {
+          best = Math.max(best, candidate);
+          low = candidate;
+        } else {
+          high = candidate;
+        }
 
-    // Bahkan pada batas bawah keterbacaan isinya tidak muat. Lembar dibiarkan dua
-    // halaman: memaksanya lebih kecil lagi menghasilkan satu halaman yang tidak
-    // dapat dibaca, dan itu bukan perbaikan.
-    if (sheet.getBoundingClientRect().height > pageHeight + slack) {
-      return { fit: minFit, fits: false };
-    }
+        candidate = (low + high) / 2;
+      }
 
-    let fits = minFit;
-    let tooBig = 1;
+      // Bahkan pada batas bawah keterbacaan isinya tidak muat. Lembar dibiarkan dua
+      // halaman: memaksanya lebih kecil lagi menghasilkan satu halaman yang tidak
+      // dapat dibaca, dan itu bukan perbaikan.
+      if (best === 0) {
+        sheet.style.setProperty("--fit", String(minFit));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
 
-    // Tujuh kali bagi dua mempersempit selisihnya ke bawah 0,3% — jauh lebih halus
-    // daripada yang dapat dibedakan mata pada hasil cetak.
-    for (let pass = 0; pass < 7; pass += 1) {
-      const middle = (fits + tooBig) / 2;
+        return {
+          fit: minFit,
+          fits: sheet.getBoundingClientRect().height <= pageHeight + slack,
+        };
+      }
 
-      sheet.style.setProperty("--fit", String(middle));
+      sheet.style.setProperty("--fit", String(best));
       await new Promise((resolve) => requestAnimationFrame(resolve));
 
-      if (sheet.getBoundingClientRect().height <= pageHeight + slack) fits = middle;
-      else tooBig = middle;
-    }
-
-    sheet.style.setProperty("--fit", String(fits));
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-
-    return { fit: fits, fits: true };
-  }, MIN_FIT);
+      return { fit: best, fits: true };
+    },
+    [MIN_FIT, MAX_FIT] as const,
+  );
 }
 
 export interface RenderPdfOptions {
@@ -217,7 +235,7 @@ export async function renderPdf({ kind, claimId, draft = false }: RenderPdfOptio
     await page.evaluateHandle("document.fonts.ready");
 
     if (ONE_PAGE.has(kind)) {
-      const { fit, fits } = await fitToOnePage(page);
+      const { fit, fits } = await fitToPage(page);
       const percent = Math.round(fit * 100);
 
       if (!fits) {
@@ -225,9 +243,10 @@ export async function renderPdf({ kind, claimId, draft = false }: RenderPdfOptio
           `${DOCUMENT_TITLE[kind]} ${claimId}: isi tetap lebih dari satu halaman walau ` +
             `disusutkan ke ${percent}%, batas bawah keterbacaan. Lembar dicetak apa adanya.`,
         );
-      } else if (fit < 1) {
+      } else if (fit !== 1) {
         console.info(
-          `${DOCUMENT_TITLE[kind]} ${claimId}: isi disusutkan ke ${percent}% agar muat satu halaman.`,
+          `${DOCUMENT_TITLE[kind]} ${claimId}: isi ${fit < 1 ? "disusutkan" : "dibesarkan"} ` +
+            `ke ${percent}% agar memenuhi satu halaman.`,
         );
       }
     }
