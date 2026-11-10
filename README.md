@@ -618,16 +618,22 @@ justru yang terpisah. Yang membuatnya muat, berurutan dari yang paling besar pen
   supaya lembar A4 yang memakai komponen yang sama tidak ikut berubah.
 
 Sisa ruangnya tipis — sekitar 8mm dari 297mm pada CPAR terisi penuh — dan satu action plan yang
-panjang menghabiskannya. Karena itu ada **penyusutan otomatis**: `fitToOnePage()` di `lib/pdf.ts`
-mengukur lembar tepat sebelum mencetak dan, bila melebihi satu halaman, mengecilkan isinya
-secukupnya.
+panjang menghabiskannya. Sebaliknya, CPAR yang isiannya sedikit berhenti di sekitar dua pertiga
+halaman dan menyisakan pita kosong di bawahnya — dan lembarnya tetap selembar A3 yang ditempel di
+papan, jadi ruang itu tidak menghemat apa pun.
+
+Karena itu ada **penyesuaian otomatis**: `fitToPage()` di `lib/pdf.ts` mengukur lembar tepat
+sebelum mencetak lalu menyesuaikan isinya sampai **memenuhi** satu halaman — mengecilkan yang
+meluap, membesarkan yang longgar. Keduanya pertanyaan yang sama, "faktor terbesar yang isinya
+masih muat satu halaman", jadi tidak ada cabang terpisah: percobaan pertama selalu pada 100%, dan
+bagi dua yang sama menuruni rentang bila lembarnya meluap dan menaikinya bila masih longgar.
 
 Tiga keputusan di dalamnya:
 
 - **`zoom`, bukan `transform: scale()`.** Zoom ikut mengalirkan ulang tata letak, jadi teks yang
   menyusut memakai barisnya lebih penuh dan tingginya turun lebih banyak daripada sekadar
   diperkecil. `transform` hanya menggambar ulang kotak yang ukurannya tetap;
-- **dipasang pada pembungkus isi, bukan pada `.sheet`.** Dengan begitu yang mengecil hanya isinya;
+- **dipasang pada pembungkus isi, bukan pada `.sheet`.** Dengan begitu yang berubah hanya isinya;
   padding lembar tetap 5mm atas–bawah dan 7mm kiri–kanan. Padding itulah margin cetaknya, dan
   sebagian besar printer kantor tidak dapat mencetak lebih dekat dari itu ke tepi kertas;
 - **dicari lewat bagi dua, bukan sekali hitung.** Karena zoom mengalirkan ulang teks, tinggi tidak
@@ -641,10 +647,18 @@ halaman tetapi tidak lagi terbaca dari jarak papan, yang justru alasan ia diceta
 dua halaman yang terbaca. Bila batas itu tercapai dan isinya masih meluap, lembar dicetak apa
 adanya dan sebuah peringatan masuk log server.
 
+Batas atasnya **145%** (7,5pt menjadi sekitar 10,9pt). Tanpa batas, CPAR yang hampir seluruh
+sectionnya berisi "—" akan dibesarkan sampai hurufnya janggal, dan dua lembar yang ditempel
+berdampingan akan terlihat berasal dari dokumen yang berbeda.
+
 Terukur pada CPAR tiruan yang isinya dilipatgandakan: dua kali lipat muat pada 80%, tiga kali
 lipat pada 70%, dan empat kali lipat — 20 baris permanent countermeasure, 16 faktor root cause —
-menembus batas bawah. `pnpm pdf:check` ikut memeriksa jumlah halaman supaya hal ini tidak lolos
-diam-diam.
+menembus batas bawah. Ke arah sebaliknya, tiruan CPAR siklus 1 dengan satu baris per action plan
+dan tanpa riwayat verifikasi naik ke 132%, dan CPAR tertutup beserta tabel riwayatnya ke 113%.
+
+`pnpm pdf:check` ikut memeriksa jumlah halaman supaya lembar yang meluap tidak lolos diam-diam.
+Keterisian vertikalnya sendiri tidak ikut diperiksa di sana — itu sifat tampilan, dan dibuktikan
+dengan melihat hasil cetaknya.
 
 ```bash
 pnpm pdf:check --claim <claimId>              # ukuran kertas + jumlah halaman kelima dokumen
