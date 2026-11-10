@@ -314,12 +314,26 @@
   break-inside: avoid;
 }
 
+/* Ruang tanda tangan.
+ *
+ * Sempat ditekan ke 2mm demi memuat CPAR dalam satu halaman, dan hasilnya kotak yang
+ * tingginya hanya setinggi tulisan — tidak ada tempat membubuhkan paraf di atas kertas.
+ * Sejak `fitToPage` menyesuaikan skala lembar dua arah, tinggi di sini tidak lagi perlu
+ * dikorbankan: kalau jadi kepanjangan, skalanya yang turun, bukan kotaknya yang hilang. */
 .sheet-a3-landscape .signature-rule {
-  margin-top: 2mm;
+  margin-top: 9mm;
 }
 
 .sheet-a3-landscape .signature-block td {
-  padding: 0.5mm 1.2mm;
+  padding: 1.2mm 1.5mm;
+}
+
+/* Kolom pelanggan hanya memuat satu baris keterangan di bawah garisnya, sedangkan kolom
+   internal memuat tiga — nama, jabatan, waktu. Tanpa tambahan ini kotaknya tercetak
+   sepertiga lebih pendek daripada kotak di atasnya, padahal justru kotak inilah yang
+   ditandatangani dengan tangan dan paling butuh ruang. */
+.sheet-a3-landscape .customer-approval td {
+  padding-bottom: 7mm;
 }
 
 /* Kotak "tidak ada foto". Pada lembar A3 ia hanya penanda bahwa fotonya memang tidak

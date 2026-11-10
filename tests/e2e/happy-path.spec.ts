@@ -310,4 +310,16 @@ test("seluruh periode efektif, klaim ditutup Verified Closed", async ({ page }) 
 
   await expect(row).toContainText(/Closed (under due date|overdue date)/);
   await expect(row).not.toContainText(/Verified closed/);
+
+  // Lembar cetak memuat dua blok persetujuan: empat kapasitas internal yang sudah
+  // tercatat portal, dan tiga kolom kosong untuk diparaf pihak pelanggan.
+  await page.goto(`/print/cpar/${id}`);
+  await page.waitForLoadState("networkidle");
+
+  const sheet = page.locator(".sheet");
+
+  await expect(sheet).toContainText("Customer approval");
+  for (const role of ["Received by", "Checked by", "Approved by"]) {
+    await expect(sheet).toContainText(role);
+  }
 });

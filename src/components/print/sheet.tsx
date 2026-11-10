@@ -206,6 +206,54 @@ export function SignatureBlock({ signatories }: { signatories: readonly Signator
   );
 }
 
+/**
+ * Blok persetujuan pelanggan — sengaja kosong.
+ *
+ * Dipisahkan dari `SignatureBlock`, bukan ditambahkan sebagai kolom kelima di sana, dan
+ * itu bukan soal tata letak: keempat kolom di atasnya adalah persetujuan yang **sudah
+ * tercatat portal** beserta nama dan waktunya, sedangkan tiga kolom ini kosong untuk
+ * diparaf tangan di pihak pelanggan. Menyatukannya akan membuat satu baris yang separuh
+ * isinya fakta dan separuhnya ruang isian — dan catatan "sah tanpa tanda tangan basah"
+ * di atas lalu berlaku bagi kolom yang justru memintanya.
+ *
+ * Portal tidak mengetahui siapa yang akan menandatangani di pihak pelanggan, jadi tidak
+ * ada yang dicetak selain garisnya. Menebak nama di sini akan membuat lembar berbohong.
+ */
+export const CUSTOMER_APPROVAL_ROLES = ["Received by", "Checked by", "Approved by"] as const;
+
+export function CustomerApproval({
+  roles = CUSTOMER_APPROVAL_ROLES,
+}: {
+  roles?: readonly string[];
+}) {
+  return (
+    <div className="signature-block customer-approval mt-[4mm]">
+      <div className="mb-[1.5mm] flex flex-wrap items-baseline gap-x-[3mm]">
+        <span className="text-[8pt] font-semibold uppercase tracking-wide">Customer approval</span>
+        <span className="text-[7.5pt] text-[#6b7280]">
+          Diisi dan ditandatangani pihak pelanggan.
+        </span>
+      </div>
+
+      <table className="w-full border-collapse text-center text-[8.5pt]">
+        <tbody>
+          <tr>
+            {roles.map((role) => (
+              <td key={role} className="border border-[#e4e7eb] px-[3mm] py-[2mm] align-top">
+                <div className="text-[7.5pt] uppercase tracking-wide text-[#6b7280]">{role}</div>
+
+                <div className="signature-rule mt-[8mm] border-t border-[#1f2933] pt-[1.5mm]">
+                  <div className="text-[7pt] text-[#6b7280]">Nama &amp; tanggal</div>
+                </div>
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 const PHOTO_HEIGHT = { normal: "h-[32mm]", large: "h-[52mm]" } as const;
 const PHOTO_COLUMNS = ["grid-cols-1", "grid-cols-1", "grid-cols-2", "grid-cols-3"] as const;
 

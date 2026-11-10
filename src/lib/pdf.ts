@@ -155,15 +155,33 @@ async function fitToPage(page: Page): Promise<{ fit: number; fits: boolean }> {
   return page.evaluate(
     async ([minFit, maxFit]: readonly [number, number]) => {
       const sheet = document.querySelector<HTMLElement>(".sheet");
-      if (!sheet) return { fit: 1, fits: true };
+      const content = sheet?.querySelector<HTMLElement>(".sheet-fit");
+      if (!sheet || !content) return { fit: 1, fits: true };
+
+      const style = getComputedStyle(sheet);
 
       // Tinggi satu halaman sama dengan min-height lembar, menurut konstruksinya —
       // dibaca dari sana supaya tetap benar bila ukuran kertasnya berubah.
-      const pageHeight = Number.parseFloat(getComputedStyle(sheet).minHeight);
+      const pageHeight = Number.parseFloat(style.minHeight);
       if (!Number.isFinite(pageHeight) || pageHeight <= 0) return { fit: 1, fits: true };
 
-      // Satu piksel kelonggaran: pembulatan tata letak tidak perlu menggeser faktornya.
-      const slack = 1;
+      /**
+       * Yang diukur isinya, bukan lembarnya.
+       *
+       * `.sheet` punya `min-height: 297mm`, jadi tingginya **tidak pernah** kurang dari
+       * satu halaman — isi sependek apa pun tetap terukur pas. Mengukurnya berarti
+       * ambang "muat" tidak dapat diberi jarak aman sama sekali, dan lembar yang
+       * tingginya meleset setengah piksel lolos pemeriksaan lalu tercetak dua halaman.
+       * Itu persis yang terjadi saat kotak tanda tangan ditinggikan.
+       */
+      const available =
+        pageHeight -
+        Number.parseFloat(style.paddingTop) -
+        Number.parseFloat(style.paddingBottom);
+
+      // Dua piksel jarak aman: tata letak layar dan tata letak cetak membulatkan
+      // berbeda, dan selisih sekecil itu cukup untuk menambah satu halaman kosong.
+      const safety = 2;
 
       // Fungsi bantu bernama sengaja dihindari di seluruh blok ini: evaluate() mengirim
       // fungsi ini ke peramban sebagai teks, dan esbuild membungkus fungsi bernama dengan
@@ -179,7 +197,7 @@ async function fitToPage(page: Page): Promise<{ fit: number; fits: boolean }> {
         sheet.style.setProperty("--fit", String(candidate));
         await new Promise((resolve) => requestAnimationFrame(resolve));
 
-        if (sheet.getBoundingClientRect().height <= pageHeight + slack) {
+        if (content.getBoundingClientRect().height <= available - safety) {
           best = Math.max(best, candidate);
           low = candidate;
         } else {
@@ -198,7 +216,7 @@ async function fitToPage(page: Page): Promise<{ fit: number; fits: boolean }> {
 
         return {
           fit: minFit,
-          fits: sheet.getBoundingClientRect().height <= pageHeight + slack,
+          fits: content.getBoundingClientRect().height <= available - safety,
         };
       }
 

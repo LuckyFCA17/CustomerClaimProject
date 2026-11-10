@@ -589,7 +589,7 @@ untuk layar dan kertas, sehingga `?preview=1` di peramban memang menggambarkan h
 |---|---|---|
 | Bad News Information | A4 **mendatar** | Form 5 (R3) PR-QA-ISO-07 — Quality Alert, lengkap dengan grid sosialisasi operator |
 | Quick Information for Abnormal Part | A4 tegak | Foto besar berdampingan untuk ditempel di line produksi |
-| Corrective & Preventive Action Report | **A3 mendatar, satu halaman** | Delapan section CPAR dalam tiga kolom, beserta fishbone, 5-Why, dan tabel action plan |
+| Corrective & Preventive Action Report | **A3 mendatar, satu halaman** | Delapan section CPAR dalam tiga kolom, beserta fishbone, 5-Why, tabel action plan, dan dua blok persetujuan |
 | CAPA Implementation Monitoring | A4 tegak | Periode pemantauan dan penilaian efektivitas |
 | A3 Improvement Report | A4 tegak | Lima blok A3 berdampingan |
 
@@ -951,6 +951,24 @@ Tidak ada chip pada tiga keadaan, dan ketiganya disengaja:
 Perbandingannya per **tanggal kalender Jakarta**, sama seperti ketepatan waktu penutupan: CPAR
 yang masih dikerjakan pukul 19.00 pada hari tenggatnya belum "lewat", karena harinya belum
 berganti bagi orang yang mengerjakannya.
+
+### Dua blok persetujuan pada lembar CPAR
+
+Lembar CPAR memuat dua blok yang sengaja dipisah:
+
+| Blok | Isi | Kolom |
+|---|---|---|
+| **Persetujuan internal** | nama, jabatan, dan waktu dari rantai verifikasi — sudah tercatat portal | QA Dept. Head, User Dept. Head, Factory Manager, President Director |
+| **Customer approval** | kosong, untuk diparaf tangan di pihak pelanggan | Received by, Checked by, Approved by |
+
+Dipisah, bukan disatukan sebagai tiga kolom tambahan di baris yang sama, dan itu bukan soal tata
+letak. Baris atas adalah **fakta yang sudah terjadi**; baris bawah adalah **ruang isian**.
+Menyatukannya membuat satu baris yang separuhnya catatan dan separuhnya formulir — dan catatan
+"sah tanpa tanda tangan basah" di antaranya lalu terbaca seolah berlaku bagi kolom yang justru
+meminta tanda tangan basah.
+
+Kolom pelanggan dicetak kosong sepenuhnya. Portal tidak mengetahui siapa yang akan
+menandatangani di sana, dan menebaknya akan membuat lembar berbohong.
 
 ## Syarat submit CPAR final
 

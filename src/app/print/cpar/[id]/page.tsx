@@ -1,5 +1,12 @@
 import { statusMeta } from "@/config/claim-status";
-import { FieldGrid, FormHeader, SectionTitle, Sheet, SignatureBlock } from "@/components/print/sheet";
+import {
+  CustomerApproval,
+  FieldGrid,
+  FormHeader,
+  SectionTitle,
+  Sheet,
+  SignatureBlock,
+} from "@/components/print/sheet";
 import type { RoleCode } from "@/generated/prisma/enums";
 import {
   SECTION_INDEX,
@@ -230,6 +237,7 @@ export default async function CparPrintPage({
       ) : null}
 
       <SignatureBlock signatories={signatories} />
+      <CustomerApproval />
     </Sheet>
   );
 }
