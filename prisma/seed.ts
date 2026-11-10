@@ -553,7 +553,6 @@ async function seedSampleClaims() {
           { key: "ROOT_CAUSE_OUTFLOW" },
           { key: "PERMANENT_COUNTERMEASURE" },
           { key: "STANDARDIZATION_HORIZONTAL" },
-          { key: "EFFECTIVENESS_PLAN" },
         ],
       },
     },

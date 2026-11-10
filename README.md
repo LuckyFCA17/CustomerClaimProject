@@ -589,7 +589,7 @@ untuk layar dan kertas, sehingga `?preview=1` di peramban memang menggambarkan h
 |---|---|---|
 | Bad News Information | A4 **mendatar** | Form 5 (R3) PR-QA-ISO-07 — Quality Alert, lengkap dengan grid sosialisasi operator |
 | Quick Information for Abnormal Part | A4 tegak | Foto besar berdampingan untuk ditempel di line produksi |
-| Corrective & Preventive Action Report | **A3 mendatar, satu halaman** | Delapan section CPAR dalam tiga kolom, beserta fishbone, 5-Why, tabel action plan, dan dua blok persetujuan |
+| Corrective & Preventive Action Report | **A3 mendatar, satu halaman** | Tujuh section CPAR dalam tiga kolom, beserta fishbone, 5-Why, tabel action plan, dan dua blok persetujuan |
 | CAPA Implementation Monitoring | A4 tegak | Periode pemantauan dan penilaian efektivitas |
 | A3 Improvement Report | A4 tegak | Lima blok A3 berdampingan |
 
@@ -975,6 +975,28 @@ terbaca sebagai satu deretan. Keduanya diberi judul satu baris — "Internal app
 "Customer approval" — supaya tabelnya sejajar; tanpa judul di blok internal, tabelnya naik satu
 baris dan kotaknya tidak lagi segaris dengan kotak di sebelahnya.
 
+## Section yang dicabut, bukan dihapus
+
+**Effectiveness plan tidak lagi diisi di CPAR.** Efektivitas perbaikan dinilai di Modul 4
+(Monitoring), setelah CPAR disetujui dan periode pemantauannya berjalan — bukan dijanjikan pada
+lembar yang sama sebelum perbaikannya dikerjakan. Satu hal yang ditulis di dua tempat akan berbeda
+di salah satunya, dan yang dipercaya auditor adalah yang punya buktinya.
+
+Nilai enum `EFFECTIVENESS_PLAN` **tetap ada** di skema dan barisnya tetap tersimpan. CPAR yang
+sudah disetujui dan dicetak memuat isian itu; menghapusnya berarti mengubah isi dokumen yang sudah
+ditandatangani orang — dan di Postgres satu nilai enum tidak dapat dibuang tanpa membuat ulang
+tipenya. Yang berubah tiga hal, lewat `RETIRED_SECTIONS` di `lib/cpar.ts`:
+
+| Berubah | Caranya |
+| --- | --- |
+| Tidak dirender | keluar dari `SECTION_ORDER`, jadi hilang dari form, dari lembar cetak, dan dari penomoran section |
+| Tidak dapat diisi | `CPAR_SECTION_OWNERS` dikosongkan, sehingga `canFillSection` menolak **semua** orang — server action yang dipanggil langsung pun berhenti di `assertCanFillSection` |
+| Tidak menahan submit | dikecualikan `missingRequiredSections()`; barisnya di CPAR lama masih `isRequired` dan kosong, dan menghitungnya akan menahan submit atas tuntutan yang tidak ada lagi tempat mengisinya |
+
+Yang dikecualikan hanya section yang terdaftar dicabut. Section yang **tidak** terdaftar di
+`SECTION_ORDER` tetap dihitung kurang, supaya penambahan section baru di skema tidak diam-diam
+lolos dari pemeriksaan kelengkapan.
+
 ## Syarat submit CPAR final
 
 CPAR tidak dapat dikirim ke rantai verifikasi selama masih ada yang kurang, dan "kurang" berarti
@@ -989,6 +1011,14 @@ Terpenuhi atau belum ditentukan **dari ada tidaknya berkas**, bukan dari centang
 "sudah ditandai selesai tetapi berkasnya tidak ada" tidak mungkin terjadi kalau tidak ada yang bisa
 dicentang. Baris yang tanggal implementasinya belum tiba tetap dihitung — yang belum dapat
 dibuktikan belum dapat diverifikasi.
+
+**Other Supporting Evidence tidak termasuk.** Berkas pendukung di luar yang diminta CPAR — foto,
+hasil pengukuran, korespondensi — dilampirkan di bagiannya sendiri dengan nama yang ditentukan
+pengunggahnya (`Attachment.caption`), dan bagian itu sengaja tidak masuk `loadCparEvidenceSlots()`.
+Yang wajib dibuktikan punya daftar yang jelas apa saja isinya; berkas tambahan tidak, dan syarat
+yang tak dapat disebutkan isinya adalah syarat yang tak pernah selesai. Entity type-nya tetap
+`"Cpar"`, ember yang dulu dipakai daftar evidence umum, sehingga berkas lama dari daftar itu tampil
+di bagian yang sama alih-alih di kartu "evidence lama" terpisah.
 
 Keduanya diperiksa **bersama** lalu dilaporkan dalam satu daftar, bukan berurutan. Melaporkannya
 satu per satu membuat orang mengisi section, menekan submit lagi, dan baru saat itu mengetahui ada

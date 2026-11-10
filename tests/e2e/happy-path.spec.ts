@@ -107,7 +107,6 @@ test("Production Dept. Head mengisi seluruh section CPAR", async ({ page }) => {
     "Mulai analisis 4M1E",
     "Isi perbaikan tetap",
     "Isi standardisasi & penyebaran",
-    "Isi section",
   ]) {
     await expect(page.getByRole("button", { name: opener, exact: true })).toHaveCount(0);
   }
@@ -145,7 +144,11 @@ test("evidence dilampirkan untuk dokumen awal dan tiap baris action plan", async
   // Dua dokumen awal yang diminta saat follow up, plus satu baris pada masing-masing
   // action plan. Keempatnya memakai input yang menerima PDF; input foto part ada di
   // halaman klaim, bukan di sini.
-  const uploads = page.locator('input[type="file"][accept*="pdf"]');
+  //
+  // Input Other Supporting Evidence dikecualikan: ia menuntut nama lebih dulu, jadi
+  // mengirim berkas ke sana tanpa nama hanya menghasilkan penolakan yang tidak diuji
+  // apa pun di sini. Bagian itu punya ujinya sendiri di bawah.
+  const uploads = page.locator('input[type="file"][accept*="pdf"]:not([data-evidence="other"])');
   const total = await uploads.count();
 
   expect(total).toBeGreaterThan(0);
@@ -161,6 +164,34 @@ test("evidence dilampirkan untuk dokumen awal dan tiap baris action plan", async
 
   // Kartu submit menyebutkan sisa pekerjaannya; kosongnya kalimat itu adalah tanda
   // kedua syarat sudah terpenuhi.
+  await expect(page.locator("body")).not.toContainText(/evidence belum dilampirkan/i);
+});
+
+test("Other Supporting Evidence menyimpan berkas dengan nama yang ditentukan", async ({
+  page,
+}) => {
+  await loginAs(page, USERS.prodHead);
+
+  const cparUrl = `/cpar/${claimUrl.split("/").pop()}`;
+  await page.goto(cparUrl);
+  await page.waitForLoadState("networkidle");
+
+  const name = "Foto hasil sortir 100% di warehouse NID";
+
+  await page.getByLabel("Nama berkas", { exact: true }).fill(name);
+  await page.locator('input[type="file"][data-evidence="other"]').setInputFiles(PHOTO);
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(1500);
+
+  await page.goto(cparUrl);
+  await page.waitForLoadState("networkidle");
+
+  // Yang tampil nama yang diketik, bukan nama berkas dari kamera — itulah seluruh gunanya
+  // kolom nama. Nama aslinya tetap tercetak di bawahnya, jadi berkas yang diunduh masih
+  // dapat dicocokkan dengan barisnya.
+  await expect(page.locator("body")).toContainText(name);
+
+  // Dan bagian ini tidak boleh menahan submit: berkas pendukung sifatnya "kalau ada".
   await expect(page.locator("body")).not.toContainText(/evidence belum dilampirkan/i);
 });
 

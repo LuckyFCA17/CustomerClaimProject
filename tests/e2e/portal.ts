@@ -295,11 +295,4 @@ export async function fillCparSections(page: Page, cparUrl: string): Promise<voi
     "2026-11-19",
   );
   await saveSection(page);
-
-  await open("Isi section");
-  await page
-    .locator("textarea")
-    .last()
-    .fill("Pemantauan tiga periode mingguan; efektif bila tidak ada temuan berulang.");
-  await saveSection(page);
 }

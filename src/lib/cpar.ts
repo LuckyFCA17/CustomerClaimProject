@@ -21,8 +21,10 @@ export const SECTION_ORDER = [
   "ROOT_CAUSE_OUTFLOW",
   "PERMANENT_COUNTERMEASURE",
   "STANDARDIZATION_HORIZONTAL",
-  "EFFECTIVENESS_PLAN",
 ] as const satisfies readonly CparSectionKey[];
+
+/** Section yang masih diisi di form. Sempit, bukan seluruh enum — lihat `RETIRED_SECTIONS`. */
+export type FormSectionKey = (typeof SECTION_ORDER)[number];
 
 export const SECTION_LABEL: Record<CparSectionKey, string> = {
   PROBLEM_DESCRIPTION: "Problem description",
@@ -52,9 +54,32 @@ export const SECTION_HINT: Record<CparSectionKey, string> = {
   EFFECTIVENESS_PLAN: "Cara efektivitas akan diukur, dan pada periode apa.",
 };
 
-export const SECTION_INDEX: Record<CparSectionKey, number> = Object.fromEntries(
+export const SECTION_INDEX: Record<FormSectionKey, number> = Object.fromEntries(
   SECTION_ORDER.map((key, index) => [key, index + 1]),
-) as Record<CparSectionKey, number>;
+) as Record<FormSectionKey, number>;
+
+/**
+ * Section yang pernah ada di form dan tidak lagi diisi.
+ *
+ * Effectiveness plan dicabut dari pengisian CPAR: efektivitas perbaikan dinilai di
+ * Modul 4 (Monitoring) setelah CPAR disetujui dan periode pemantauannya berjalan — bukan
+ * dijanjikan pada lembar yang sama sebelum perbaikannya dikerjakan. Satu hal yang ditulis
+ * di dua tempat akan berbeda di salah satunya, dan yang dipercaya auditor adalah yang
+ * punya buktinya.
+ *
+ * Nilai enumnya sengaja tidak dibuang dari skema dan barisnya tidak dihapus dari basis
+ * data: CPAR yang sudah disetujui dan dicetak memuat isian itu, dan menghapusnya berarti
+ * mengubah isi dokumen yang sudah ditandatangani orang. Yang berubah hanya tiga hal —
+ * tidak dirender, tidak dapat diisi (`CPAR_SECTION_OWNERS` kosong), dan tidak pernah
+ * menahan submit final.
+ */
+export const RETIRED_SECTIONS = [
+  "EFFECTIVENESS_PLAN",
+] as const satisfies readonly CparSectionKey[];
+
+export function isRetiredSection(key: CparSectionKey): boolean {
+  return (RETIRED_SECTIONS as readonly CparSectionKey[]).includes(key);
+}
 
 /**
  * Section yang isinya diturunkan dari klaim, bukan diketik.
@@ -119,6 +144,23 @@ export const ACTION_ITEM_ENTITY = "CparActionItem";
  * pada klaim lain tidak ikut terbawa.
  */
 export const INITIAL_DOCUMENT_ENTITY = "CparInitialDocument";
+
+/**
+ * `Attachment.entityType` untuk Other Supporting Evidence — berkas pendukung yang tidak
+ * diminta oleh satu bagian tertentu, bernama sendiri lewat `Attachment.caption`.
+ *
+ * Nilainya tetap "Cpar", ember yang dulu dipakai daftar evidence umum, dan itu bukan
+ * kebetulan: berkas yang terlanjur diunggah ke daftar itu persis berkas pendukung yang
+ * sama jenisnya. Keduanya tampil pada satu daftar, bukan di satu kartu "evidence lama"
+ * terpisah yang isinya tidak pernah ada tempat memindahkannya.
+ *
+ * Sengaja tidak ikut dihitung `loadCparEvidenceSlots`: bagian ini tidak boleh menahan
+ * submit final. Yang wajib dibuktikan adalah dokumen yang diminta dan tiap baris
+ * tindakan — keduanya punya daftar yang jelas apa saja isinya. Berkas tambahan tidak
+ * punya daftar seperti itu, dan syarat yang tak dapat disebutkan isinya adalah syarat
+ * yang tak pernah selesai.
+ */
+export const OTHER_EVIDENCE_ENTITY = "Cpar";
 
 /**
  * Section yang isinya daftar tindakan bertanggung jawab (PIC, tanggal, evidence).
@@ -208,6 +250,11 @@ export function isSectionFilled(section: Pick<SectionState, "key" | "content" | 
  * satu per satu apa yang kurang (kriteria penerimaan #7). Section yang tidak terdaftar
  * di `SECTION_ORDER` tetap dihitung di urutan terakhir, supaya penambahan section baru
  * di skema tidak diam-diam lolos dari pemeriksaan.
+ *
+ * Satu-satunya yang dikecualikan adalah section yang sudah dicabut. Barisnya masih ada
+ * di CPAR lama dengan `isRequired` menyala dan isi kosong; menghitungnya akan menahan
+ * submit atas section yang tidak lagi ada tempat mengisinya — tuntutan yang mustahil
+ * dipenuhi dan tidak dapat dijelaskan kepada yang menekan tombolnya.
  */
 export function missingRequiredSections(
   sections: readonly SectionState[],
@@ -220,7 +267,10 @@ export function missingRequiredSections(
   return sections
     .filter(
       (section) =>
-        section.isRequired && !isDerivedSection(section.key) && !isSectionFilled(section),
+        section.isRequired &&
+        !isDerivedSection(section.key) &&
+        !isRetiredSection(section.key) &&
+        !isSectionFilled(section),
     )
     .map((section) => section.key)
     .sort((a, b) => order(a) - order(b));

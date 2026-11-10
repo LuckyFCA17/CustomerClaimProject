@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  EVIDENCE_NAME_MIN,
   IGNORE_REASON_MIN,
   SECTION_CONTENT_MIN,
   cparSectionSchema,
   followUpSchema,
   ignoreSchema,
+  otherEvidenceSchema,
   verifySchema,
 } from "@/schemas/cpar";
 
@@ -241,5 +243,36 @@ describe("verifySchema", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe("Other Supporting Evidence", () => {
+  it("menerima nama yang menjelaskan isi berkasnya", () => {
+    const result = otherEvidenceSchema.safeParse({
+      name: "  Foto hasil sortir 100% di warehouse NID  ",
+    });
+
+    expect(result.success).toBe(true);
+    // Spasi di ujung dibuang di sini, bukan dibiarkan tersimpan: nama berkas yang
+    // berawal spasi akan tampil renggang pada daftar dan tidak dapat dicari.
+    if (result.success) expect(result.data.name).toBe("Foto hasil sortir 100% di warehouse NID");
+  });
+
+  it("menolak nama kosong atau terlalu pendek", () => {
+    // Namanya wajib justru karena berkas yang keluar dari kamera sudah punya nama —
+    // IMG_20260114.jpg — dan nama itulah yang tidak memberi tahu apa pun.
+    expect(errorsFor(otherEvidenceSchema.safeParse({ name: "   " }), "name")).toHaveLength(1);
+    expect(
+      errorsFor(otherEvidenceSchema.safeParse({ name: "a".repeat(EVIDENCE_NAME_MIN - 1) }), "name"),
+    ).toHaveLength(1);
+    expect(otherEvidenceSchema.safeParse({ name: "a".repeat(EVIDENCE_NAME_MIN) }).success).toBe(
+      true,
+    );
+  });
+
+  it("menolak nama yang kepanjangan", () => {
+    expect(errorsFor(otherEvidenceSchema.safeParse({ name: "x".repeat(121) }), "name")).toHaveLength(
+      1,
+    );
   });
 });

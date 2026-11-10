@@ -8,12 +8,20 @@ import { Check, Link2, Loader2, Lock, Pencil, TriangleAlert } from "lucide-react
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { CparSectionKey } from "@/generated/prisma/enums";
-import { SECTION_HINT, SECTION_INDEX, SECTION_LABEL, isDerivedSection, isSectionFilled } from "@/lib/cpar";
+import {
+  SECTION_HINT,
+  SECTION_INDEX,
+  SECTION_LABEL,
+  type FormSectionKey,
+  isDerivedSection,
+  isSectionFilled,
+} from "@/lib/cpar";
 import { formatDateTime } from "@/lib/format";
 import { saveCparSection } from "@/server/actions/cpar-filling";
 
 export interface SectionView {
-  readonly key: CparSectionKey;
+  /** Hanya section yang masih diisi di form; yang sudah dicabut tidak sampai ke sini. */
+  readonly key: FormSectionKey;
   readonly content: string | null;
   readonly isRequired: boolean;
   /** Isi terstruktur untuk section tabel; menentukan terisi atau tidaknya. */
@@ -47,7 +55,7 @@ const LOCK_TEXT: Record<LockReason, { badge: string; body: string }> = {
 };
 
 /**
- * Delapan section CPAR (§6 Modul 3).
+ * Tujuh section CPAR (§6 Modul 3).
  *
  * Section yang bukan hak pengguna tampil read-only, bukan disembunyikan: pengisi satu
  * bagian perlu membaca bagian lain untuk menulis bagiannya sendiri — root cause outflow

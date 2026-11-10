@@ -8,6 +8,8 @@ import {
   type SectionState,
   type VerificationRecord,
   isDerivedSection,
+  isRetiredSection,
+  isSectionFilled,
   missingRequiredSections,
   missingSectionLabels,
   requiredVerifiers,
@@ -84,17 +86,39 @@ describe("missingRequiredSections", () => {
 
   it("menyebut section yang kosong", () => {
     const result = missingRequiredSections(
-      sections({ ROOT_CAUSE_OUTFLOW: null, EFFECTIVENESS_PLAN: null }),
+      sections({ ROOT_CAUSE_OUTFLOW: null, STANDARDIZATION_HORIZONTAL: null }),
     );
 
-    expect(result).toEqual(["ROOT_CAUSE_OUTFLOW", "EFFECTIVENESS_PLAN"]);
+    expect(result).toEqual(["ROOT_CAUSE_OUTFLOW", "STANDARDIZATION_HORIZONTAL"]);
   });
 
   it("memperlakukan isi yang hanya spasi sebagai kosong", () => {
-    // Pada section paragraf; section tabel terisi lewat barisnya, bukan lewat teks.
-    expect(missingRequiredSections(sections({ EFFECTIVENESS_PLAN: "   \n\t  " }))).toEqual([
-      "EFFECTIVENESS_PLAN",
-    ]);
+    // Diuji pada `isSectionFilled` langsung, bukan lewat `sections()`: seluruh section
+    // yang masih diisi kini berbentuk tabel, sehingga jalur paragraf tidak lagi dapat
+    // dicapai dari SECTION_ORDER. Aturannya tetap berlaku — ia yang akan dipakai section
+    // paragraf berikutnya — dan tanpa pengujian ini aturan itu hilang tanpa ada yang tahu.
+    const paragraph = (content: string) => ({
+      key: "EFFECTIVENESS_PLAN" as CparSectionKey,
+      content,
+      data: undefined,
+    });
+
+    expect(isSectionFilled(paragraph("   \n\t  "))).toBe(false);
+    expect(isSectionFilled(paragraph("Isi yang memadai untuk section ini."))).toBe(true);
+  });
+
+  it("tidak menuntut section yang sudah dicabut, walau barisnya masih wajib dan kosong", () => {
+    // Effectiveness plan tidak lagi punya tempat mengisinya, tetapi barisnya masih ada di
+    // CPAR lama dengan isRequired menyala. Menghitungnya akan menahan submit atas tuntutan
+    // yang mustahil dipenuhi — dan mustahil pula dijelaskan kepada yang menekan tombolnya.
+    expect(isRetiredSection("EFFECTIVENESS_PLAN")).toBe(true);
+
+    const withRetired: SectionState[] = [
+      ...sections(),
+      { key: "EFFECTIVENESS_PLAN", content: null, isRequired: true, data: undefined },
+    ];
+
+    expect(missingRequiredSections(withRetired)).toEqual([]);
   });
 
   it("mengembalikan section dalam urutan form, bukan urutan masukan", () => {

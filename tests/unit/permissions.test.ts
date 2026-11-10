@@ -14,6 +14,7 @@ import {
   type Actor,
   type ClaimContext,
 } from "@/lib/permissions";
+import { RETIRED_SECTIONS, isRetiredSection } from "@/lib/cpar";
 import { ForbiddenError } from "@/lib/errors";
 import { CparSectionKey, RoleCode } from "@/generated/prisma/enums";
 import type { ClaimStatus } from "@/generated/prisma/enums";
@@ -63,11 +64,18 @@ describe("integritas matriks", () => {
     }
   });
 
-  it("memberi pemilik untuk setiap section CPAR", () => {
+  it("memberi pemilik untuk setiap section CPAR yang masih diisi", () => {
     expect(Object.keys(CPAR_SECTION_OWNERS).sort()).toEqual(Object.values(CparSectionKey).sort());
 
     for (const [section, owners] of Object.entries(CPAR_SECTION_OWNERS)) {
-      expect(owners.length, section).toBeGreaterThan(0);
+      // Section yang sudah dicabut justru harus kosong. Daftar pemilik yang kosong itulah
+      // yang membuat `canFillSection` menolak semua orang; bila suatu saat ada yang
+      // mengisinya kembali, section itu dapat diisi lagi tanpa pernah tampil di form.
+      if (isRetiredSection(section as CparSectionKey)) {
+        expect(owners, section).toHaveLength(0);
+      } else {
+        expect(owners.length, section).toBeGreaterThan(0);
+      }
     }
   });
 });
@@ -188,8 +196,19 @@ describe("Modul 3 — pengisian dan verifikasi CPAR", () => {
     expect(canFillSection(prodStaff, "ROOT_CAUSE_OCCURRENCE", target)).toBe(true);
     expect(canFillSection(prodStaff, "PROBLEM_DESCRIPTION", target)).toBe(false);
     expect(canFillSection(qa, "PROBLEM_DESCRIPTION", target)).toBe(true);
-    expect(canFillSection(prodHead, "EFFECTIVENESS_PLAN", target)).toBe(true);
-    expect(canFillSection(prodStaff, "EFFECTIVENESS_PLAN", target)).toBe(false);
+  });
+
+  it("tidak membiarkan siapa pun mengisi section yang sudah dicabut", () => {
+    const target = cparClaim("CPAR_IN_PROGRESS");
+
+    // Effectiveness plan bukan lagi bagian pengisian CPAR. Yang menolaknya bukan UI yang
+    // berhenti menggambarnya, melainkan daftar pemilik yang kosong — server action yang
+    // dipanggil langsung dengan key itu pun berhenti di `assertCanFillSection`.
+    for (const section of RETIRED_SECTIONS) {
+      for (const actor of [qa, qaHead, admin, prodHead, prodStaff, factoryMgr, presdir]) {
+        expect(canFillSection(actor, section, target), `${section} / ${actor.id}`).toBe(false);
+      }
+    }
   });
 
   it("memberi QA Staff kewenangan melengkapi analisis dan tindak lanjutnya", () => {

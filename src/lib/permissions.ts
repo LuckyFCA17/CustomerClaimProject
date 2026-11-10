@@ -290,7 +290,12 @@ export const CPAR_SECTION_OWNERS: Record<CparSectionKey, readonly RoleCode[]> = 
   ROOT_CAUSE_OUTFLOW: ["USER_DEPT", "QA"],
   PERMANENT_COUNTERMEASURE: ["USER_DEPT", "QA"],
   STANDARDIZATION_HORIZONTAL: ["USER_DEPT", "USER_HEAD", "QA"],
-  EFFECTIVENESS_PLAN: ["USER_HEAD", "QA"],
+  // Dicabut dari pengisian CPAR (lihat RETIRED_SECTIONS di lib/cpar.ts): efektivitas
+  // dinilai di Modul 4 setelah perbaikannya dikerjakan, bukan dijanjikan di lembar yang
+  // sama. Daftar pengisinya dikosongkan, bukan hanya tombolnya dihilangkan dari layar —
+  // `canFillSection` menjadi false untuk semua orang, sehingga server action yang
+  // dipanggil langsung pun menolaknya.
+  EFFECTIVENESS_PLAN: [],
 };
 
 /**

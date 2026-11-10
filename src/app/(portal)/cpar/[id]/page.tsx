@@ -8,7 +8,7 @@ import {
   type ItemEvidence,
   type PicOption,
 } from "@/components/cpar/action-plan-editor";
-import { LegacyEvidence } from "@/components/cpar/legacy-evidence";
+import { OtherEvidence, type OtherEvidenceFile } from "@/components/cpar/other-evidence";
 import {
   InitialDocuments,
   type RequestedDocument,
@@ -36,6 +36,7 @@ import {
   ACTION_PLAN_SECTIONS,
   SECTION_LABEL,
   INITIAL_DOCUMENT_ENTITY,
+  OTHER_EVIDENCE_ENTITY,
   SECTION_ORDER,
   type ActionPlanSectionKey,
   missingEvidenceLabels,
@@ -115,10 +116,10 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
 
   if (!canViewClaim(user, context)) forbidden();
 
-  const [problem, legacyEvidence, documents] = await Promise.all([
+  const [problem, otherEvidence, documents] = await Promise.all([
     loadProblemDescription(id),
     db.attachment.findMany({
-      where: { entityType: "Cpar", entityId: cpar.id },
+      where: { entityType: OTHER_EVIDENCE_ENTITY, entityId: cpar.id },
       include: { uploadedBy: { select: { name: true } } },
       orderBy: { createdAt: "asc" },
     }),
@@ -460,7 +461,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
         <CardHeader>
           <CardTitle>Section CPAR</CardTitle>
           <CardDescription>
-            Delapan section, masing-masing dapat diisi oleh role tertentu. Section yang bukan bagian
+            Tujuh section, masing-masing dapat diisi oleh role tertentu. Section yang bukan bagian
             Anda tetap terbaca agar pengisian saling nyambung.
           </CardDescription>
         </CardHeader>
@@ -513,34 +514,37 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
       </Card>
 
       {/*
-        Tidak ada lagi daftar evidence umum: tiap berkas kini menempel pada bagian yang
-        memintanya. Kartu di bawah hanya muncul selama masih ada berkas lama yang
-        terlanjur diunggah ke daftar itu, dan hilang sendiri begitu habis dipindahkan.
+        Evidence yang diminta menempel pada bagian yang memintanya; yang tidak diminta
+        siapa pun berkumpul di sini dengan nama yang ditentukan pengunggahnya. Kartu ini
+        selalu tampil, juga saat kosong — bagian yang hanya muncul setelah ada isinya
+        tidak pernah ditemukan oleh orang yang hendak mengisinya.
       */}
-      {legacyEvidence.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Evidence lama</CardTitle>
-            <CardDescription>
-              Diunggah sebelum evidence menempel pada bagiannya masing-masing. Lampirkan ulang
-              pada Initial Document Request atau tindakan yang bersangkutan, lalu hapus dari
-              sini.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <LegacyEvidence
-              canDelete={can(user, "cpar.evidence.upload", context)}
-              files={legacyEvidence.map((file) => ({
+      <Card>
+        <CardHeader>
+          <CardTitle>Other Supporting Evidence</CardTitle>
+          <CardDescription>
+            Berkas pendukung di luar yang diminta CPAR — foto, hasil pengukuran, atau
+            korespondensi. Beri nama yang menjelaskan isinya, lalu lampirkan berkasnya.
+            Bagian ini tidak menahan submit final.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <OtherEvidence
+            claimId={id}
+            canUpload={can(user, "cpar.evidence.upload", context)}
+            files={otherEvidence.map(
+              (file): OtherEvidenceFile => ({
                 id: file.id,
+                name: file.caption,
                 originalName: file.originalName,
                 url: `/api/files/${file.path}`,
                 uploadedByName: file.uploadedBy.name,
                 uploadedAt: file.createdAt,
-              }))}
-            />
-          </CardContent>
-        </Card>
-      ) : null}
+              }),
+            )}
+          />
+        </CardContent>
+      </Card>
 
       {canSubmit ? (
         <Card>

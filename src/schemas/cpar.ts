@@ -109,6 +109,30 @@ export const cparSectionSchema = z.object({
 export type CparSectionInput = z.infer<typeof cparSectionSchema>;
 
 /**
+ * Other Supporting Evidence — berkas pendukung dengan nama yang ditentukan pengunggahnya.
+ *
+ * Namanya wajib, dan sengaja bukan nama berkas aslinya: yang keluar dari kamera atau
+ * pemindai bernama IMG_20260114.jpg atau Scan_0003.pdf, dan nama seperti itu tidak
+ * memberi tahu pembaca CPAR isinya apa. Pada daftar berisi lima berkas, nama asli berarti
+ * semuanya harus dibuka satu per satu untuk tahu mana yang dicari.
+ *
+ * Yang ditentukan di sini judul yang dibaca orang, bukan penggantian nama di penyimpanan:
+ * berkasnya tetap tersimpan dengan nama aslinya, dan nama itu tetap ikut tampil — sehingga
+ * berkas yang diunduh masih dapat dicocokkan dengan barisnya.
+ */
+export const EVIDENCE_NAME_MIN = 3;
+
+export const otherEvidenceSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(EVIDENCE_NAME_MIN, `Beri nama berkasnya, minimal ${EVIDENCE_NAME_MIN} karakter.`)
+    .max(120, "Maksimal 120 karakter."),
+});
+
+export type OtherEvidenceInput = z.infer<typeof otherEvidenceSchema>;
+
+/**
  * Keputusan verifikasi (§5, §6 Modul 3).
  *
  * Komentar wajib pada REVISE: siklus berikutnya dibuka untuk orang lain, dan mereka

@@ -13,6 +13,7 @@ import {
   ACTION_ITEM_ENTITY,
   ACTION_PLAN_SECTIONS,
   INITIAL_DOCUMENT_ENTITY,
+  OTHER_EVIDENCE_ENTITY,
   SECTION_LABEL,
   isActionPlanSection,
   missingEvidenceLabels,
@@ -36,7 +37,7 @@ import {
   itemIds,
   readActionPlan,
 } from "@/schemas/action-plan";
-import { cparSectionSchema, verifySchema } from "@/schemas/cpar";
+import { cparSectionSchema, otherEvidenceSchema, verifySchema } from "@/schemas/cpar";
 import {
   type ProcessStep,
   flowCompleteness,
@@ -805,11 +806,10 @@ function summarizeEntries(entries: readonly TemporaryActionEntry[], note: string
 // ─────────────────────── Evidence CPAR ───────────────────────
 
 /*
- * Tidak ada lagi unggahan ke daftar evidence umum CPAR.
- *
- * Tiap berkas sekarang menempel pada bagian yang memintanya, sehingga pembacanya tidak
- * perlu menebak satu berkas milik bagian yang mana. Entity type "Cpar" tetap dikenali
- * penghapusan di bawah — berkas lama harus tetap dapat dibuka dan dibuang.
+ * Evidence yang diminta menempel pada bagian yang memintanya — dokumen awal dan tiap
+ * baris tindakan — sehingga pembacanya tidak perlu menebak satu berkas milik bagian yang
+ * mana. Yang tidak diminta siapa pun masuk ke Other Supporting Evidence di bawah, dengan
+ * nama yang ditentukan pengunggahnya.
  */
 
 /**
@@ -877,6 +877,91 @@ export async function uploadActionItemEvidence(formData: FormData): Promise<Acti
     revalidateCpar(claimId);
 
     return { ok: true, message: "Evidence terunggah." };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * Other Supporting Evidence — berkas pendukung di luar yang diminta CPAR.
+ *
+ * Tidak menempel pada satu bagian, jadi tidak ada section yang bisa dipakai memeriksa
+ * terkunci atau tidak; penjaganya status klaim lewat `cpar.evidence.upload`, yang berhenti
+ * sendiri begitu CPAR masuk verifikasi. Dan sengaja tidak ikut `loadCparEvidenceSlots`:
+ * bagian ini tidak pernah menahan submit final (lihat `OTHER_EVIDENCE_ENTITY`).
+ *
+ * Namanya disimpan di `caption`, bukan menimpa `originalName`: nama asli berkas adalah
+ * fakta tentang apa yang diunggah, dan menukarnya dengan nama yang diketik orang akan
+ * membuat berkas yang diunduh tidak dapat dicocokkan lagi dengan barisnya.
+ */
+export async function uploadOtherEvidence(formData: FormData): Promise<ActionResult> {
+  try {
+    const actor = await requireActor();
+
+    const claimId = String(formData.get("claimId") ?? "");
+    const file = formData.get("file");
+
+    const parsed = otherEvidenceSchema.safeParse({ name: formData.get("name") ?? "" });
+
+    if (!parsed.success) {
+      return {
+        ok: false,
+        message: "Nama berkas belum benar.",
+        fieldErrors: flattenZodErrors(parsed.error),
+      };
+    }
+
+    if (!(file instanceof File) || file.size === 0) {
+      throw new ValidationError("Pilih berkas yang akan diunggah.");
+    }
+
+    const cpar = await loadCpar(claimId);
+    assertCan(actor, "cpar.evidence.upload", toContext(cpar));
+
+    const saved = await saveUpload({
+      file,
+      folder: claimFolder(cpar.claim.claimNo, claimId),
+      entityType: OTHER_EVIDENCE_ENTITY,
+    });
+
+    const requestContext = await readRequestContext();
+
+    await db.$transaction(async (tx) => {
+      await tx.attachment.create({
+        data: {
+          entityType: OTHER_EVIDENCE_ENTITY,
+          entityId: cpar.id,
+          claimId,
+          originalName: saved.originalName,
+          caption: parsed.data.name,
+          mimeType: saved.mimeType,
+          size: saved.size,
+          path: saved.path,
+          uploadedById: actor.id,
+        },
+      });
+
+      await writeAuditLog(
+        tx,
+        {
+          actorId: actor.id,
+          entityType: "Cpar",
+          entityId: cpar.id,
+          claimId,
+          action: "cpar.evidence.upload",
+          payloadDiff: {
+            otherEvidence: parsed.data.name,
+            cycle: cpar.cycle,
+            file: saved.originalName,
+          },
+        },
+        requestContext,
+      );
+    });
+
+    revalidateCpar(claimId);
+
+    return { ok: true, message: `${parsed.data.name} dilampirkan.` };
   } catch (error) {
     return failure(error);
   }
@@ -1065,11 +1150,12 @@ export async function uploadInitialDocument(formData: FormData): Promise<ActionR
 /**
  * Ketiganya menempel pada klaim yang sama dan dijaga izin unggah yang sama.
  *
- * "Cpar" tidak lagi dapat ditambah, hanya dihapus: itulah berkas lama dari daftar
- * evidence umum yang sudah ditiadakan.
+ * Daftarnya dibatasi karena `attachmentId` datang dari klien: tanpa saringan ini, satu
+ * action penghapusan evidence CPAR dapat dipakai membuang lampiran klaim atau berkas
+ * monitoring yang bukan urusannya.
  */
 const EVIDENCE_ENTITIES: readonly string[] = [
-  "Cpar",
+  OTHER_EVIDENCE_ENTITY,
   ACTION_ITEM_ENTITY,
   INITIAL_DOCUMENT_ENTITY,
 ];
