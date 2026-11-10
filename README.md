@@ -884,6 +884,33 @@ Batas querynya memakai awal bulan **kalender Jakarta**, bukan tengah malam UTC: 
 WIB adalah 31 Desember 17.00 UTC, jadi batas UTC akan membuang klaim yang masuk pada tujuh jam
 pertama setiap bulan.
 
+## Ketepatan waktu penutupan di dasbor CPAR
+
+Pada dasbor dan detail CPAR, klaim berstatus `VERIFIED_CLOSED` ditampilkan sebagai salah satu
+dari dua:
+
+| Badge | Syarat |
+|---|---|
+| **Closed under due date** | tanggal tutup ≤ tanggal tenggat CPAR |
+| **Closed overdue date** | tanggal tutup > tanggal tenggat CPAR |
+
+Ini **diturunkan**, bukan dua nilai `ClaimStatus` baru. Keadaannya memang satu — `VERIFIED_CLOSED`
+adalah status akhir; tepat waktu atau terlambat bukan keadaan yang berbeda melainkan sifat dari
+penutupan itu. Dua nilai enum akan merembet ke tabel transisi, matriks izin, lembar cetak, dan
+setiap `Record<ClaimStatus, …>`. Yang diturunkan juga tidak bisa melenceng: keduanya dihitung
+ulang dari `closedAt` dan `dueDate` setiap kali dibaca, sedangkan nilai enum kedua dapat berkata
+"tepat waktu" padahal tenggatnya kemudian disunting.
+
+Perbandingannya memakai **tanggal kalender Jakarta**, bukan titik waktu. `dueDate` disimpan pada
+akhir jam kerja (17.00 WIB), jadi perbandingan antar-instant akan menyebut klaim yang ditutup
+pukul 19.00 pada hari tenggatnya sebagai terlambat — padahal tanggalnya sama.
+
+Di modul Claims, badge-nya tetap **Verified closed**. Pemisahannya memang milik CPAR: status
+klaimnya verified closed, sedangkan tepat-waktu atau tidak adalah capaian CPAR-nya.
+
+Penyaring status di dasbor tetap bekerja pada enum, jadi "Verified closed" masih muncul sebagai
+pilihan filter — ia menyaring kedua-duanya.
+
 ## Syarat submit CPAR final
 
 CPAR tidak dapat dikirim ke rantai verifikasi selama masih ada yang kurang, dan "kurang" berarti

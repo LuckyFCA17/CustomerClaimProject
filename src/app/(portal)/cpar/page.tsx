@@ -14,6 +14,7 @@ import { ClaimFilters, type CustomerOption } from "@/components/claims/claim-fil
 import { EvidenceFilters, PendingEvidenceTable } from "@/components/cpar/pending-evidence";
 import { StatRow, StatTile } from "@/components/shared/stat-tile";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { closureTiming } from "@/config/claim-status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -126,6 +127,7 @@ export default async function CparDashboardPage({
           id: true,
           claimNo: true,
           status: true,
+          closedAt: true,
           partName: true,
           internalPartNo: true,
           customer: { select: { name: true } },
@@ -273,7 +275,13 @@ export default async function CparDashboardPage({
                         ) : null}
                       </span>
 
-                      <StatusBadge status={cpar.claim.status} />
+                      {/* Pada klaim yang sudah ditutup, badge-nya menyebutkan sekalian
+                          apakah penutupannya di dalam tenggat atau melewatinya. */}
+                      <StatusBadge
+                        status={cpar.claim.status}
+                        closure={closureTiming(cpar.claim.closedAt, cpar.dueDate)}
+                        showHint
+                      />
                     </Link>
                   </li>
                 );

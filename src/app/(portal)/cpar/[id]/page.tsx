@@ -27,6 +27,7 @@ import {
 } from "@/components/cpar/verification-chain";
 import { VerificationPanel } from "@/components/cpar/verification-panel";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { closureTiming } from "@/config/claim-status";
 import { StatusRail } from "@/components/shared/status-rail";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -79,6 +80,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
           id: true,
           claimNo: true,
           status: true,
+          closedAt: true,
           createdById: true,
           partName: true,
           internalPartNo: true,
@@ -348,7 +350,11 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={cpar.claim.status} showHint />
+            <StatusBadge
+              status={cpar.claim.status}
+              closure={closureTiming(cpar.claim.closedAt, cpar.dueDate)}
+              showHint
+            />
             <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium">
               Siklus {cpar.cycle}
             </span>

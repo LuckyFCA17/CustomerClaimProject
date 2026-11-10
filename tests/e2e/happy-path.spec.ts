@@ -298,4 +298,16 @@ test("seluruh periode efektif, klaim ditutup Verified Closed", async ({ page }) 
   await page.goto(claimUrl);
   await page.waitForLoadState("networkidle");
   await expect(page.locator("body")).toContainText(/Verified closed/i);
+
+  // Di dasbor CPAR, status akhir dipecah menurut ketepatan waktunya. Yang diuji adalah
+  // badge-nya memang salah satu dari keduanya, bukan yang mana — tenggat pada fikstur
+  // ini tanggal tetap, jadi menguncinya ke satu label akan membuat uji ini berubah
+  // hasil sendiri begitu tanggal itu terlewat di dunia nyata.
+  await page.goto("/cpar");
+  await page.waitForLoadState("networkidle");
+
+  const row = page.locator("li").filter({ hasText: /NID\/CPAR\// }).first();
+
+  await expect(row).toContainText(/Closed (under due date|overdue date)/);
+  await expect(row).not.toContainText(/Verified closed/);
 });

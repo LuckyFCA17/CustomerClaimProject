@@ -1,4 +1,5 @@
 import { ClaimStatus } from "@/generated/prisma/enums";
+import { toJakartaParts } from "@/lib/dates";
 
 /**
  * Lapisan presentasi untuk status klaim: label, warna, dan posisi di status rail.
@@ -133,4 +134,65 @@ export const CLAIM_STATUS_META: Record<ClaimStatus, ClaimStatusMeta> = {
 
 export function statusMeta(status: ClaimStatus): ClaimStatusMeta {
   return CLAIM_STATUS_META[status];
+}
+
+// ─────────────────── Ketepatan waktu penutupan (dasbor CPAR) ───────────────────
+
+/**
+ * Apakah klaim ditutup di dalam tenggat CPAR atau melewatinya.
+ *
+ * Sengaja **diturunkan**, bukan dijadikan dua nilai `ClaimStatus` baru. Alasannya dua:
+ *
+ *   · Keadaannya memang satu. `VERIFIED_CLOSED` adalah status akhir; tepat waktu atau
+ *     terlambat bukan keadaan yang berbeda, melainkan sifat dari penutupan itu. Dua
+ *     nilai enum akan merembet ke tabel transisi, matriks izin, lembar cetak, dan setiap
+ *     `Record<ClaimStatus, …>` — perubahan besar untuk sesuatu yang bukan status.
+ *   · Yang diturunkan tidak bisa melenceng. Keduanya dihitung dari `closedAt` dan
+ *     `dueDate` setiap kali dibaca; nilai enum kedua dapat berkata "tepat waktu" padahal
+ *     tenggatnya kemudian disunting.
+ */
+export type ClosureTiming = "ON_TIME" | "OVERDUE";
+
+export const CLOSURE_META: Record<
+  ClosureTiming,
+  { readonly label: string; readonly tone: StatusTone; readonly hint: string }
+> = {
+  ON_TIME: {
+    label: "Closed under due date",
+    tone: "closed",
+    hint: "Klaim ditutup pada atau sebelum tanggal tenggat CPAR.",
+  },
+  OVERDUE: {
+    label: "Closed overdue date",
+    tone: "danger",
+    hint: "Klaim ditutup melewati tanggal tenggat CPAR.",
+  },
+};
+
+/** Tanggal kalender Jakarta sebagai angka yang dapat dibandingkan, mis. 20261106. */
+function jakartaDayNumber(date: Date): number {
+  const parts = toJakartaParts(date);
+
+  return parts.year * 10000 + (parts.month + 1) * 100 + parts.day;
+}
+
+/**
+ * Membandingkan **tanggal**, bukan titik waktu.
+ *
+ * `dueDate` disimpan pada akhir jam kerja (17.00 WIB), jadi perbandingan antar-instant
+ * akan menyebut klaim yang ditutup pukul 19.00 pada hari tenggatnya sebagai terlambat —
+ * padahal tanggalnya sama, dan "kurang atau sama dengan tanggal tenggat" yang diminta
+ * berbicara tentang tanggal. Kalender yang dipakai Jakarta, seperti sisa portal
+ * (asumsi A-15).
+ *
+ * Mengembalikan null bila klaim belum ditutup atau tenggatnya tidak diketahui — pemanggil
+ * lalu menampilkan label status biasa, bukan menebak salah satu dari keduanya.
+ */
+export function closureTiming(
+  closedAt: Date | null | undefined,
+  dueDate: Date | null | undefined,
+): ClosureTiming | null {
+  if (!closedAt || !dueDate) return null;
+
+  return jakartaDayNumber(closedAt) <= jakartaDayNumber(dueDate) ? "ON_TIME" : "OVERDUE";
 }
