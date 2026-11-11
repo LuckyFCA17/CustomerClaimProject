@@ -5,6 +5,7 @@ import {
   REPORT_SUMMARY_MIN,
   effectivenessSchema,
   improvementReportSchema,
+  monitoringResultSchema,
   startMonitoringSchema,
 } from "@/schemas/monitoring";
 
@@ -20,15 +21,56 @@ function errorsFor(
 }
 
 describe("startMonitoringSchema", () => {
+  const JADWAL = {
+    periodCount: "3",
+    intervalDays: "5",
+    checkItems: ["Hasil inspeksi 100% kaki pengunci"],
+    note: "",
+  };
+
   it("menerima jadwal yang masuk akal", () => {
-    const result = startMonitoringSchema.safeParse({
-      periodCount: "3",
-      intervalDays: "5",
-      note: "",
-    });
+    const result = startMonitoringSchema.safeParse(JADWAL);
 
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.periodCount).toBe(3);
+  });
+
+  it("menolak jadwal tanpa satu pun item yang dipantau", () => {
+    // Pemantauan yang dibuka tanpa menyebut apa yang diukur berakhir dengan penilaian
+    // yang mencari bukti apa saja yang kebetulan tersedia.
+    expect(
+      errorsFor(startMonitoringSchema.safeParse({ ...JADWAL, checkItems: [] }), "checkItems"),
+    ).toHaveLength(1);
+  });
+
+  it("membuang baris kosong sebelum menghitung jumlahnya", () => {
+    // Formulirnya selalu menyisakan satu baris kosong di bawah; itu bukan item.
+    const result = startMonitoringSchema.safeParse({
+      ...JADWAL,
+      checkItems: ["  Hasil inspeksi 100% kaki pengunci  ", "", "   "],
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.checkItems).toEqual(["Hasil inspeksi 100% kaki pengunci"]);
+    }
+  });
+
+  it("menolak item yang terlalu pendek untuk berarti apa pun", () => {
+    expect(
+      errorsFor(startMonitoringSchema.safeParse({ ...JADWAL, checkItems: ["ok"] }), "checkItems.0"),
+    ).toHaveLength(1);
+  });
+
+  it("menolak item yang ditulis dua kali", () => {
+    // Item kembar menghasilkan dua kotak bukti untuk satu hal yang sama, dan salah
+    // satunya akan selalu kosong.
+    const result = startMonitoringSchema.safeParse({
+      ...JADWAL,
+      checkItems: ["Inspeksi kaki pengunci", "inspeksi KAKI pengunci"],
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it("menolak nol periode — CAPA tanpa periode tidak pernah diuji", () => {
@@ -136,5 +178,68 @@ describe("improvementReportSchema", () => {
       // berarti "tidak diisi".
       expect(result.data.target).toBeUndefined();
     }
+  });
+});
+
+describe("monitoringResultSchema", () => {
+  const BARIS = {
+    kind: "PRODUCTION",
+    recordedOn: "2026-11-16",
+    quantity: "500",
+    okCount: "498",
+    ngCount: "2",
+    note: "",
+  };
+
+  it("menerima satu baris angka yang utuh", () => {
+    const result = monitoringResultSchema.safeParse(BARIS);
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.quantity).toBe(500);
+  });
+
+  it("membiarkan sebagian yang belum dinilai", () => {
+    // 500 diproduksi, baru 100 diperiksa. Itu keadaan wajar di tengah periode, bukan
+    // kesalahan — yang salah hanya bila yang dinilai lebih banyak daripada yang ada.
+    expect(monitoringResultSchema.safeParse({ ...BARIS, okCount: "98", ngCount: "2" }).success).toBe(
+      true,
+    );
+  });
+
+  it("menolak OK + NG yang melebihi jumlahnya", () => {
+    expect(
+      errorsFor(
+        monitoringResultSchema.safeParse({ ...BARIS, quantity: "100", okCount: "99", ngCount: "5" }),
+        "okCount",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("menolak jumlah nol — baris tanpa barang tidak mengukur apa pun", () => {
+    expect(
+      errorsFor(monitoringResultSchema.safeParse({ ...BARIS, quantity: "0" }), "quantity"),
+    ).toHaveLength(1);
+  });
+
+  it("menolak angka negatif dan pecahan", () => {
+    expect(
+      errorsFor(monitoringResultSchema.safeParse({ ...BARIS, ngCount: "-1" }), "ngCount"),
+    ).toHaveLength(1);
+    expect(
+      errorsFor(monitoringResultSchema.safeParse({ ...BARIS, quantity: "1.5" }), "quantity"),
+    ).toHaveLength(1);
+  });
+
+  it("menolak tanggal yang kosong atau tidak terbaca", () => {
+    expect(
+      errorsFor(monitoringResultSchema.safeParse({ ...BARIS, recordedOn: "" }), "recordedOn"),
+    ).toHaveLength(1);
+    expect(
+      errorsFor(monitoringResultSchema.safeParse({ ...BARIS, recordedOn: "kemarin" }), "recordedOn"),
+    ).toHaveLength(1);
+  });
+
+  it("menolak jenis pencatatan yang tidak dikenal", () => {
+    expect(monitoringResultSchema.safeParse({ ...BARIS, kind: "AUDIT" }).success).toBe(false);
   });
 });

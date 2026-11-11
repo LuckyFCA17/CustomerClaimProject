@@ -1,11 +1,16 @@
 import { z } from "zod";
 
-import { MonitoringStatus } from "@/generated/prisma/enums";
+import { MonitoringResultKind, MonitoringStatus } from "@/generated/prisma/enums";
 import {
+  CHECK_ITEM_COUNT_MAX,
+  CHECK_ITEM_COUNT_MIN,
+  CHECK_ITEM_MAX_LENGTH,
+  CHECK_ITEM_MIN_LENGTH,
   PERIOD_COUNT_MAX,
   PERIOD_COUNT_MIN,
   PERIOD_INTERVAL_MAX,
   PERIOD_INTERVAL_MIN,
+  RESULT_QUANTITY_MAX,
 } from "@/lib/monitoring";
 
 /**
@@ -26,10 +31,79 @@ export const startMonitoringSchema = z.object({
     .int("Jarak antar periode harus bilangan bulat.")
     .min(PERIOD_INTERVAL_MIN, `Minimal ${PERIOD_INTERVAL_MIN} hari kerja.`)
     .max(PERIOD_INTERVAL_MAX, `Maksimal ${PERIOD_INTERVAL_MAX} hari kerja.`),
+  /**
+   * Item aktivitas yang dipantau — apa yang akan diperiksa tiap periode.
+   *
+   * Wajib minimal satu, dan ditetapkan di muka: inilah yang nanti dilampirkan sebagai
+   * bukti efektivitas. Pemantauan yang dibuka tanpa menyebut apa yang diukur berakhir
+   * dengan penilaian yang mencari bukti apa saja yang kebetulan tersedia pada hari
+   * penilaian, bukan bukti atas hal yang memang direncanakan diperiksa.
+   */
+  checkItems: z
+    .array(z.string().trim())
+    .transform((items) => items.map((item) => item.trim()).filter((item) => item.length > 0))
+    .pipe(
+      z
+        .array(
+          z
+            .string()
+            .min(CHECK_ITEM_MIN_LENGTH, `Tiap item minimal ${CHECK_ITEM_MIN_LENGTH} karakter.`)
+            .max(CHECK_ITEM_MAX_LENGTH, `Maksimal ${CHECK_ITEM_MAX_LENGTH} karakter per item.`),
+        )
+        .min(CHECK_ITEM_COUNT_MIN, "Sebutkan minimal satu item yang dipantau.")
+        .max(CHECK_ITEM_COUNT_MAX, `Maksimal ${CHECK_ITEM_COUNT_MAX} item.`),
+    )
+    .refine(
+      (items) => new Set(items.map((item) => item.toLowerCase())).size === items.length,
+      "Ada item yang ditulis dua kali.",
+    ),
   note: z.string().trim().max(1000, "Maksimal 1000 karakter.").optional().or(z.literal("")),
 });
 
 export type StartMonitoringInput = z.infer<typeof startMonitoringSchema>;
+
+/**
+ * Satu baris angka hasil produksi atau inspeksi.
+ *
+ * `okCount + ngCount` tidak boleh melebihi `quantity`: yang dinilai tidak mungkin lebih
+ * banyak daripada yang ada, dan angka seperti itu selalu salah ketik. Boleh kurang —
+ * sisanya berarti belum diperiksa, dan itu keadaan yang wajar di tengah periode.
+ */
+export const monitoringResultSchema = z
+  .object({
+    kind: z.enum(MonitoringResultKind, { message: "Pilih jenis pencatatan." }),
+    recordedOn: z.preprocess(
+      (value) => (value === "" || value === null ? undefined : value),
+      z.coerce.date({ message: "Tanggal wajib diisi." }),
+    ),
+    quantity: z.coerce
+      .number({ message: "Jumlah wajib diisi." })
+      .int("Jumlah harus bilangan bulat.")
+      .min(1, "Jumlah minimal 1.")
+      .max(RESULT_QUANTITY_MAX, `Maksimal ${RESULT_QUANTITY_MAX.toLocaleString("id-ID")}.`),
+    okCount: z.coerce
+      .number({ message: "Total OK wajib diisi." })
+      .int("Total OK harus bilangan bulat.")
+      .min(0, "Total OK tidak boleh negatif.")
+      .max(RESULT_QUANTITY_MAX, "Total OK melebihi batas."),
+    ngCount: z.coerce
+      .number({ message: "Total NG wajib diisi." })
+      .int("Total NG harus bilangan bulat.")
+      .min(0, "Total NG tidak boleh negatif.")
+      .max(RESULT_QUANTITY_MAX, "Total NG melebihi batas."),
+    note: z.string().trim().max(500, "Maksimal 500 karakter.").optional().or(z.literal("")),
+  })
+  .superRefine((value, ctx) => {
+    if (value.okCount + value.ngCount > value.quantity) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["okCount"],
+        message: `OK + NG (${value.okCount + value.ngCount}) melebihi jumlahnya (${value.quantity}).`,
+      });
+    }
+  });
+
+export type MonitoringResultInput = z.infer<typeof monitoringResultSchema>;
 
 /**
  * Penilaian efektivitas satu periode.

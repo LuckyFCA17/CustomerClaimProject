@@ -23,6 +23,8 @@ const SOFT_DELETE_MODELS = new Set([
   "CparSection",
   "Verification",
   "MonitoringPeriod",
+  "MonitoringCheckItem",
+  "MonitoringResult",
   "ImprovementReport",
   "Attachment",
   "GeneratedDocument",

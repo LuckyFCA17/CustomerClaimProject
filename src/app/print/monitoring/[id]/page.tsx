@@ -1,6 +1,11 @@
 import { statusMeta } from "@/config/claim-status";
 import { FieldGrid, FormHeader, SectionTitle, Sheet, SignatureBlock } from "@/components/print/sheet";
-import { MONITORING_STATUS_LABEL } from "@/lib/monitoring";
+import {
+  MONITORING_STATUS_LABEL,
+  calendarRows,
+  resultsOfKind,
+  totalResults,
+} from "@/lib/monitoring";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { authorizePrint, loadMonitoringForPrint } from "@/server/print-data";
 
@@ -26,7 +31,10 @@ export default async function MonitoringPrintPage({
 
   await authorizePrint("MONITORING", id, token);
 
-  const { cpar, claim, periods, report } = await loadMonitoringForPrint(id);
+  const { cpar, claim, periods, checkItems, results, report } = await loadMonitoringForPrint(id);
+  const days = calendarRows(results);
+  const production = totalResults(resultsOfKind(results, "PRODUCTION"));
+  const inspection = totalResults(resultsOfKind(results, "INSPECTION"));
   const isDraft = query.draft === "1" || claim.status !== "VERIFIED_CLOSED";
 
   return (
@@ -100,6 +108,74 @@ export default async function MonitoringPrintPage({
         </tbody>
       </table>
 
+      {checkItems.length > 0 ? (
+        <>
+          <SectionTitle>Item yang dipantau</SectionTitle>
+          <ol className="m-0 mb-[3mm] list-decimal pl-[6mm] text-[8.5pt]">
+            {checkItems.map((item) => (
+              <li key={item.id} className="break-inside-avoid">
+                {item.title}
+              </li>
+            ))}
+          </ol>
+        </>
+      ) : null}
+
+      {days.length > 0 ? (
+        <>
+          <SectionTitle>Hasil produksi &amp; inspeksi per tanggal</SectionTitle>
+          <table className="mb-[3mm] w-full border-collapse text-[8pt]">
+            <thead>
+              <tr className="bg-[#f4f5f7]">
+                <th rowSpan={2} className="border border-[#e4e7eb] px-[2mm] py-[1.2mm] text-left">
+                  Tanggal
+                </th>
+                <th colSpan={3} className="border border-[#e4e7eb] px-[2mm] py-[1.2mm] text-center">
+                  Produksi
+                </th>
+                <th colSpan={3} className="border border-[#e4e7eb] px-[2mm] py-[1.2mm] text-center">
+                  Inspeksi
+                </th>
+              </tr>
+              <tr className="bg-[#f4f5f7]">
+                {["Jml", "OK", "NG", "Jml", "OK", "NG"].map((head, index) => (
+                  <th
+                    key={`${head}-${index}`}
+                    className="w-[16mm] border border-[#e4e7eb] px-[2mm] py-[1mm] text-right font-normal"
+                  >
+                    {head}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {days.map((day) => (
+                <tr key={day.day}>
+                  <td className="border border-[#e4e7eb] px-[2mm] py-[1.2mm] tabular">
+                    {formatDate(day.date)}
+                  </td>
+                  <Cells totals={day.production} />
+                  <Cells totals={day.inspection} />
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-[#f4f5f7] font-semibold">
+                <td className="border border-[#e4e7eb] px-[2mm] py-[1.2mm]">Total</td>
+                <Cells totals={production} />
+                <Cells totals={inspection} />
+              </tr>
+            </tfoot>
+          </table>
+
+          <p className="m-0 mb-[3mm] text-[8pt] text-[#6b7280]">
+            Bagian NG dari yang dinilai — produksi{" "}
+            <strong className="text-[#1f2933]">{percent(production.ngRate)}</strong>, inspeksi{" "}
+            <strong className="text-[#1f2933]">{percent(inspection.ngRate)}</strong>.
+          </p>
+        </>
+      ) : null}
+
       {report ? (
         <>
           <SectionTitle>Improvement Report</SectionTitle>
@@ -142,4 +218,25 @@ export default async function MonitoringPrintPage({
       />
     </Sheet>
   );
+}
+
+function Cells({
+  totals,
+}: {
+  totals: { quantity: number; okCount: number; ngCount: number };
+}) {
+  const empty = totals.quantity === 0 && totals.okCount === 0 && totals.ngCount === 0;
+  const cell = "border border-[#e4e7eb] px-[2mm] py-[1.2mm] text-right tabular";
+
+  return (
+    <>
+      <td className={cell}>{empty ? "—" : totals.quantity.toLocaleString("id-ID")}</td>
+      <td className={cell}>{empty ? "—" : totals.okCount.toLocaleString("id-ID")}</td>
+      <td className={cell}>{empty ? "—" : totals.ngCount.toLocaleString("id-ID")}</td>
+    </>
+  );
+}
+
+function percent(rate: number | null): string {
+  return rate === null ? "—" : `${(rate * 100).toFixed(2)}%`;
 }

@@ -237,12 +237,84 @@ test("QA memulai pemantauan CAPA", async ({ page }) => {
 
   await page.locator("#period-count").fill("2");
   await page.locator("#interval-days").fill("5");
+  await page.locator("#check-item-0").fill("Hasil inspeksi 100% kaki pengunci pada 500 pcs pertama");
+  await page.getByRole("button", { name: "Tambah item", exact: true }).click();
+  await page.waitForTimeout(400);
+  await page.locator("#check-item-1").fill("Catatan tekanan holding mesin 4 tiap shift");
   await page.locator("#monitoring-note").fill("Dua periode mingguan setelah countermeasure.");
 
   await act(page, /Start CAPA monitoring/i);
 
   await expect(page.locator("body")).toContainText(/CAPA monitoring/i);
   await expect(page.locator("body")).toContainText(/Periode 1/i);
+
+  // Item yang ditetapkan tadi harus muncul di tiap periode, bukan hanya di periode 1.
+  await expect(page.getByText("Catatan tekanan holding mesin 4 tiap shift")).toHaveCount(2);
+});
+
+test("angka produksi dan inspeksi dicatat per tanggal, lalu direkap", async ({ page }) => {
+  await loginAs(page, USERS.prodHead);
+
+  await page.goto(`/monitoring/${claimUrl.split("/").pop()}`);
+  await page.waitForLoadState("networkidle");
+
+  // Dua baris pada periode 1: satu produksi, satu inspeksi, pada tanggal yang sama —
+  // keduanya harus mendarat di satu baris rekap, bukan dua.
+  const production = page.locator('[data-results="PRODUCTION"]').first();
+  await production.getByLabel("Tanggal produksi").fill("2026-11-16");
+  await production.getByLabel("Jumlah produksi").fill("500");
+  await production.getByLabel("Total OK").fill("498");
+  await production.getByLabel("Total NG").fill("2");
+  await production.getByRole("button", { name: "Tambah baris" }).click();
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(1200);
+
+  const inspection = page.locator('[data-results="INSPECTION"]').first();
+  await inspection.getByLabel("Tanggal inspeksi").fill("2026-11-16");
+  await inspection.getByLabel("Jumlah diperiksa").fill("120");
+  await inspection.getByLabel("Total OK").fill("120");
+  await inspection.getByLabel("Total NG").fill("0");
+  await inspection.getByRole("button", { name: "Tambah baris" }).click();
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(1200);
+
+  await page.goto(`/monitoring/${claimUrl.split("/").pop()}`);
+  await page.waitForLoadState("networkidle");
+
+  await expect(page.locator("body")).toContainText("Rekap hasil produksi & inspeksi");
+  await expect(page.locator("body")).toContainText("Bagian NG per tanggal");
+
+  // 2 NG dari 500 yang dinilai = 0,40%.
+  await expect(page.locator("body")).toContainText("0.40%");
+});
+
+test("OK + NG yang melebihi jumlahnya ditolak", async ({ page }) => {
+  await loginAs(page, USERS.prodHead);
+
+  await page.goto(`/monitoring/${claimUrl.split("/").pop()}`);
+  await page.waitForLoadState("networkidle");
+
+  const production = page.locator('[data-results="PRODUCTION"]').first();
+  await production.getByLabel("Tanggal produksi").fill("2026-11-17");
+  await production.getByLabel("Jumlah produksi").fill("100");
+  await production.getByLabel("Total OK").fill("99");
+  await production.getByLabel("Total NG").fill("5");
+  await production.getByRole("button", { name: "Tambah baris" }).click();
+  await page.waitForTimeout(1200);
+
+  await expect(page.locator("body")).toContainText(/melebihi jumlahnya/i);
+});
+
+test("Effective ditolak selama item check belum ada buktinya", async ({ page }) => {
+  await loginAs(page, USERS.qaHead);
+
+  await page.goto(`/monitoring/${claimUrl.split("/").pop()}`);
+  await page.waitForLoadState("networkidle");
+
+  await page.getByRole("button", { name: "Effective", exact: true }).first().click();
+  await page.waitForTimeout(1200);
+
+  await expect(page.locator("body")).toContainText(/Belum ada bukti untuk/i);
 });
 
 test("periode dinilai Not Effective: klaim kembali ke CPAR revision, siklus naik", async ({
@@ -295,6 +367,7 @@ test("siklus 2 dikirim ulang, diverifikasi ulang, dan pemantauan dibuka lagi", a
 
   await page.locator("#period-count").fill("2");
   await page.locator("#interval-days").fill("5");
+  await page.locator("#check-item-0").fill("Hasil inspeksi 100% setelah alarm tekanan terpasang");
   await act(page, /Start CAPA monitoring/i);
 
   await expect(page.locator("body")).toContainText(/Periode 1/i);
@@ -304,6 +377,22 @@ test("seluruh periode efektif, klaim ditutup Verified Closed", async ({ page }) 
   const id = claimUrl.split("/").pop();
 
   await loginAs(page, USERS.qaHead);
+  await page.goto(`/monitoring/${id}`);
+  await page.waitForLoadState("networkidle");
+
+  // Tiap item check harus punya bukti sebelum periode boleh dinyatakan Effective —
+  // itulah gerbang yang dipasang saat item ditetapkan di muka.
+  const uploads = page.locator('input[type="file"][data-evidence="check"]');
+  const total = await uploads.count();
+
+  expect(total).toBeGreaterThan(0);
+
+  for (let index = 0; index < total; index += 1) {
+    await uploads.nth(index).setInputFiles(PHOTO);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(1200);
+  }
+
   await page.goto(`/monitoring/${id}`);
   await page.waitForLoadState("networkidle");
 

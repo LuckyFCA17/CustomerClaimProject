@@ -7,8 +7,16 @@ import type { Prisma } from "@/generated/prisma/client";
 import { readRequestContext, writeAuditLog } from "@/lib/audit";
 import { assertTransition } from "@/lib/claim-state";
 import { db } from "@/lib/db";
+import { formatDate } from "@/lib/format";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
-import { closingBlocker, monitoringProgress, planPeriods } from "@/lib/monitoring";
+import {
+  MONITORING_CHECK_ENTITY,
+  MONITORING_PERIOD_ENTITY,
+  closingBlocker,
+  missingCheckEvidence,
+  monitoringProgress,
+  planPeriods,
+} from "@/lib/monitoring";
 import { assertCan, type ClaimContext } from "@/lib/permissions";
 import { requireActor } from "@/lib/session";
 import { claimFolder, saveUpload, storage } from "@/lib/storage";
@@ -16,6 +24,7 @@ import {
   A3_BLOCKS,
   effectivenessSchema,
   improvementReportSchema,
+  monitoringResultSchema,
   startMonitoringSchema,
 } from "@/schemas/monitoring";
 import {
@@ -124,7 +133,7 @@ export async function startMonitoring(claimId: string, input: unknown): Promise<
     }
 
     const cycle = cycleOf(claim);
-    const { periodCount, intervalDays, note } = parsed.data;
+    const { periodCount, intervalDays, checkItems, note } = parsed.data;
 
     // Siklus baru setelah Not Effective memakai nomor periode dari satu lagi: kunci
     // uniknya (claimId, cycle, periodNo) sudah memisahkan siklus, jadi penomoran
@@ -156,6 +165,25 @@ export async function startMonitoring(claimId: string, input: unknown): Promise<
         })),
       });
 
+      // Item check ditetapkan sekali untuk siklus ini, lalu disalin sebagai baris
+      // penghubung ke tiap periode. Daftar yang sama pada setiap periode itulah yang
+      // membuat periode 1 dan periode 3 dapat dibandingkan — item yang berubah di
+      // tengah jalan akan membuat "membaik" tidak berarti apa-apa.
+      await tx.monitoringCheckItem.createMany({
+        data: checkItems.map((title, index) => ({ claimId, cycle, order: index + 1, title })),
+      });
+
+      const [createdPeriods, createdItems] = await Promise.all([
+        tx.monitoringPeriod.findMany({ where: { claimId, cycle }, select: { id: true } }),
+        tx.monitoringCheckItem.findMany({ where: { claimId, cycle }, select: { id: true } }),
+      ]);
+
+      await tx.monitoringCheck.createMany({
+        data: createdPeriods.flatMap((period) =>
+          createdItems.map((item) => ({ periodId: period.id, itemId: item.id })),
+        ),
+      });
+
       await tx.claim.update({ where: { id: claimId }, data: { status: "CAPA_MONITORING" } });
 
       await writeAuditLog(
@@ -172,6 +200,7 @@ export async function startMonitoring(claimId: string, input: unknown): Promise<
             cycle,
             periodCount,
             intervalDays,
+            checkItems,
             ...(note ? { comment: note } : {}),
           },
         },
@@ -191,7 +220,7 @@ export async function startMonitoring(claimId: string, input: unknown): Promise<
 
     return {
       ok: true,
-      message: `${periodCount} periode pemantauan dibuka untuk siklus ${cycle}.`,
+      message: `${periodCount} periode pemantauan dibuka untuk siklus ${cycle}, masing-masing dengan ${checkItems.length} item check.`,
     };
   } catch (error) {
     return failure(error);
@@ -235,12 +264,12 @@ export async function uploadMonitoringEvidence(formData: FormData): Promise<Acti
     const saved = await saveUpload({
       file,
       folder: claimFolder(claim.claimNo, claim.id),
-      entityType: "MonitoringPeriod",
+      entityType: MONITORING_PERIOD_ENTITY,
     });
 
     await db.attachment.create({
       data: {
-        entityType: "MonitoringPeriod",
+        entityType: MONITORING_PERIOD_ENTITY,
         entityId: period.id,
         claimId: claim.id,
         originalName: saved.originalName,
@@ -265,7 +294,15 @@ export async function deleteMonitoringEvidence(attachmentId: string): Promise<Ac
     const actor = await requireActor();
 
     const attachment = await db.attachment.findUnique({ where: { id: attachmentId } });
-    if (!attachment?.claimId || attachment.entityType !== "MonitoringPeriod") {
+
+    // Dua jenis evidence pemantauan, dijaga izin yang sama: berkas yang menempel pada
+    // periode, dan berkas yang menempel pada satu item check di dalamnya. Daftarnya
+    // dibatasi karena id-nya datang dari klien — tanpa saringan ini, action ini dapat
+    // dipakai membuang lampiran klaim atau evidence CPAR yang bukan urusannya.
+    if (
+      !attachment?.claimId ||
+      ![MONITORING_PERIOD_ENTITY, MONITORING_CHECK_ENTITY].includes(attachment.entityType)
+    ) {
       throw new NotFoundError("Evidence tidak ditemukan.");
     }
 
@@ -283,7 +320,209 @@ export async function deleteMonitoringEvidence(attachmentId: string): Promise<Ac
   }
 }
 
+/**
+ * Bukti untuk satu item check pada satu periode.
+ *
+ * Periodenya tidak diminta dari klien bersama item secara terpisah lalu dipercaya:
+ * keduanya harus bertemu pada satu baris `MonitoringCheck` yang memang ada, sehingga
+ * berkas tidak dapat dilampirkan ke item milik klaim lain dengan menukar salah satu id.
+ */
+export async function uploadCheckEvidence(formData: FormData): Promise<ActionResult> {
+  try {
+    const actor = await requireActor();
+
+    const periodId = String(formData.get("periodId") ?? "");
+    const itemId = String(formData.get("itemId") ?? "");
+    const file = formData.get("file");
+
+    if (!(file instanceof File) || file.size === 0) {
+      throw new ValidationError("Pilih berkas yang akan diunggah.");
+    }
+
+    const check = await db.monitoringCheck.findUnique({
+      where: { periodId_itemId: { periodId, itemId } },
+      include: {
+        item: { select: { title: true } },
+        period: { select: { id: true, claimId: true, periodNo: true, status: true } },
+      },
+    });
+
+    if (!check) throw new NotFoundError("Item check tidak ditemukan pada periode ini.");
+
+    const claim = await loadClaim(check.period.claimId);
+    assertCan(actor, "monitoring.evidence.upload", toContext(claim));
+
+    if (check.period.status !== "PENDING") {
+      throw new ForbiddenError(
+        `Periode ${check.period.periodNo} sudah dinilai, evidence tidak dapat ditambah lagi.`,
+        "monitoring.evidence.upload",
+      );
+    }
+
+    const saved = await saveUpload({
+      file,
+      folder: claimFolder(claim.claimNo, claim.id),
+      entityType: MONITORING_CHECK_ENTITY,
+    });
+
+    await db.attachment.create({
+      data: {
+        entityType: MONITORING_CHECK_ENTITY,
+        entityId: check.id,
+        claimId: claim.id,
+        originalName: saved.originalName,
+        caption: check.item.title,
+        mimeType: saved.mimeType,
+        size: saved.size,
+        path: saved.path,
+        uploadedById: actor.id,
+      },
+    });
+
+    revalidateMonitoring(claim.id);
+
+    return { ok: true, message: `${check.item.title} dilampirkan.` };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+// ─────────────────────── Angka hasil produksi & inspeksi ───────────────────────
+
+/**
+ * Menambah satu baris angka ke sebuah periode.
+ *
+ * Satu baris per tanggal pencatatan, bukan satu ringkasan per periode: frekuensinya
+ * ditentukan pabrik — harian, per shift, atau per lot — dan portal tidak memaksakan
+ * satu di antaranya. Tanggalnya pun tanggal produksi atau inspeksinya, bukan tanggal
+ * baris ini dibuat, sehingga angka yang dimasukkan terlambat tetap jatuh pada harinya.
+ */
+export async function addMonitoringResult(periodId: string, input: unknown): Promise<ActionResult> {
+  try {
+    const actor = await requireActor();
+
+    const period = await db.monitoringPeriod.findUnique({
+      where: { id: periodId },
+      select: { id: true, claimId: true, periodNo: true, status: true },
+    });
+
+    if (!period) throw new NotFoundError("Periode pemantauan tidak ditemukan.");
+
+    const claim = await loadClaim(period.claimId);
+    assertCan(actor, "monitoring.evidence.upload", toContext(claim));
+
+    const parsed = monitoringResultSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        message: "Periksa kembali angkanya.",
+        fieldErrors: flattenZodErrors(parsed.error),
+      };
+    }
+
+    // Periode yang sudah dinilai tidak menerima angka baru, dengan alasan yang sama
+    // seperti evidence: penilaiannya mengacu pada angka yang ada saat itu.
+    if (period.status !== "PENDING") {
+      throw new ForbiddenError(
+        `Periode ${period.periodNo} sudah dinilai, angkanya tidak dapat diubah lagi.`,
+        "monitoring.evidence.upload",
+      );
+    }
+
+    const { kind, recordedOn, quantity, okCount, ngCount } = parsed.data;
+    const note = (parsed.data.note ?? "").trim() || null;
+
+    await db.monitoringResult.create({
+      data: {
+        periodId: period.id,
+        claimId: claim.id,
+        kind,
+        recordedOn,
+        quantity,
+        okCount,
+        ngCount,
+        note,
+        recordedById: actor.id,
+      },
+    });
+
+    revalidateMonitoring(claim.id);
+
+    return { ok: true, message: `Baris ${formatDate(recordedOn)} tersimpan.` };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function deleteMonitoringResult(resultId: string): Promise<ActionResult> {
+  try {
+    const actor = await requireActor();
+
+    const result = await db.monitoringResult.findUnique({
+      where: { id: resultId },
+      include: { period: { select: { periodNo: true, status: true } } },
+    });
+
+    if (!result) throw new NotFoundError("Baris tidak ditemukan.");
+
+    const claim = await loadClaim(result.claimId);
+    assertCan(actor, "monitoring.evidence.upload", toContext(claim));
+
+    if (result.period.status !== "PENDING") {
+      throw new ForbiddenError(
+        `Periode ${result.period.periodNo} sudah dinilai, angkanya tidak dapat diubah lagi.`,
+        "monitoring.evidence.upload",
+      );
+    }
+
+    // Dihapus lunak, seperti seluruh baris berdata di portal ini: rekap yang pernah
+    // dibaca orang tetap dapat ditelusuri, dan angka tidak lenyap tanpa jejak.
+    await db.monitoringResult.update({
+      where: { id: resultId },
+      data: { deletedAt: new Date() },
+    });
+
+    revalidateMonitoring(result.claimId);
+
+    return { ok: true, message: "Baris dihapus." };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 // ─────────────────────── Penilaian efektivitas ───────────────────────
+
+/**
+ * Item check satu periode beserta jumlah berkasnya.
+ *
+ * Berkasnya dihitung dengan `findMany`, bukan `groupBy`: penyaring soft delete di
+ * `lib/db.ts` hanya ikut pada operasi baca yang terdaftar, dan `groupBy` bukan salah
+ * satunya — berkas yang sudah dihapus akan terhitung dan gerbangnya lolos atas bukti
+ * yang tidak ada lagi.
+ */
+async function loadCheckSlots(periodId: string) {
+  const checks = await db.monitoringCheck.findMany({
+    where: { periodId },
+    include: { item: { select: { title: true, order: true } } },
+  });
+
+  const files = await db.attachment.findMany({
+    where: {
+      entityType: MONITORING_CHECK_ENTITY,
+      entityId: { in: checks.map((check) => check.id) },
+    },
+    select: { entityId: true },
+  });
+
+  const counted = new Map<string, number>();
+  for (const file of files) {
+    counted.set(file.entityId, (counted.get(file.entityId) ?? 0) + 1);
+  }
+
+  return checks
+    .sort((a, b) => a.item.order - b.item.order)
+    .map((check) => ({ title: check.item.title, fileCount: counted.get(check.id) ?? 0 }));
+}
 
 /**
  * Menilai satu periode.
@@ -337,6 +576,21 @@ export async function setEffectiveness(periodId: string, input: unknown): Promis
 
     if (notEffective) {
       assertTransition(claim.status, "CPAR_REVISION", actor.roles);
+    } else {
+      // Effective ditahan selama masih ada item check tanpa bukti. Item itulah yang
+      // ditetapkan sendiri sebagai ukuran efektivitas saat pemantauan dibuka;
+      // menyatakan berhasil tanpa melampirkannya berarti menilai dari ingatan.
+      //
+      // Not Effective sengaja tidak ditahan: kegagalan tidak perlu dibuktikan dengan
+      // berkas yang justru tidak pernah berhasil dikumpulkan, dan menahannya hanya akan
+      // mengunci periode yang jelas-jelas gagal.
+      const missing = missingCheckEvidence(await loadCheckSlots(period.id));
+
+      if (missing.length > 0) {
+        throw new ValidationError(
+          `Periode ${period.periodNo} belum dapat dinyatakan Effective. Belum ada bukti untuk: ${missing.join("; ")}.`,
+        );
+      }
     }
 
     const requestContext = await readRequestContext();

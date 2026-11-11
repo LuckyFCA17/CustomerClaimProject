@@ -122,11 +122,15 @@ export async function loadMonitoringForPrint(claimId: string) {
 
   if (!cpar) notFound();
 
-  const [periods, report] = await Promise.all([
+  const [periods, checkItems, report] = await Promise.all([
     db.monitoringPeriod.findMany({
       where: { claimId, cycle: cpar.cycle },
       include: { filledBy: { select: { name: true, jobTitle: true } } },
       orderBy: { periodNo: "asc" },
+    }),
+    db.monitoringCheckItem.findMany({
+      where: { claimId, cycle: cpar.cycle },
+      orderBy: { order: "asc" },
     }),
     db.improvementReport.findFirst({
       where: { claimId, cycle: cpar.cycle },
@@ -135,7 +139,15 @@ export async function loadMonitoringForPrint(claimId: string) {
     }),
   ]);
 
-  return { cpar, claim: cpar.claim, periods, report };
+  // Angka hasil diambil lewat periode siklus ini, bukan lewat claimId saja: siklus lama
+  // punya angkanya sendiri, dan menggabungkannya akan membuat lembar cetak menyatakan
+  // perbaikan yang sebenarnya milik percobaan yang sudah gagal.
+  const results = await db.monitoringResult.findMany({
+    where: { periodId: { in: periods.map((period) => period.id) } },
+    orderBy: [{ recordedOn: "asc" }, { createdAt: "asc" }],
+  });
+
+  return { cpar, claim: cpar.claim, periods, checkItems, results, report };
 }
 
 /**

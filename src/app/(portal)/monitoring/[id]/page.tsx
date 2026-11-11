@@ -4,14 +4,20 @@ import { forbidden, notFound } from "next/navigation";
 import { FileText } from "lucide-react";
 
 import { ImprovementReportForm } from "@/components/monitoring/improvement-report-form";
-import { PeriodList, type PeriodView } from "@/components/monitoring/period-list";
+import { MonitoringRecap } from "@/components/monitoring/monitoring-recap";
+import { PeriodList, type PeriodCheck, type PeriodView } from "@/components/monitoring/period-list";
 import { StartMonitoring } from "@/components/monitoring/start-monitoring";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { StatusRail } from "@/components/shared/status-rail";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
-import { closingBlocker, monitoringProgress } from "@/lib/monitoring";
+import {
+  MONITORING_CHECK_ENTITY,
+  MONITORING_PERIOD_ENTITY,
+  closingBlocker,
+  monitoringProgress,
+} from "@/lib/monitoring";
 import { DOCUMENT_TITLE } from "@/lib/pdf";
 import { can, canViewClaim, type ClaimContext } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
@@ -112,14 +118,69 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
     }),
   ]);
 
-  const attachments = await db.attachment.findMany({
+  const periodIds = periods.map((period) => period.id);
+
+  const [attachments, checks, results] = await Promise.all([
+    db.attachment.findMany({
+      where: { entityType: MONITORING_PERIOD_ENTITY, entityId: { in: periodIds } },
+      include: { uploadedBy: { select: { name: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    db.monitoringCheck.findMany({
+      where: { periodId: { in: periodIds } },
+      include: { item: { select: { id: true, title: true, order: true } } },
+    }),
+    db.monitoringResult.findMany({
+      where: { periodId: { in: periodIds } },
+      include: { recordedBy: { select: { name: true } } },
+      orderBy: [{ recordedOn: "asc" }, { createdAt: "asc" }],
+    }),
+  ]);
+
+  // Berkas item check disaring juga dengan claimId: id barisnya datang dari basis data,
+  // tetapi penyaring ini yang menjaga agar rekap satu klaim tidak pernah memanggil
+  // berkas klaim lain seandainya ada id yang bocor ke query.
+  const checkFiles = await db.attachment.findMany({
     where: {
-      entityType: "MonitoringPeriod",
-      entityId: { in: periods.map((period) => period.id) },
+      entityType: MONITORING_CHECK_ENTITY,
+      entityId: { in: checks.map((check) => check.id) },
+      claimId: id,
     },
     include: { uploadedBy: { select: { name: true } } },
     orderBy: { createdAt: "asc" },
   });
+
+  const filesByCheck = new Map<string, PeriodCheck["files"][number][]>();
+  for (const file of checkFiles) {
+    const list = filesByCheck.get(file.entityId) ?? [];
+    list.push({
+      id: file.id,
+      originalName: file.originalName,
+      url: `/api/files/${file.path}`,
+      uploadedByName: file.uploadedBy.name,
+      uploadedAt: file.createdAt,
+    });
+    filesByCheck.set(file.entityId, list);
+  }
+
+  const checksByPeriod = new Map<string, PeriodCheck[]>();
+  for (const check of [...checks].sort((a, b) => a.item.order - b.item.order)) {
+    const list = checksByPeriod.get(check.periodId) ?? [];
+    list.push({
+      itemId: check.itemId,
+      order: check.item.order,
+      title: check.item.title,
+      files: filesByCheck.get(check.id) ?? [],
+    });
+    checksByPeriod.set(check.periodId, list);
+  }
+
+  const resultsByPeriod = new Map<string, (typeof results)[number][]>();
+  for (const row of results) {
+    const list = resultsByPeriod.get(row.periodId) ?? [];
+    list.push(row);
+    resultsByPeriod.set(row.periodId, list);
+  }
 
   const evidenceByPeriod = new Map<string, PeriodView["evidence"][number][]>();
   for (const file of attachments) {
@@ -143,12 +204,28 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
     filledByName: period.filledBy?.name ?? null,
     filledAt: period.filledAt,
     evidence: evidenceByPeriod.get(period.id) ?? [],
+    checks: checksByPeriod.get(period.id) ?? [],
+    results: (resultsByPeriod.get(period.id) ?? []).map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      recordedOn: row.recordedOn,
+      quantity: row.quantity,
+      okCount: row.okCount,
+      ngCount: row.ngCount,
+      note: row.note,
+      recordedByName: row.recordedBy.name,
+    })),
   });
 
   const currentPeriods = periods.filter((period) => period.cycle === cycle).map(toView);
   const earlierCycles = [...new Set(periods.filter((p) => p.cycle < cycle).map((p) => p.cycle))].sort(
     (a, b) => b - a,
   );
+
+  const currentPeriodIds = new Set(
+    periods.filter((period) => period.cycle === cycle).map((period) => period.id),
+  );
+  const currentResults = results.filter((row) => currentPeriodIds.has(row.periodId));
 
   const progress = monitoringProgress(periods, cycle);
   const blocker = closingBlocker(progress);
@@ -198,9 +275,9 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
           <CardHeader>
             <CardTitle>Mulai pemantauan</CardTitle>
             <CardDescription>
-              Tentukan berapa periode efektivitas akan diukur dan berapa jarak antar periode.
-              Tenggat dihitung dengan hari kerja, jadi tidak ada periode yang jatuh pada akhir
-              pekan.
+              Tentukan berapa periode efektivitas akan diukur, jaraknya, dan apa saja yang
+              diperiksa tiap periode. Tenggat dihitung dengan hari kerja, jadi tidak ada periode
+              yang jatuh pada akhir pekan.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -222,6 +299,21 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
           </CardHeader>
           <CardContent>
             <PeriodList periods={currentPeriods} canUpload={canUpload} canAssess={canAssess} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {currentResults.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Rekap hasil produksi &amp; inspeksi</CardTitle>
+            <CardDescription>
+              Seluruh angka siklus {cycle}, digabung per tanggal kalender. Tabelnya yang memuat
+              angka tepatnya; grafiknya menjawab pertanyaan yang berbeda — apakah NG-nya menurun.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MonitoringRecap rows={currentResults} />
           </CardContent>
         </Card>
       ) : null}

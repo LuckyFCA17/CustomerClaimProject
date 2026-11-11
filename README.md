@@ -1032,6 +1032,76 @@ Definisi "apa saja yang dianggap evidence" hidup di satu tempat, `server/evidenc
 dipakai bersama oleh tabel evidence pending di dasbor dan oleh gerbang ini — supaya menambah satu
 sumber evidence tidak pernah mengubah hanya separuh portal.
 
+## Pemantauan CAPA: apa yang diukur, dan angkanya
+
+Modul 4 menanyakan satu hal — apakah countermeasure benar-benar bekerja — dan menjawabnya dengan
+dua jenis masukan yang saling melengkapi.
+
+### Item yang dipantau
+
+Ditetapkan **sekali, di muka**, bersama jadwal periode (`startMonitoring`), lalu disalin sebagai
+baris `MonitoringCheck` ke setiap periode. Dua akibatnya disengaja:
+
+- **Periode dapat dibandingkan.** Item yang sama pada periode 1 dan periode 3 membuat "membaik"
+  punya arti. Daftar yang boleh berubah di tengah jalan membuat perbandingan itu hilang.
+- **Effective ditahan selama masih ada item tanpa bukti.** Item inilah yang ditetapkan sendiri
+  sebagai ukuran efektivitasnya; menyatakan berhasil tanpa melampirkannya berarti menilai dari
+  ingatan. **Not Effective tidak ditahan** — kegagalan tidak perlu dibuktikan dengan berkas yang
+  justru tidak pernah berhasil dikumpulkan.
+
+Terpenuhi atau belum ditentukan dari **ada tidaknya berkas**, bukan centang terpisah — aturan yang
+sama dengan evidence CPAR. Itemnya terikat siklus: siklus baru setelah Not Effective menetapkan
+itemnya sendiri, karena countermeasure-nya pun sudah berubah.
+
+### Angka produksi dan inspeksi
+
+Tiap periode menampung dua tabel yang barisnya bertambah sesuai frekuensi pencatatan di pabrik —
+harian, per shift, atau per lot. Portal tidak memaksakan salah satunya.
+
+| | Tanggal | Jumlah | OK | NG |
+| --- | --- | --- | --- | --- |
+| **Produksi** | tanggal produksi | jumlah produksi | | |
+| **Inspeksi** | tanggal inspeksi | jumlah diperiksa | | |
+
+Dua aturan pada angkanya:
+
+1. **`OK + NG` tidak boleh melebihi `quantity`.** Yang dinilai tidak mungkin lebih banyak daripada
+   yang ada, dan angka seperti itu selalu salah ketik. Boleh **kurang** — sisanya berarti belum
+   diperiksa, dan itu keadaan wajar di tengah periode.
+2. **Bagian NG dihitung dari `OK + NG`, bukan dari `quantity`.** Yang belum diperiksa belum
+   diketahui baik atau tidak; menghitungnya sebagai baik akan menurunkan angka NG hanya karena
+   pemeriksaannya tertinggal — persis ketika angka itu paling tidak boleh dipercaya.
+
+Tanggalnya adalah tanggal produksi atau inspeksinya, bukan tanggal barisnya dibuat, sehingga angka
+yang dimasukkan terlambat tetap jatuh pada harinya.
+
+### Rekap: tabel kalender dan dua grafik
+
+`calendarRows()` menggabungkan seluruh baris siklus berjalan **per tanggal kalender Jakarta** — dua
+shift pada hari yang sama adalah satu hari, bukan dua. Tanggal tanpa catatan tidak diisi baris
+hampa: pada rentang sebulan, deretan nol akan menenggelamkan hari yang benar-benar diukur.
+
+Grafiknya **dua, bukan satu dengan dua sumbu**:
+
+| Grafik | Menjawab |
+| --- | --- |
+| Bagian NG per tanggal (garis) | apakah cacatnya menurun |
+| Jumlah per tanggal (batang) | seberapa besar dasarnya — 1 NG dari 10 bukan 1 dari 10.000 |
+
+Dua skala pada satu sumbu adalah kesalahan grafik yang paling sering terjadi: garis yang turun
+tampak naik tergantung mana yang kebetulan dipasang di kiri. Keduanya berbagi skala waktu yang
+sama, jadi tetap terbaca bersisian.
+
+Ditulis sebagai **SVG langsung di komponen server**, tanpa pustaka grafik: aturan proyek hanya
+mengizinkan shadcn/ui + Tailwind, dan lembar cetak harus memuat gambar yang sama tanpa menunggu
+JavaScript apa pun berjalan. Warnanya biru `#1d4ed8` (produksi) dan jingga `#d97428` (inspeksi) —
+pasangan yang lolos pemeriksaan keterbacaan buta warna (ΔE 31,8 protanopia, 30,9 tritanopia) dan
+keduanya berkontras cukup di atas kartu putih. Identitas seri tidak pernah hanya warna: tiap
+grafik punya legenda, dan tabelnya memuat angka yang tepat.
+
+Lembar cetak monitoring ikut memuat daftar item dan tabel per tanggal beserta totalnya, dan tetap
+satu halaman A4.
+
 ## State machine klaim
 
 `src/lib/claim-state.ts` memuat satu-satunya daftar perpindahan status yang sah. Perpindahan

@@ -23,6 +23,13 @@ export function formatDate(value: Date | string | null | undefined): string {
   });
 }
 
+/** Nama hari menurut kalender Jakarta — "Sen", "Sel", … */
+export function formatWeekday(value: Date | string | null | undefined): string {
+  if (!value) return "—";
+
+  return new Date(value).toLocaleDateString("id-ID", { weekday: "short", timeZone: JAKARTA });
+}
+
 export function formatDateTime(value: Date | string | null | undefined): string {
   if (!value) return "—";
 

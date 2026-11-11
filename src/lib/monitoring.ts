@@ -1,5 +1,5 @@
-import type { MonitoringStatus } from "@/generated/prisma/enums";
-import { addWorkingDays, endOfWorkingDay } from "@/lib/dates";
+import type { MonitoringResultKind, MonitoringStatus } from "@/generated/prisma/enums";
+import { addWorkingDays, endOfWorkingDay, toJakartaDateInput } from "@/lib/dates";
 
 /**
  * Aturan pemantauan efektivitas CAPA (§6 Modul 4).
@@ -112,4 +112,187 @@ export function closingBlocker(progress: MonitoringProgress): string | null {
   }
 
   return null;
+}
+
+// ─────────────────────── Item aktivitas yang dipantau ───────────────────────
+
+/**
+ * `Attachment.entityType` untuk bukti satu item check pada satu periode.
+ *
+ * Dibedakan dari "MonitoringPeriod", yaitu berkas yang berlaku untuk periode secara
+ * keseluruhan. Keduanya hidup berdampingan: yang satu menjawab "bukti bahwa item ini
+ * diperiksa pada periode ini", yang lain "berkas pendukung periode ini".
+ */
+export const MONITORING_CHECK_ENTITY = "MonitoringCheck";
+
+/** `Attachment.entityType` untuk evidence periode — dipakai sejak Modul 4 dibuka. */
+export const MONITORING_PERIOD_ENTITY = "MonitoringPeriod";
+
+export const CHECK_ITEM_MIN_LENGTH = 5;
+export const CHECK_ITEM_MAX_LENGTH = 200;
+export const CHECK_ITEM_COUNT_MIN = 1;
+export const CHECK_ITEM_COUNT_MAX = 12;
+
+export interface CheckSlot {
+  readonly title: string;
+  readonly fileCount: number;
+}
+
+/**
+ * Item check yang belum punya bukti, sebagai kalimat siap tampil.
+ *
+ * Dipakai menahan penilaian Effective: menyatakan countermeasure berhasil sementara
+ * item yang justru ditetapkan sebagai ukurannya belum dilampirkan berarti menilai dari
+ * ingatan. Not Effective tidak ditahan — kegagalan tidak perlu dibuktikan dengan berkas
+ * yang memang tidak pernah berhasil dikumpulkan.
+ */
+export function missingCheckEvidence(slots: readonly CheckSlot[]): readonly string[] {
+  return slots
+    .filter((slot) => slot.fileCount === 0)
+    .map((slot) => {
+      const title = slot.title.trim() || "(tanpa judul)";
+
+      return title.length > 60 ? `${title.slice(0, 57).trimEnd()}…` : title;
+    });
+}
+
+// ─────────────────────── Angka hasil pemantauan ───────────────────────
+
+export const RESULT_KINDS = ["PRODUCTION", "INSPECTION"] as const satisfies
+  readonly MonitoringResultKind[];
+
+export const RESULT_KIND_LABEL: Record<MonitoringResultKind, string> = {
+  PRODUCTION: "Monitoring hasil produksi",
+  INSPECTION: "Monitoring hasil inspeksi",
+};
+
+export const RESULT_KIND_SHORT: Record<MonitoringResultKind, string> = {
+  PRODUCTION: "Produksi",
+  INSPECTION: "Inspeksi",
+};
+
+export const RESULT_DATE_LABEL: Record<MonitoringResultKind, string> = {
+  PRODUCTION: "Tanggal produksi",
+  INSPECTION: "Tanggal inspeksi",
+};
+
+/**
+ * Judul kolom jumlah berbeda antara kedua tabel.
+ *
+ * Pada produksi yang dihitung adalah keluaran line; pada inspeksi yang diperiksa. Label
+ * yang seragam akan membuat tabel inspeksi terbaca sebagai salinan tabel produksi, dan
+ * angkanya pun akan diisi seperti salinan.
+ */
+export const RESULT_QUANTITY_LABEL: Record<MonitoringResultKind, string> = {
+  PRODUCTION: "Jumlah produksi",
+  INSPECTION: "Jumlah diperiksa",
+};
+
+export const RESULT_QUANTITY_MAX = 1_000_000;
+
+export interface ResultRow {
+  readonly kind: MonitoringResultKind;
+  readonly recordedOn: Date;
+  readonly quantity: number;
+  readonly okCount: number;
+  readonly ngCount: number;
+}
+
+export interface ResultTotals {
+  readonly rows: number;
+  readonly quantity: number;
+  readonly okCount: number;
+  readonly ngCount: number;
+  /**
+   * Bagian NG dari yang sudah dinilai (0–1), atau null bila belum ada yang dinilai.
+   *
+   * Pembaginya OK + NG, bukan `quantity`: yang belum diperiksa belum diketahui baik atau
+   * tidak, dan menghitungnya sebagai baik akan menurunkan angka NG hanya karena
+   * pemeriksaannya tertinggal.
+   */
+  readonly ngRate: number | null;
+}
+
+const EMPTY_TOTALS: ResultTotals = {
+  rows: 0,
+  quantity: 0,
+  okCount: 0,
+  ngCount: 0,
+  ngRate: null,
+};
+
+export function ngRate(okCount: number, ngCount: number): number | null {
+  const judged = okCount + ngCount;
+
+  return judged > 0 ? ngCount / judged : null;
+}
+
+export function totalResults(rows: readonly ResultRow[]): ResultTotals {
+  if (rows.length === 0) return EMPTY_TOTALS;
+
+  const quantity = rows.reduce((sum, row) => sum + row.quantity, 0);
+  const okCount = rows.reduce((sum, row) => sum + row.okCount, 0);
+  const ngCount = rows.reduce((sum, row) => sum + row.ngCount, 0);
+
+  return { rows: rows.length, quantity, okCount, ngCount, ngRate: ngRate(okCount, ngCount) };
+}
+
+export function resultsOfKind(
+  rows: readonly ResultRow[],
+  kind: MonitoringResultKind,
+): readonly ResultRow[] {
+  return rows.filter((row) => row.kind === kind);
+}
+
+export interface CalendarRow {
+  /** Tanggal kalender Jakarta, YYYY-MM-DD — juga kunci pengurutannya. */
+  readonly day: string;
+  /** Hari ke-berapa sejak epoch, untuk menempatkan titik pada sumbu waktu grafik. */
+  readonly dayNumber: number;
+  readonly date: Date;
+  readonly production: ResultTotals;
+  readonly inspection: ResultTotals;
+}
+
+/** Tengah hari Jakarta pada tanggal tersebut — aman dari pembulatan zona ke mana pun. */
+function noonOf(day: string): Date {
+  const [year, month, date] = day.split("-").map(Number);
+
+  return new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, date ?? 1, 5, 0, 0));
+}
+
+function dayNumberOf(day: string): number {
+  return Math.round(noonOf(day).getTime() / 86_400_000);
+}
+
+/**
+ * Rekap per tanggal kalender, menggabungkan kedua jenis pada baris yang sama.
+ *
+ * Satu baris per tanggal, bukan per catatan: satu hari dapat memiliki beberapa baris
+ * produksi (mis. dua shift), dan membacanya sebagai dua hari akan membuat grafik
+ * menunjukkan kenaikan frekuensi yang tidak pernah terjadi.
+ *
+ * Hanya tanggal yang punya catatan yang muncul. Tanggal kosong di antaranya tidak diisi
+ * baris hampa — pada rentang satu bulan, deretan nol akan menenggelamkan hari yang
+ * benar-benar diukur, dan jarak antar titik pada grafik sudah memperlihatkan jedanya.
+ */
+export function calendarRows(rows: readonly ResultRow[]): readonly CalendarRow[] {
+  const byDay = new Map<string, ResultRow[]>();
+
+  for (const row of rows) {
+    const day = toJakartaDateInput(row.recordedOn);
+    const list = byDay.get(day) ?? [];
+    list.push(row);
+    byDay.set(day, list);
+  }
+
+  return [...byDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, entries]) => ({
+      day,
+      dayNumber: dayNumberOf(day),
+      date: noonOf(day),
+      production: totalResults(resultsOfKind(entries, "PRODUCTION")),
+      inspection: totalResults(resultsOfKind(entries, "INSPECTION")),
+    }));
 }

@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import type { MonitoringStatus } from "@/generated/prisma/enums";
+import type { MonitoringResultKind, MonitoringStatus } from "@/generated/prisma/enums";
 import { isWorkingDay, toJakartaDateInput } from "@/lib/dates";
 import {
   type PeriodState,
+  type ResultRow,
+  calendarRows,
   closingBlocker,
+  missingCheckEvidence,
   monitoringProgress,
+  ngRate,
   planPeriods,
+  totalResults,
 } from "@/lib/monitoring";
 
 /**
@@ -149,5 +154,137 @@ describe("closingBlocker", () => {
 
   it("melepas penutupan ketika seluruh periode efektif", () => {
     expect(closingBlocker(monitoringProgress([period(1, "EFFECTIVE")], 1))).toBeNull();
+  });
+});
+
+describe("missingCheckEvidence", () => {
+  it("menyebut item yang belum punya berkas, dalam urutan masuknya", () => {
+    const missing = missingCheckEvidence([
+      { title: "Inspeksi 100% kaki pengunci", fileCount: 2 },
+      { title: "Catatan tekanan holding", fileCount: 0 },
+      { title: "Hasil audit proses", fileCount: 0 },
+    ]);
+
+    expect(missing).toEqual(["Catatan tekanan holding", "Hasil audit proses"]);
+  });
+
+  it("memotong judul yang panjang supaya pesannya tetap terbaca", () => {
+    // Pesan penolakan memuat seluruh item yang kurang; sepuluh kalimat panjang akan
+    // menenggelamkan maksudnya.
+    const [only] = missingCheckEvidence([{ title: "A".repeat(100), fileCount: 0 }]);
+
+    expect(only).toHaveLength(58);
+    expect(only?.endsWith("…")).toBe(true);
+  });
+
+  it("tidak menyebut apa pun ketika semuanya sudah berbukti", () => {
+    expect(missingCheckEvidence([{ title: "Inspeksi", fileCount: 1 }])).toEqual([]);
+  });
+});
+
+describe("angka hasil pemantauan", () => {
+  const row = (
+    kind: MonitoringResultKind,
+    day: string,
+    quantity: number,
+    okCount: number,
+    ngCount: number,
+  ): ResultRow => ({
+    kind,
+    // Pukul 09.00 WIB; yang diuji pengelompokan per tanggal Jakarta, bukan per UTC.
+    recordedOn: new Date(`${day}T02:00:00Z`),
+    quantity,
+    okCount,
+    ngCount,
+  });
+
+  it("menghitung bagian NG dari yang dinilai, bukan dari yang diproduksi", () => {
+    // 500 diproduksi, baru 100 diperiksa, 2 di antaranya NG. Membaginya dengan 500 akan
+    // melaporkan 0,4% — menurun hanya karena pemeriksaannya tertinggal.
+    expect(ngRate(98, 2)).toBeCloseTo(0.02);
+    expect(totalResults([row("PRODUCTION", "2026-11-16", 500, 98, 2)]).ngRate).toBeCloseTo(0.02);
+  });
+
+  it("tidak mengarang angka ketika belum ada yang dinilai", () => {
+    expect(ngRate(0, 0)).toBeNull();
+    expect(totalResults([row("PRODUCTION", "2026-11-16", 500, 0, 0)]).ngRate).toBeNull();
+    expect(totalResults([]).ngRate).toBeNull();
+  });
+
+  it("menjumlahkan seluruh baris", () => {
+    const totals = totalResults([
+      row("PRODUCTION", "2026-11-16", 500, 498, 2),
+      row("PRODUCTION", "2026-11-17", 300, 299, 1),
+    ]);
+
+    expect(totals).toMatchObject({ rows: 2, quantity: 800, okCount: 797, ngCount: 3 });
+  });
+});
+
+describe("calendarRows", () => {
+  const row = (
+    kind: MonitoringResultKind,
+    iso: string,
+    quantity: number,
+    okCount: number,
+    ngCount: number,
+  ): ResultRow => ({ kind, recordedOn: new Date(iso), quantity, okCount, ngCount });
+
+  it("menggabungkan beberapa catatan pada tanggal yang sama menjadi satu baris", () => {
+    // Dua shift pada hari yang sama adalah satu hari. Membacanya sebagai dua akan
+    // membuat grafik menunjukkan frekuensi yang tidak pernah terjadi.
+    const days = calendarRows([
+      row("PRODUCTION", "2026-11-16T02:00:00Z", 300, 299, 1),
+      row("PRODUCTION", "2026-11-16T09:00:00Z", 200, 199, 1),
+    ]);
+
+    expect(days).toHaveLength(1);
+    expect(days[0]?.production).toMatchObject({ rows: 2, quantity: 500, ngCount: 2 });
+  });
+
+  it("menyandingkan produksi dan inspeksi pada baris tanggal yang sama", () => {
+    const days = calendarRows([
+      row("PRODUCTION", "2026-11-16T02:00:00Z", 500, 498, 2),
+      row("INSPECTION", "2026-11-16T07:00:00Z", 120, 120, 0),
+    ]);
+
+    expect(days).toHaveLength(1);
+    expect(days[0]?.production.quantity).toBe(500);
+    expect(days[0]?.inspection.quantity).toBe(120);
+  });
+
+  it("memakai tanggal Jakarta, bukan UTC", () => {
+    // 16 Nov pukul 23.00 WIB masih 16 Nov bagi yang mencatatnya, walau di UTC sudah
+    // lewat tengah malam.
+    const days = calendarRows([row("PRODUCTION", "2026-11-16T16:00:00Z", 100, 100, 0)]);
+
+    expect(days[0]?.day).toBe("2026-11-16");
+  });
+
+  it("mengurutkan menurut tanggal, bukan urutan masukan", () => {
+    const days = calendarRows([
+      row("PRODUCTION", "2026-11-18T02:00:00Z", 100, 100, 0),
+      row("PRODUCTION", "2026-11-16T02:00:00Z", 100, 100, 0),
+    ]);
+
+    expect(days.map((day) => day.day)).toEqual(["2026-11-16", "2026-11-18"]);
+  });
+
+  it("memberi jarak sebenarnya antar tanggal, supaya jeda terlihat di grafik", () => {
+    const days = calendarRows([
+      row("PRODUCTION", "2026-11-16T02:00:00Z", 100, 100, 0),
+      row("PRODUCTION", "2026-11-26T02:00:00Z", 100, 100, 0),
+    ]);
+
+    expect((days[1]?.dayNumber ?? 0) - (days[0]?.dayNumber ?? 0)).toBe(10);
+  });
+
+  it("tidak mengarang baris untuk tanggal yang tidak punya catatan", () => {
+    const days = calendarRows([
+      row("PRODUCTION", "2026-11-16T02:00:00Z", 100, 100, 0),
+      row("PRODUCTION", "2026-11-20T02:00:00Z", 100, 100, 0),
+    ]);
+
+    expect(days).toHaveLength(2);
   });
 });

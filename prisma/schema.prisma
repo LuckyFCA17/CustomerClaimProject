@@ -112,6 +112,12 @@ enum MonitoringStatus {
   NOT_EFFECTIVE
 }
 
+/// Dua jenis angka yang dicatat selama pemantauan: keluaran line, dan hasil pemeriksaan.
+enum MonitoringResultKind {
+  PRODUCTION
+  INSPECTION
+}
+
 enum DocumentKind {
   BAD_NEWS
   QUICK_INFO
@@ -204,6 +210,7 @@ model User {
   sections        CparSection[]
   documentRequests CparInitialDocument[] @relation("InitialDocumentPic")
   monitoringFills MonitoringPeriod[]  @relation("MonitoringFilledBy")
+  monitoringRows  MonitoringResult[]  @relation("MonitoringResultBy")
   reports         ImprovementReport[] @relation("ReportSubmittedBy")
 
   createdAt DateTime  @default(now())
@@ -397,6 +404,8 @@ model Claim {
   parts         ClaimPart[]
   cpar          Cpar?
   monitoring    MonitoringPeriod[]
+  checkItems    MonitoringCheckItem[]
+  results       MonitoringResult[]
   reports       ImprovementReport[]
   notifications Notification[]
   documents     GeneratedDocument[]
@@ -573,6 +582,9 @@ model MonitoringPeriod {
   filledBy   User?            @relation("MonitoringFilledBy", fields: [filledById], references: [id])
   filledAt   DateTime?
 
+  checks  MonitoringCheck[]
+  results MonitoringResult[]
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -580,6 +592,88 @@ model MonitoringPeriod {
   @@unique([claimId, cycle, periodNo])
   @@index([claimId, status])
   @@index([dueDate])
+}
+
+/// Item aktivitas yang dipantau, ditetapkan sekali saat pemantauan dibuka.
+///
+/// Inilah yang dibuktikan tiap periode: "apa yang diperiksa" ditulis di muka, sebelum
+/// ada hasilnya, supaya penilaian efektivitas tidak menjadi pencarian bukti yang
+/// kebetulan tersedia. Terikat siklus — siklus baru setelah Not Effective menetapkan
+/// itemnya sendiri, karena countermeasure-nya pun sudah berubah.
+model MonitoringCheckItem {
+  id      String @id @default(cuid())
+  claimId String
+  claim   Claim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  cycle   Int    @default(1)
+
+  /// Urutan tampil; nomornya ikut tercetak di lembar monitoring.
+  order Int
+  title String
+
+  checks MonitoringCheck[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([claimId, cycle])
+}
+
+/// Satu item yang harus dibuktikan pada satu periode.
+///
+/// Baris penghubung, bukan centang: terpenuhi atau belum ditentukan dari ada tidaknya
+/// berkas yang menempel padanya (entityType "MonitoringCheck"), sama seperti evidence
+/// CPAR. Tanda "sudah selesai" yang dapat diisi tanpa berkas akan dipakai menutup
+/// periode yang sebenarnya belum punya bukti apa pun.
+model MonitoringCheck {
+  id       String              @id @default(cuid())
+  periodId String
+  period   MonitoringPeriod    @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  itemId   String
+  item     MonitoringCheckItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([periodId, itemId])
+  @@index([itemId])
+}
+
+/// Satu baris angka hasil produksi atau inspeksi di dalam satu periode.
+///
+/// Barisnya per tanggal, bukan satu ringkasan per periode: pertanyaan yang dijawab
+/// pemantauan adalah "apakah cacatnya berhenti muncul", dan itu hanya terbaca dari
+/// deretan tanggal — satu angka gabungan menyembunyikan satu hari buruk di antara
+/// sembilan hari baik.
+///
+/// `quantity` adalah jumlah yang diproduksi atau diperiksa, `okCount` + `ngCount` yang
+/// sudah dinilai. Keduanya boleh berbeda (sisanya belum dinilai), tetapi yang dinilai
+/// tidak pernah boleh melebihi yang ada.
+model MonitoringResult {
+  id       String               @id @default(cuid())
+  periodId String
+  period   MonitoringPeriod     @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  /// Denormalisasi agar pengecekan izin dan rekap lintas periode tidak perlu join berantai.
+  claimId  String
+  claim    Claim                @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  kind     MonitoringResultKind
+
+  /// Tanggal produksi atau inspeksinya, bukan tanggal pencatatan.
+  recordedOn DateTime
+  quantity   Int
+  okCount    Int
+  ngCount    Int
+  note       String?
+
+  recordedById String
+  recordedBy   User   @relation("MonitoringResultBy", fields: [recordedById], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([periodId, kind, recordedOn])
+  @@index([claimId, recordedOn])
 }
 
 model ImprovementReport {

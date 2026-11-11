@@ -13,6 +13,7 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { ResultsEditor, type ResultRowView } from "@/components/monitoring/results-editor";
 import { submitUpload } from "@/components/shared/submit-upload";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -23,6 +24,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import {
   deleteMonitoringEvidence,
   setEffectiveness,
+  uploadCheckEvidence,
   uploadMonitoringEvidence,
 } from "@/server/actions/monitoring";
 
@@ -34,6 +36,14 @@ export interface PeriodEvidence {
   readonly uploadedAt: Date;
 }
 
+/** Satu item yang dipantau, pada satu periode, beserta buktinya. */
+export interface PeriodCheck {
+  readonly itemId: string;
+  readonly order: number;
+  readonly title: string;
+  readonly files: readonly PeriodEvidence[];
+}
+
 export interface PeriodView {
   readonly id: string;
   readonly periodNo: number;
@@ -43,6 +53,8 @@ export interface PeriodView {
   readonly filledByName: string | null;
   readonly filledAt: Date | null;
   readonly evidence: readonly PeriodEvidence[];
+  readonly checks: readonly PeriodCheck[];
+  readonly results: readonly ResultRowView[];
 }
 
 /**
@@ -106,6 +118,7 @@ function PeriodCard({
   const pending = period.status === "PENDING";
   const overdue = pending && period.dueDate < new Date();
   const tone = TONE[period.status];
+  const outstandingChecks = period.checks.filter((check) => check.files.length === 0).length;
 
   async function upload(file: File) {
     setUploading(true);
@@ -181,8 +194,53 @@ function PeriodCard({
       </header>
 
       <div className="space-y-4 px-4 py-3">
-        <div className="space-y-2">
-          <h4 className="text-xs uppercase tracking-wide text-muted-foreground">Evidence</h4>
+        {period.checks.length > 0 ? (
+          <div className="space-y-2">
+            <h4 className="text-xs uppercase tracking-wide text-muted-foreground">
+              Item yang dipantau
+            </h4>
+
+            <ul className="space-y-2">
+              {period.checks.map((check) => (
+                <li key={check.itemId}>
+                  <CheckRow
+                    periodId={period.id}
+                    check={check}
+                    canUpload={canUpload && pending}
+                    onChanged={() => router.refresh()}
+                  />
+                </li>
+              ))}
+            </ul>
+
+            {pending && outstandingChecks > 0 ? (
+              <p className="text-xs text-[var(--status-pending)]">
+                {outstandingChecks} dari {period.checks.length} item belum ada buktinya. Periode
+                tidak dapat dinyatakan Effective selama masih ada yang kosong.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="space-y-4 border-t border-nid-border pt-3">
+          <ResultsEditor
+            periodId={period.id}
+            kind="PRODUCTION"
+            rows={period.results.filter((row) => row.kind === "PRODUCTION")}
+            canEdit={canUpload && pending}
+          />
+          <ResultsEditor
+            periodId={period.id}
+            kind="INSPECTION"
+            rows={period.results.filter((row) => row.kind === "INSPECTION")}
+            canEdit={canUpload && pending}
+          />
+        </div>
+
+        <div className="space-y-2 border-t border-nid-border pt-3">
+          <h4 className="text-xs uppercase tracking-wide text-muted-foreground">
+            Evidence lain periode ini
+          </h4>
 
           {period.evidence.length > 0 ? (
             <ul className="divide-y divide-nid-border rounded-lg border border-nid-border">
@@ -366,5 +424,137 @@ function PeriodCard({
         ) : null}
       </div>
     </article>
+  );
+}
+
+/**
+ * Satu item yang dipantau beserta berkasnya.
+ *
+ * Terpenuhi atau belum ditentukan dari ada tidaknya berkas, bukan dari centang
+ * terpisah — sama seperti evidence CPAR. Centang yang dapat diisi tanpa berkas akan
+ * dipakai menutup item yang sebenarnya masih kosong, dan itulah justru item yang
+ * menentukan apakah periode boleh dinyatakan Effective.
+ */
+function CheckRow({
+  periodId,
+  check,
+  canUpload,
+  onChanged,
+}: {
+  periodId: string;
+  check: PeriodCheck;
+  canUpload: boolean;
+  onChanged: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [isDeleting, startDelete] = useTransition();
+
+  const fulfilled = check.files.length > 0;
+
+  async function upload(file: File) {
+    setUploading(true);
+
+    try {
+      const sent = await submitUpload(
+        file,
+        (chosen) => {
+          const formData = new FormData();
+          formData.set("periodId", periodId);
+          formData.set("itemId", check.itemId);
+          formData.set("file", chosen);
+          return formData;
+        },
+        uploadCheckEvidence,
+      );
+
+      if (sent) onChanged();
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-nid-border px-3 py-2">
+      <div className="flex items-start gap-2.5">
+        {fulfilled ? (
+          <CheckCircle2 aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--status-closed)]" />
+        ) : (
+          <CircleDashed aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        )}
+
+        <p className="min-w-0 flex-1 text-sm break-words">
+          <span className="tabular text-muted-foreground">{check.order}.</span> {check.title}
+        </p>
+      </div>
+
+      {check.files.length > 0 ? (
+        <ul className="mt-1.5 space-y-1 pl-6.5">
+          {check.files.map((file) => (
+            <li key={file.id} className="flex items-center gap-2">
+              <FileUp aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <a
+                href={file.url}
+                target="_blank"
+                rel="noopener"
+                className="min-w-0 truncate text-xs text-nid-orange-700 hover:underline"
+              >
+                {file.originalName}
+              </a>
+              <span className="shrink-0 text-[11px] text-muted-foreground">
+                {file.uploadedByName}
+              </span>
+
+              {canUpload ? (
+                <button
+                  type="button"
+                  aria-label={`Hapus ${file.originalName}`}
+                  disabled={isDeleting}
+                  onClick={() =>
+                    startDelete(async () => {
+                      const outcome = await deleteMonitoringEvidence(file.id);
+                      if (outcome.ok) onChanged();
+                      else toast.error("Hapus berkas gagal", { description: outcome.message });
+                    })
+                  }
+                  className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary"
+                >
+                  <Trash2 aria-hidden className="size-3.5" />
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {canUpload ? (
+        <div className="mt-1.5 pl-6.5">
+          <input
+            ref={fileRef}
+            type="file"
+            data-evidence="check"
+            accept="image/jpeg,image/png,image/webp,application/pdf"
+            className="sr-only"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void upload(file);
+            }}
+          />
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={uploading}
+            aria-label={`Upload bukti ${check.title}`}
+            onClick={() => fileRef.current?.click()}
+          >
+            {uploading ? <Loader2 aria-hidden className="animate-spin" /> : <FileUp aria-hidden />}
+            Upload bukti
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }
