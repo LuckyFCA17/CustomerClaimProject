@@ -80,6 +80,33 @@ describe("integritas matriks", () => {
   });
 });
 
+describe("Modul 4 — mencetak lembar monitoring", () => {
+  it("baru muncul setelah pemantauan dibuka", () => {
+    // Lembar ini mencetak periode siklus berjalan. Di CPAR_APPROVED belum ada periode
+    // sama sekali, jadi tombolnya hanya akan menghasilkan lembar dengan tabel kosong.
+    expect(can(qa, "monitoring.print", cparClaim("CPAR_APPROVED"))).toBe(false);
+    expect(can(qa, "monitoring.print", cparClaim("CAPA_MONITORING"))).toBe(true);
+    expect(can(qa, "monitoring.print", cparClaim("VERIFIED_CLOSED"))).toBe(true);
+  });
+
+  it("tidak muncul lagi setelah Not Effective memulangkan klaim ke pengisian", () => {
+    // Siklusnya sudah naik dan periode siklus baru belum dibuat.
+    expect(can(qa, "monitoring.print", cparClaim("CPAR_REVISION"))).toBe(false);
+  });
+
+  it("dapat dicetak siapa pun yang boleh membaca klaimnya, bukan hanya QA", () => {
+    const target = cparClaim("CAPA_MONITORING");
+
+    expect(can(prodHead, "monitoring.print", target)).toBe(true);
+    expect(can(prodStaff, "monitoring.print", target)).toBe(true);
+    expect(can(factoryMgr, "monitoring.print", target)).toBe(true);
+    expect(can(presdir, "monitoring.print", target)).toBe(true);
+
+    // Kecuali departemen yang tidak terlibat — aturan visibilitas yang sama.
+    expect(can(purchasingStaff, "monitoring.print", target)).toBe(false);
+  });
+});
+
 describe("Modul 1 — informasi klaim", () => {
   it("hanya membiarkan QA pembuatnya menyunting dan mengirim draft", () => {
     const own = claim("DRAFT", { createdById: qa.id });

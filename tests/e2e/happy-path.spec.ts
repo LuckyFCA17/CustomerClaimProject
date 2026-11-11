@@ -328,6 +328,28 @@ test("OK + NG yang tidak sama dengan jumlahnya ditolak, ke dua arah", async ({ p
   await expect(production).not.toContainText("17 Nov 2026");
 });
 
+test("lembar CAPA Monitoring dapat dicetak dari halaman monitoring", async ({ page }) => {
+  const id = claimUrl.split("/").pop();
+
+  await loginAs(page, USERS.prodHead);
+  await page.goto(`/monitoring/${id}`);
+  await page.waitForLoadState("networkidle");
+
+  const print = page.getByRole("link", { name: /Print CAPA Monitoring/i });
+  await expect(print).toHaveAttribute("href", `/print/monitoring/${id}?autoprint=1`);
+
+  // Halaman cetaknya dibuka langsung: yang diuji bukan tombolnya ada, melainkan
+  // tautannya mendarat pada lembar yang benar dan memuat angka yang sudah dicatat.
+  await page.goto(`/print/monitoring/${id}`);
+  await page.waitForLoadState("networkidle");
+
+  const sheet = page.locator("body");
+  await expect(sheet).toContainText("CAPA Implementation Monitoring");
+  await expect(sheet).toContainText("Item yang dipantau");
+  await expect(sheet).toContainText("Hasil produksi & inspeksi per tanggal");
+  await expect(sheet).toContainText("Catatan tekanan holding mesin 4 tiap shift");
+});
+
 test("periode dapat ditutup dan dibuka lagi", async ({ page }) => {
   await loginAs(page, USERS.prodHead);
 

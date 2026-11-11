@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { forbidden, notFound } from "next/navigation";
-import { FileText } from "lucide-react";
+import { FileText, Printer } from "lucide-react";
 
 import { ImprovementReportForm } from "@/components/monitoring/improvement-report-form";
 import { MonitoringRecap } from "@/components/monitoring/monitoring-recap";
@@ -9,6 +9,7 @@ import { PeriodList, type PeriodCheck, type PeriodView } from "@/components/moni
 import { StartMonitoring } from "@/components/monitoring/start-monitoring";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { StatusRail } from "@/components/shared/status-rail";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
@@ -260,6 +261,22 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
             <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium">
               Siklus {cycle}
             </span>
+
+            {/*
+              Menautkan ke halaman cetaknya, bukan memanggil pembuat PDF di server:
+              halaman itu dirender peramban yang sedang dipakai, jadi tidak perlu
+              Chromium — di Termux tidak ada — dan hasilnya keluar seketika. Selama
+              klaimnya belum ditutup, lembarnya keluar berwatermark DRAFT, dan itu
+              ditentukan halaman cetaknya sendiri, bukan tombol ini.
+            */}
+            {can(user, "monitoring.print", context) ? (
+              <Button asChild variant="outline" size="sm">
+                <a href={`/print/monitoring/${id}?autoprint=1`} target="_blank" rel="noopener">
+                  <Printer aria-hidden />
+                  Print CAPA Monitoring
+                </a>
+              </Button>
+            ) : null}
           </div>
         </div>
 

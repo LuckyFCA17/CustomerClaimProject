@@ -64,6 +64,7 @@ export const ACTIONS = [
   "monitoring.evidence.upload",
   "monitoring.setEffectiveness",
   "monitoring.submitReport",
+  "monitoring.print",
   "audit.view",
   "notification.viewLog",
   "master.manage",
@@ -260,6 +261,20 @@ export const PERMISSION_MATRIX: Record<Action, ActionRule> = {
   "monitoring.submitReport": {
     roles: { QA: "ALL", QA_HEAD: "ALL", ADMIN: "ALL" },
     statuses: ["CAPA_MONITORING"],
+  },
+  /**
+   * Lembar CAPA Implementation Monitoring.
+   *
+   * Statusnya lebih sempit daripada `cpar.print`: lembar ini mencetak periode siklus
+   * berjalan, dan sebelum pemantauan dibuka belum ada periode sama sekali. Tombol yang
+   * tampil di `CPAR_APPROVED` hanya akan menghasilkan lembar dengan tabel kosong.
+   *
+   * `CPAR_REVISION` sesudah Not Effective juga tidak termasuk, dengan sebab yang sama:
+   * siklusnya sudah naik, dan periode siklus baru belum dibuat.
+   */
+  "monitoring.print": {
+    roles: READ_ONLY_FOR_EVERYONE,
+    statuses: ["CAPA_MONITORING", "VERIFIED_CLOSED"],
   },
 
   "audit.view": { roles: READ_ONLY_FOR_EVERYONE, statuses: "ANY" },

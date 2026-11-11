@@ -862,15 +862,21 @@ satu kata yang disunting — dan kolom tanggal akan ternormalkan jamnya tanpa ad
 
 ### Mencetak lembar
 
-Tombol **Print Bad News Information** dan **Print Quick Information** di halaman klaim, serta
-**Print CPAR** di halaman CPAR, menautkan ke halaman cetaknya (`/print/<doc>/<id>?autoprint=1`),
-bukan memanggil pembuat PDF di server.
+Tombol **Print Bad News Information** dan **Print Quick Information** di halaman klaim,
+**Print CPAR** di halaman CPAR, serta **Print CAPA Monitoring** di halaman monitoring, menautkan
+ke halaman cetaknya (`/print/<doc>/<id>?autoprint=1`), bukan memanggil pembuat PDF di server.
 Halaman itu dirender peramban yang sedang dipakai, jadi tidak perlu Chromium di server — di
 Termux tidak ada — dan hasilnya keluar seketika. `authorizePrint` menerima sesi pengguna,
 sehingga tautannya tidak memerlukan token. Draft tidak ditawari: isinya baru lengkap setelah
 submit. Tombol Print CPAR mengikuti izin `cpar.print`, jadi ia baru muncul sejak CPAR terbit;
 selama belum disetujui seluruh verifier lembarnya keluar berwatermark DRAFT — itu ditentukan
 halaman cetaknya, bukan tombolnya.
+
+Tombol Print CAPA Monitoring memakai izinnya sendiri, `monitoring.print`, yang statusnya lebih
+sempit: hanya `CAPA_MONITORING` dan `VERIFIED_CLOSED`. Lembar itu mencetak periode **siklus
+berjalan**, jadi di `CPAR_APPROVED` — sebelum pemantauan dibuka — dan di `CPAR_REVISION` sesudah
+Not Effective, siklusnya belum punya periode sama sekali dan tombolnya hanya akan menghasilkan
+lembar dengan tabel kosong. Selama klaimnya belum ditutup, lembarnya pun berwatermark DRAFT.
 
 ### Periode grafik dashboard
 
