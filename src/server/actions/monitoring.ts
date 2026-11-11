@@ -16,12 +16,14 @@ import {
   missingCheckEvidence,
   monitoringProgress,
   planPeriods,
+  unjudgedChecks,
 } from "@/lib/monitoring";
 import { assertCan, type ClaimContext } from "@/lib/permissions";
 import { requireActor } from "@/lib/session";
 import { claimFolder, saveUpload, storage } from "@/lib/storage";
 import {
   A3_BLOCKS,
+  checkJudgementSchema,
   effectivenessSchema,
   improvementReportSchema,
   monitoringResultSchema,
@@ -387,6 +389,93 @@ export async function uploadCheckEvidence(formData: FormData): Promise<ActionRes
   }
 }
 
+/**
+ * Hasil pemantauan satu item check, beserta catatannya.
+ *
+ * Dijaga izin yang sama dengan unggah evidence, bukan izin penilaian efektivitas: yang
+ * mencatat hasil tiap item adalah orang yang mengerjakan pemantauannya, dan keputusan
+ * Effective atas periodenya tetap terpisah di tangan verifier. Memakai izin yang lebih
+ * sempit akan membuat departemen pelaksana mengumpulkan bukti tetapi tidak boleh
+ * menuliskan apa yang ia temukan.
+ *
+ * Dapat diubah selama periodenya belum dinilai — temuan awal sering direvisi setelah
+ * data berikutnya masuk, dan yang mengunci semuanya adalah penilaian periode.
+ */
+export async function setCheckJudgement(
+  periodId: string,
+  itemId: string,
+  input: unknown,
+): Promise<ActionResult> {
+  try {
+    const actor = await requireActor();
+
+    const check = await db.monitoringCheck.findUnique({
+      where: { periodId_itemId: { periodId, itemId } },
+      include: {
+        item: { select: { title: true } },
+        period: { select: { claimId: true, periodNo: true, status: true, cycle: true } },
+      },
+    });
+
+    if (!check) throw new NotFoundError("Item check tidak ditemukan pada periode ini.");
+
+    const claim = await loadClaim(check.period.claimId);
+    assertCan(actor, "monitoring.evidence.upload", toContext(claim));
+
+    const parsed = checkJudgementSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        message: "Hasil pemantauan belum lengkap.",
+        fieldErrors: flattenZodErrors(parsed.error),
+      };
+    }
+
+    if (check.period.status !== "PENDING") {
+      throw new ForbiddenError(
+        `Periode ${check.period.periodNo} sudah dinilai, hasil item tidak dapat diubah lagi.`,
+        "monitoring.evidence.upload",
+      );
+    }
+
+    const { judgement } = parsed.data;
+    const note = (parsed.data.note ?? "").trim() || null;
+    const requestContext = await readRequestContext();
+
+    await db.$transaction(async (tx) => {
+      await tx.monitoringCheck.update({
+        where: { id: check.id },
+        data: { judgement, note, judgedById: actor.id, judgedAt: new Date() },
+      });
+
+      await writeAuditLog(
+        tx,
+        {
+          actorId: actor.id,
+          entityType: "MonitoringCheck",
+          entityId: check.id,
+          claimId: claim.id,
+          action: "monitoring.evidence.upload",
+          payloadDiff: {
+            periodNo: check.period.periodNo,
+            cycle: check.period.cycle,
+            item: check.item.title,
+            judgement,
+            ...(note ? { comment: note } : {}),
+          },
+        },
+        requestContext,
+      );
+    });
+
+    revalidateMonitoring(claim.id);
+
+    return { ok: true, message: `${check.item.title}: ${judgement.replace(/_/g, " ")}.` };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 // ─────────────────────── Angka hasil produksi & inspeksi ───────────────────────
 
 /**
@@ -521,7 +610,11 @@ async function loadCheckSlots(periodId: string) {
 
   return checks
     .sort((a, b) => a.item.order - b.item.order)
-    .map((check) => ({ title: check.item.title, fileCount: counted.get(check.id) ?? 0 }));
+    .map((check) => ({
+      title: check.item.title,
+      fileCount: counted.get(check.id) ?? 0,
+      judgement: check.judgement,
+    }));
 }
 
 /**
@@ -584,11 +677,21 @@ export async function setEffectiveness(periodId: string, input: unknown): Promis
       // Not Effective sengaja tidak ditahan: kegagalan tidak perlu dibuktikan dengan
       // berkas yang justru tidak pernah berhasil dikumpulkan, dan menahannya hanya akan
       // mengunci periode yang jelas-jelas gagal.
-      const missing = missingCheckEvidence(await loadCheckSlots(period.id));
+      const slots = await loadCheckSlots(period.id);
+      const missing = missingCheckEvidence(slots);
+      const unjudged = unjudgedChecks(slots);
 
       if (missing.length > 0) {
         throw new ValidationError(
           `Periode ${period.periodNo} belum dapat dinyatakan Effective. Belum ada bukti untuk: ${missing.join("; ")}.`,
+        );
+      }
+
+      // Berkas saja bukan kesimpulan: item yang buktinya ada tetapi tidak pernah dinilai
+      // adalah item yang tidak pernah dibaca siapa pun.
+      if (unjudged.length > 0) {
+        throw new ValidationError(
+          `Periode ${period.periodNo} belum dapat dinyatakan Effective. Belum ada hasil pemantauan untuk: ${unjudged.join("; ")}.`,
         );
       }
     }

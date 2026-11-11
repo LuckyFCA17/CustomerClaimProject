@@ -1,4 +1,8 @@
-import type { MonitoringResultKind, MonitoringStatus } from "@/generated/prisma/enums";
+import type {
+  MonitoringJudgement,
+  MonitoringResultKind,
+  MonitoringStatus,
+} from "@/generated/prisma/enums";
 import { addWorkingDays, endOfWorkingDay, toJakartaDateInput } from "@/lib/dates";
 
 /**
@@ -133,9 +137,42 @@ export const CHECK_ITEM_MAX_LENGTH = 200;
 export const CHECK_ITEM_COUNT_MIN = 1;
 export const CHECK_ITEM_COUNT_MAX = 12;
 
+/**
+ * Hasil pemantauan yang boleh dipilih manusia.
+ *
+ * PENDING sengaja tidak termasuk: ia keadaan awal, bukan keputusan. Membiarkannya
+ * dipilih berarti menyediakan cara untuk "membatalkan" penilaian tanpa jejak.
+ */
+export const CHECK_JUDGEMENTS = [
+  "OK",
+  "NG",
+  "OK_NEED_IMPROVEMENT",
+] as const satisfies readonly MonitoringJudgement[];
+
+export type CheckJudgement = (typeof CHECK_JUDGEMENTS)[number];
+
+export const CHECK_JUDGEMENT_LABEL: Record<MonitoringJudgement, string> = {
+  PENDING: "Belum dinilai",
+  OK: "OK",
+  NG: "NG",
+  OK_NEED_IMPROVEMENT: "OK but need improvement",
+};
+
+/** Singkatan untuk ruang sempit: kolom lembar cetak dan lencana pada kartu periode. */
+export const CHECK_JUDGEMENT_SHORT: Record<MonitoringJudgement, string> = {
+  PENDING: "—",
+  OK: "OK",
+  NG: "NG",
+  OK_NEED_IMPROVEMENT: "OK-NI",
+};
+
+/** Catatan wajib pada hasil selain OK; lihat `checkJudgementSchema`. */
+export const CHECK_NOTE_MIN = 10;
+
 export interface CheckSlot {
   readonly title: string;
   readonly fileCount: number;
+  readonly judgement: MonitoringJudgement;
 }
 
 /**
@@ -147,13 +184,37 @@ export interface CheckSlot {
  * yang memang tidak pernah berhasil dikumpulkan.
  */
 export function missingCheckEvidence(slots: readonly CheckSlot[]): readonly string[] {
-  return slots
-    .filter((slot) => slot.fileCount === 0)
-    .map((slot) => {
-      const title = slot.title.trim() || "(tanpa judul)";
+  return slots.filter((slot) => slot.fileCount === 0).map(shortTitle);
+}
 
-      return title.length > 60 ? `${title.slice(0, 57).trimEnd()}…` : title;
-    });
+function shortTitle(slot: CheckSlot): string {
+  const title = slot.title.trim() || "(tanpa judul)";
+
+  return title.length > 60 ? `${title.slice(0, 57).trimEnd()}…` : title;
+}
+
+/**
+ * Item yang belum punya hasil pemantauan.
+ *
+ * Ikut menahan penilaian Effective, dengan sebab yang sama seperti evidence yang kosong:
+ * item yang berkasnya ada tetapi tidak pernah dinilai adalah item yang tidak pernah
+ * dibaca siapa pun. Berkas saja bukan kesimpulan.
+ */
+export function unjudgedChecks(slots: readonly CheckSlot[]): readonly string[] {
+  return slots.filter((slot) => slot.judgement === "PENDING").map(shortTitle);
+}
+
+/**
+ * Item yang hasilnya NG.
+ *
+ * **Tidak** menahan apa pun — hanya diperingatkan. Periode dengan satu item NG masih
+ * boleh dinyatakan Effective: NG pada satu item check tidak selalu berarti
+ * countermeasure-nya gagal, dan yang berwenang memutuskan itu verifier, bukan aturan
+ * di sini. Yang dijamin hanya bahwa keputusannya diambil sambil melihat NG itu, bukan
+ * tanpa menyadarinya.
+ */
+export function ngChecks(slots: readonly CheckSlot[]): readonly string[] {
+  return slots.filter((slot) => slot.judgement === "NG").map(shortTitle);
 }
 
 // ─────────────────────── Angka hasil pemantauan ───────────────────────

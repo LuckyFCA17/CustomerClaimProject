@@ -1116,6 +1116,36 @@ Terpenuhi atau belum ditentukan dari **ada tidaknya berkas**, bukan centang terp
 sama dengan evidence CPAR. Itemnya terikat siklus: siklus baru setelah Not Effective menetapkan
 itemnya sendiri, karena countermeasure-nya pun sudah berubah.
 
+#### Hasil pemantauan tiap item
+
+Tiap item pada tiap periode punya **catatan hasil pemantauan** dan **judgement**-nya sendiri,
+memakai kosakata yang sama dengan judgement 4M1E pada analisis akar masalah:
+
+| Judgement | Catatan | Artinya |
+| --- | --- | --- |
+| **OK** | opsional | Hasilnya sesuai yang diharapkan |
+| **NG** | **wajib** | Temuan menyimpang — "NG" sendirian tidak memberi tahu apa pun kepada yang harus memperbaikinya |
+| **OK-NI** | **wajib** | Hasilnya memuaskan tetapi standarnya masih perlu dirapikan |
+
+`OK_NEED_IMPROVEMENT` ada karena memaksa semua temuan menjadi OK atau NG menghilangkan
+satu-satunya catatan yang akan memunculkan tindakan pencegahan. `PENDING` adalah keadaan awal,
+bukan keputusan — skemanya tidak menerimanya dari manusia.
+
+Dijaga izin **`monitoring.evidence.upload`**, bukan `monitoring.setEffectiveness`: yang mencatat
+hasil tiap item adalah orang yang mengerjakan pemantauannya, dan keputusan Effective atas
+periodenya tetap terpisah di tangan verifier. Izin yang lebih sempit akan membuat departemen
+pelaksana mengumpulkan bukti tetapi tidak boleh menuliskan apa yang ia temukan.
+
+Hasilnya dapat diubah selama periodenya belum dinilai — temuan awal sering direvisi setelah data
+berikutnya masuk, dan yang mengunci semuanya adalah penilaian periode.
+
+**Effective ditahan oleh dua hal**, bukan satu: item tanpa berkas, dan item yang belum dinilai.
+Berkas saja bukan kesimpulan — item yang buktinya ada tetapi tidak pernah dinilai adalah item yang
+tidak pernah dibaca siapa pun. Item yang hasilnya **NG tidak menahan apa pun**: NG pada satu item
+check tidak selalu berarti countermeasure-nya gagal, dan yang berwenang memutuskan itu verifier,
+bukan aturan di `lib/monitoring.ts`. Yang dijamin hanya bahwa keputusannya diambil sambil melihat
+NG itu — jumlahnya tertulis pada ringkasan periode, juga saat kartunya tertutup.
+
 ### Angka produksi dan inspeksi
 
 Tiap periode menampung dua tabel yang barisnya bertambah sesuai frekuensi pencatatan di pabrik —
@@ -1174,8 +1204,11 @@ pasangan yang lolos pemeriksaan keterbacaan buta warna (ΔE 31,8 protanopia, 30,
 keduanya berkontras cukup di atas kartu putih. Identitas seri tidak pernah hanya warna: tiap
 grafik punya legenda, dan tabelnya memuat angka yang tepat.
 
-Lembar cetak monitoring ikut memuat daftar item dan tabel per tanggal beserta totalnya, dan tetap
-satu halaman A4.
+Lembar cetak monitoring memuat daftar item sebagai **matriks**: satu baris per item, satu kolom
+per periode berisi judgement-nya, dan satu kolom catatan yang menyatukan temuan tiap periode
+dengan penanda `P1:`, `P2:`. Satu kolom catatan per periode akan menyempitkan tabel sampai tidak
+terbaca begitu periodenya lebih dari tiga. Tabel angka per tanggal beserta totalnya ikut tercetak,
+dan lembarnya tetap satu halaman A4.
 
 ### Periode dapat ditutup
 

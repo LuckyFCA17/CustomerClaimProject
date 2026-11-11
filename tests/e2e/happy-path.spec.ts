@@ -377,6 +377,37 @@ test("periode dapat ditutup dan dibuka lagi", async ({ page }) => {
   await expect(period.getByText("Monitoring hasil produksi")).toBeVisible();
 });
 
+test("hasil pemantauan item dicatat beserta catatannya", async ({ page }) => {
+  await loginAs(page, USERS.prodHead);
+
+  await page.goto(`/monitoring/${claimUrl.split("/").pop()}`);
+  await page.waitForLoadState("networkidle");
+
+  // Item pertama pada periode pertama. Disaring lewat penanda, bukan lewat teksnya:
+  // judulnya terpecah ke beberapa elemen, dan penyaring teks mendarat di pembungkus
+  // yang salah.
+  const item = page.locator('[data-check-order="1"]').first();
+
+  // NG tanpa catatan ditolak: "NG" sendirian tidak memberi tahu apa pun kepada yang
+  // harus memperbaikinya.
+  await item.getByRole("button", { name: "NG", exact: true }).click();
+  await page.waitForTimeout(1200);
+  await expect(item).toContainText(/Jelaskan temuannya/i);
+
+  await item
+    .getByLabel("Catatan hasil pemantauan")
+    .fill("Masih ditemukan 2 pcs kaki patah pada 500 pcs pertama; tekanan holding 44 MPa.");
+  await item.getByRole("button", { name: "NG", exact: true }).click();
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(1500);
+
+  await page.goto(`/monitoring/${claimUrl.split("/").pop()}`);
+  await page.waitForLoadState("networkidle");
+
+  await expect(page.locator("body")).toContainText("Masih ditemukan 2 pcs kaki patah");
+  await expect(page.locator("body")).toContainText(/1 NG/);
+});
+
 test("Effective ditolak selama item check belum ada buktinya", async ({ page }) => {
   await loginAs(page, USERS.qaHead);
 
@@ -461,6 +492,20 @@ test("seluruh periode efektif, klaim ditutup Verified Closed", async ({ page }) 
 
   for (let index = 0; index < total; index += 1) {
     await uploads.nth(index).setInputFiles(PHOTO);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(1200);
+  }
+
+  await page.goto(`/monitoring/${id}`);
+  await page.waitForLoadState("networkidle");
+
+  // Dan tiap item harus punya hasil pemantauan. Berkas saja bukan kesimpulan.
+  for (let round = 0; round < 4; round += 1) {
+    const ok = page.getByRole("button", { name: "OK", exact: true });
+
+    if ((await ok.count()) === 0) break;
+
+    await ok.first().click();
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(1200);
   }

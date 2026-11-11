@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { MonitoringResultKind, MonitoringStatus } from "@/generated/prisma/enums";
 import {
+  CHECK_JUDGEMENTS,
+  CHECK_NOTE_MIN,
   CHECK_ITEM_COUNT_MAX,
   CHECK_ITEM_COUNT_MIN,
   CHECK_ITEM_MAX_LENGTH,
@@ -121,6 +123,34 @@ export const monitoringResultSchema = z
   });
 
 export type MonitoringResultInput = z.infer<typeof monitoringResultSchema>;
+
+/**
+ * Hasil pemantauan satu item check, beserta catatannya.
+ *
+ * Catatan wajib untuk hasil selain OK. "NG" sendirian tidak memberi tahu apa pun kepada
+ * yang harus memperbaikinya, dan "OK but need improvement" tanpa penjelasan adalah
+ * perbaikan yang tidak pernah akan dikerjakan karena tidak ada yang tahu apa yang kurang.
+ *
+ * Pada OK pun catatannya boleh diisi — angka hasil pengukuran sering ditulis di sana.
+ */
+export const checkJudgementSchema = z
+  .object({
+    judgement: z.enum(CHECK_JUDGEMENTS, { message: "Pilih hasil pemantauan." }),
+    note: z.string().trim().max(1000, "Maksimal 1000 karakter.").optional().or(z.literal("")),
+  })
+  .superRefine((value, ctx) => {
+    if (value.judgement === "OK") return;
+
+    if ((value.note ?? "").trim().length < CHECK_NOTE_MIN) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["note"],
+        message: `Jelaskan temuannya, minimal ${CHECK_NOTE_MIN} karakter.`,
+      });
+    }
+  });
+
+export type CheckJudgementInput = z.infer<typeof checkJudgementSchema>;
 
 /**
  * Penilaian efektivitas satu periode.

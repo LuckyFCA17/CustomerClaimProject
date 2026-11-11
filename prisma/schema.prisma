@@ -118,6 +118,21 @@ enum MonitoringResultKind {
   INSPECTION
 }
 
+/// Hasil pemantauan satu item check.
+///
+/// Kosakatanya sama dengan judgement 4M1E pada analisis akar masalah, termasuk
+/// OK_NEED_IMPROVEMENT: item yang hasilnya memuaskan tetapi standarnya masih perlu
+/// dirapikan adalah keadaan yang sering terjadi, dan memaksanya menjadi OK atau NG
+/// menghilangkan satu-satunya catatan yang akan memunculkan tindakan pencegahan.
+///
+/// PENDING keadaan awal, bukan keputusan — tidak pernah boleh dipilih manusia.
+enum MonitoringJudgement {
+  PENDING
+  OK
+  NG
+  OK_NEED_IMPROVEMENT
+}
+
 enum DocumentKind {
   BAD_NEWS
   QUICK_INFO
@@ -211,6 +226,7 @@ model User {
   documentRequests CparInitialDocument[] @relation("InitialDocumentPic")
   monitoringFills MonitoringPeriod[]  @relation("MonitoringFilledBy")
   monitoringRows  MonitoringResult[]  @relation("MonitoringResultBy")
+  monitoringJudgements MonitoringCheck[] @relation("MonitoringCheckJudgedBy")
   reports         ImprovementReport[] @relation("ReportSubmittedBy")
 
   createdAt DateTime  @default(now())
@@ -631,6 +647,14 @@ model MonitoringCheck {
   period   MonitoringPeriod    @relation(fields: [periodId], references: [id], onDelete: Cascade)
   itemId   String
   item     MonitoringCheckItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  /// Hasil pemantauan item ini pada periode ini.
+  judgement  MonitoringJudgement @default(PENDING)
+  /// Apa yang ditemukan — angkanya, kondisinya, atau alasan hasilnya begitu.
+  note       String?
+  judgedById String?
+  judgedBy   User?               @relation("MonitoringCheckJudgedBy", fields: [judgedById], references: [id])
+  judgedAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

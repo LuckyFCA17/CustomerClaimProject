@@ -1,6 +1,7 @@
 import { statusMeta } from "@/config/claim-status";
 import { FieldGrid, FormHeader, SectionTitle, Sheet, SignatureBlock } from "@/components/print/sheet";
 import {
+  CHECK_JUDGEMENT_SHORT,
   MONITORING_STATUS_LABEL,
   calendarRows,
   resultsOfKind,
@@ -31,7 +32,8 @@ export default async function MonitoringPrintPage({
 
   await authorizePrint("MONITORING", id, token);
 
-  const { cpar, claim, periods, checkItems, results, report } = await loadMonitoringForPrint(id);
+  const { cpar, claim, periods, checkItems, checks, results, report } =
+    await loadMonitoringForPrint(id);
   const days = calendarRows(results);
   const production = totalResults(resultsOfKind(results, "PRODUCTION"));
   const inspection = totalResults(resultsOfKind(results, "INSPECTION"));
@@ -111,13 +113,79 @@ export default async function MonitoringPrintPage({
       {checkItems.length > 0 ? (
         <>
           <SectionTitle>Item yang dipantau</SectionTitle>
-          <ol className="m-0 mb-[3mm] list-decimal pl-[6mm] text-[8.5pt]">
-            {checkItems.map((item) => (
-              <li key={item.id} className="break-inside-avoid">
-                {item.title}
-              </li>
-            ))}
-          </ol>
+          <table className="mb-[3mm] w-full border-collapse text-[8pt]">
+            <thead>
+              <tr className="bg-[#f4f5f7]">
+                <th className="w-[6mm] border border-[#e4e7eb] px-[2mm] py-[1.2mm] text-left">
+                  No.
+                </th>
+                <th className="border border-[#e4e7eb] px-[2mm] py-[1.2mm] text-left">
+                  Item yang dipantau
+                </th>
+                {periods.map((period) => (
+                  <th
+                    key={period.id}
+                    className="w-[14mm] border border-[#e4e7eb] px-[2mm] py-[1.2mm] text-center"
+                  >
+                    P{period.periodNo}
+                  </th>
+                ))}
+                <th className="border border-[#e4e7eb] px-[2mm] py-[1.2mm] text-left">
+                  Catatan hasil pemantauan
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {checkItems.map((item) => {
+                // Catatan tiap periode disatukan pada satu sel, diberi penanda
+                // periodenya. Satu kolom catatan per periode akan menyempitkan tabel
+                // sampai tidak terbaca begitu periodenya lebih dari tiga.
+                const notes = periods
+                  .map((period) => ({
+                    periodNo: period.periodNo,
+                    check: checks.find(
+                      (entry) => entry.periodId === period.id && entry.itemId === item.id,
+                    ),
+                  }))
+                  .filter((entry) => Boolean(entry.check?.note));
+
+                return (
+                  <tr key={item.id} className="break-inside-avoid">
+                    <td className="border border-[#e4e7eb] px-[2mm] py-[1.2mm] tabular">
+                      {item.order}
+                    </td>
+                    <td className="border border-[#e4e7eb] px-[2mm] py-[1.2mm]">{item.title}</td>
+
+                    {periods.map((period) => {
+                      const check = checks.find(
+                        (entry) => entry.periodId === period.id && entry.itemId === item.id,
+                      );
+                      const judgement = check?.judgement ?? "PENDING";
+
+                      return (
+                        <td
+                          key={period.id}
+                          className={`border border-[#e4e7eb] px-[2mm] py-[1.2mm] text-center ${
+                            judgement === "NG" ? "font-semibold text-[#b91c1c]" : ""
+                          }`}
+                        >
+                          {CHECK_JUDGEMENT_SHORT[judgement]}
+                        </td>
+                      );
+                    })}
+
+                    <td className="whitespace-pre-line border border-[#e4e7eb] px-[2mm] py-[1.2mm]">
+                      {notes.length === 0
+                        ? "—"
+                        : notes
+                            .map((entry) => `P${entry.periodNo}: ${entry.check?.note ?? ""}`)
+                            .join("\n")}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </>
       ) : null}
 

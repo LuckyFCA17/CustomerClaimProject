@@ -129,7 +129,10 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
     }),
     db.monitoringCheck.findMany({
       where: { periodId: { in: periodIds } },
-      include: { item: { select: { id: true, title: true, order: true } } },
+      include: {
+        item: { select: { id: true, title: true, order: true } },
+        judgedBy: { select: { name: true } },
+      },
     }),
     db.monitoringResult.findMany({
       where: { periodId: { in: periodIds } },
@@ -172,6 +175,10 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
       order: check.item.order,
       title: check.item.title,
       files: filesByCheck.get(check.id) ?? [],
+      judgement: check.judgement,
+      note: check.note,
+      judgedByName: check.judgedBy?.name ?? null,
+      judgedAt: check.judgedAt,
     });
     checksByPeriod.set(check.periodId, list);
   }

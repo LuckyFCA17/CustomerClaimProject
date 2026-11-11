@@ -142,12 +142,20 @@ export async function loadMonitoringForPrint(claimId: string) {
   // Angka hasil diambil lewat periode siklus ini, bukan lewat claimId saja: siklus lama
   // punya angkanya sendiri, dan menggabungkannya akan membuat lembar cetak menyatakan
   // perbaikan yang sebenarnya milik percobaan yang sudah gagal.
-  const results = await db.monitoringResult.findMany({
-    where: { periodId: { in: periods.map((period) => period.id) } },
-    orderBy: [{ recordedOn: "asc" }, { createdAt: "asc" }],
-  });
+  const periodIds = periods.map((period) => period.id);
 
-  return { cpar, claim: cpar.claim, periods, checkItems, results, report };
+  const [results, checks] = await Promise.all([
+    db.monitoringResult.findMany({
+      where: { periodId: { in: periodIds } },
+      orderBy: [{ recordedOn: "asc" }, { createdAt: "asc" }],
+    }),
+    db.monitoringCheck.findMany({
+      where: { periodId: { in: periodIds } },
+      include: { judgedBy: { select: { name: true } } },
+    }),
+  ]);
+
+  return { cpar, claim: cpar.claim, periods, checkItems, checks, results, report };
 }
 
 /**

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   EFFECTIVENESS_NOTE_MIN,
+  checkJudgementSchema,
   REPORT_SUMMARY_MIN,
   effectivenessSchema,
   improvementReportSchema,
@@ -263,5 +264,49 @@ describe("monitoringResultSchema", () => {
 
   it("menolak jenis pencatatan yang tidak dikenal", () => {
     expect(monitoringResultSchema.safeParse({ ...BARIS, kind: "AUDIT" }).success).toBe(false);
+  });
+});
+
+describe("checkJudgementSchema", () => {
+  it("menerima OK tanpa catatan", () => {
+    // Catatan boleh diisi pada OK — angka hasil pengukuran sering ditulis di sana —
+    // tetapi tidak dituntut.
+    expect(checkJudgementSchema.safeParse({ judgement: "OK", note: "" }).success).toBe(true);
+  });
+
+  it("menuntut catatan pada NG", () => {
+    // "NG" sendirian tidak memberi tahu apa pun kepada yang harus memperbaikinya.
+    expect(
+      errorsFor(checkJudgementSchema.safeParse({ judgement: "NG", note: "" }), "note"),
+    ).toHaveLength(1);
+    expect(
+      errorsFor(checkJudgementSchema.safeParse({ judgement: "NG", note: "gagal" }), "note"),
+    ).toHaveLength(1);
+  });
+
+  it("menuntut catatan pada OK but need improvement", () => {
+    // Perbaikan tanpa penjelasan adalah perbaikan yang tidak pernah akan dikerjakan,
+    // karena tidak ada yang tahu apa yang kurang.
+    expect(
+      errorsFor(
+        checkJudgementSchema.safeParse({ judgement: "OK_NEED_IMPROVEMENT", note: "" }),
+        "note",
+      ),
+    ).toHaveLength(1);
+
+    expect(
+      checkJudgementSchema.safeParse({
+        judgement: "OK_NEED_IMPROVEMENT",
+        note: "Hasilnya baik, tetapi WI belum mencantumkan titik ukurnya.",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("menolak PENDING — ia keadaan awal, bukan keputusan", () => {
+    expect(checkJudgementSchema.safeParse({ judgement: "PENDING" }).success).toBe(false);
+  });
+
+  it("menolak hasil yang tidak dikenal", () => {
+    expect(checkJudgementSchema.safeParse({ judgement: "MUNGKIN" }).success).toBe(false);
   });
 });

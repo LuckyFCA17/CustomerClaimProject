@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { MonitoringResultKind, MonitoringStatus } from "@/generated/prisma/enums";
+import type {
+  MonitoringJudgement,
+  MonitoringResultKind,
+  MonitoringStatus,
+} from "@/generated/prisma/enums";
 import { isWorkingDay, toJakartaDateInput } from "@/lib/dates";
 import {
   type PeriodState,
@@ -9,6 +13,8 @@ import {
   closingBlocker,
   missingCheckEvidence,
   monitoringProgress,
+  ngChecks,
+  unjudgedChecks,
   ngRate,
   planPeriods,
   resultBalance,
@@ -158,12 +164,18 @@ describe("closingBlocker", () => {
   });
 });
 
+const slot = (
+  title: string,
+  fileCount: number,
+  judgement: MonitoringJudgement = "OK",
+) => ({ title, fileCount, judgement });
+
 describe("missingCheckEvidence", () => {
   it("menyebut item yang belum punya berkas, dalam urutan masuknya", () => {
     const missing = missingCheckEvidence([
-      { title: "Inspeksi 100% kaki pengunci", fileCount: 2 },
-      { title: "Catatan tekanan holding", fileCount: 0 },
-      { title: "Hasil audit proses", fileCount: 0 },
+      slot("Inspeksi 100% kaki pengunci", 2),
+      slot("Catatan tekanan holding", 0),
+      slot("Hasil audit proses", 0),
     ]);
 
     expect(missing).toEqual(["Catatan tekanan holding", "Hasil audit proses"]);
@@ -172,14 +184,47 @@ describe("missingCheckEvidence", () => {
   it("memotong judul yang panjang supaya pesannya tetap terbaca", () => {
     // Pesan penolakan memuat seluruh item yang kurang; sepuluh kalimat panjang akan
     // menenggelamkan maksudnya.
-    const [only] = missingCheckEvidence([{ title: "A".repeat(100), fileCount: 0 }]);
+    const [only] = missingCheckEvidence([slot("A".repeat(100), 0)]);
 
     expect(only).toHaveLength(58);
     expect(only?.endsWith("…")).toBe(true);
   });
 
   it("tidak menyebut apa pun ketika semuanya sudah berbukti", () => {
-    expect(missingCheckEvidence([{ title: "Inspeksi", fileCount: 1 }])).toEqual([]);
+    expect(missingCheckEvidence([slot("Inspeksi", 1)])).toEqual([]);
+  });
+});
+
+describe("unjudgedChecks", () => {
+  it("menyebut item yang belum punya hasil pemantauan", () => {
+    // Berkas saja bukan kesimpulan: item yang buktinya ada tetapi tidak pernah dinilai
+    // adalah item yang tidak pernah dibaca siapa pun.
+    const pending = unjudgedChecks([
+      slot("Inspeksi 100% kaki pengunci", 2, "OK"),
+      slot("Catatan tekanan holding", 3, "PENDING"),
+    ]);
+
+    expect(pending).toEqual(["Catatan tekanan holding"]);
+  });
+
+  it("menganggap OK-NI sudah dinilai", () => {
+    // "OK but need improvement" adalah keputusan, bukan keraguan.
+    expect(unjudgedChecks([slot("Audit", 1, "OK_NEED_IMPROVEMENT")])).toEqual([]);
+    expect(unjudgedChecks([slot("Audit", 1, "NG")])).toEqual([]);
+  });
+});
+
+describe("ngChecks", () => {
+  it("menyebut item yang hasilnya NG", () => {
+    expect(
+      ngChecks([slot("Inspeksi", 1, "OK"), slot("Tekanan holding", 1, "NG")]),
+    ).toEqual(["Tekanan holding"]);
+  });
+
+  it("tidak menghitung OK-NI sebagai NG", () => {
+    // OK-NI berarti hasilnya memuaskan tetapi standarnya perlu dirapikan; menyamakannya
+    // dengan NG akan membuat peringatan ini berbunyi pada periode yang sebenarnya baik.
+    expect(ngChecks([slot("Audit", 1, "OK_NEED_IMPROVEMENT")])).toEqual([]);
   });
 });
 

@@ -19,11 +19,18 @@ import { submitUpload } from "@/components/shared/submit-upload";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { MonitoringStatus } from "@/generated/prisma/enums";
-import { MONITORING_STATUS_LABEL, totalResults } from "@/lib/monitoring";
+import type { MonitoringJudgement, MonitoringStatus } from "@/generated/prisma/enums";
+import {
+  CHECK_JUDGEMENTS,
+  CHECK_JUDGEMENT_LABEL,
+  CHECK_JUDGEMENT_SHORT,
+  MONITORING_STATUS_LABEL,
+  totalResults,
+} from "@/lib/monitoring";
 import { formatDate, formatDateTime } from "@/lib/format";
 import {
   deleteMonitoringEvidence,
+  setCheckJudgement,
   setEffectiveness,
   uploadCheckEvidence,
   uploadMonitoringEvidence,
@@ -38,12 +45,16 @@ export interface PeriodEvidence {
   readonly uploadedAt: Date;
 }
 
-/** Satu item yang dipantau, pada satu periode, beserta buktinya. */
+/** Satu item yang dipantau, pada satu periode, beserta buktinya dan hasilnya. */
 export interface PeriodCheck {
   readonly itemId: string;
   readonly order: number;
   readonly title: string;
   readonly files: readonly PeriodEvidence[];
+  readonly judgement: MonitoringJudgement;
+  readonly note: string | null;
+  readonly judgedByName: string | null;
+  readonly judgedAt: Date | null;
 }
 
 export interface PeriodView {
@@ -132,6 +143,8 @@ function PeriodCard({
   const overdue = pending && period.dueDate < new Date();
   const tone = TONE[period.status];
   const outstandingChecks = period.checks.filter((check) => check.files.length === 0).length;
+  const unjudgedChecks = period.checks.filter((check) => check.judgement === "PENDING").length;
+  const ngChecks = period.checks.filter((check) => check.judgement === "NG").length;
 
   async function upload(file: File) {
     setUploading(true);
@@ -185,6 +198,10 @@ function PeriodCard({
     period.checks.length > 0
       ? `${period.checks.length - outstandingChecks}/${period.checks.length} item berbukti`
       : null,
+    period.checks.length > 0 && unjudgedChecks > 0
+      ? `${unjudgedChecks} belum dinilai`
+      : null,
+    ngChecks > 0 ? `${ngChecks} NG` : null,
     period.results.length > 0
       ? `${period.results.length} baris · NG ${totalResults(period.results).ngCount.toLocaleString("id-ID")}`
       : null,
@@ -251,10 +268,16 @@ function PeriodCard({
               ))}
             </ul>
 
-            {pending && outstandingChecks > 0 ? (
+            {pending && (outstandingChecks > 0 || unjudgedChecks > 0) ? (
               <p className="text-xs text-[var(--status-pending)]">
-                {outstandingChecks} dari {period.checks.length} item belum ada buktinya. Periode
-                tidak dapat dinyatakan Effective selama masih ada yang kosong.
+                {[
+                  outstandingChecks > 0 ? `${outstandingChecks} item belum ada buktinya` : null,
+                  unjudgedChecks > 0 ? `${unjudgedChecks} item belum dinilai` : null,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}{" "}
+                dari {period.checks.length}. Periode tidak dapat dinyatakan Effective selama
+                masih ada yang kosong.
               </p>
             ) : null}
           </div>
@@ -473,6 +496,13 @@ function PeriodCard({
  * dipakai menutup item yang sebenarnya masih kosong, dan itulah justru item yang
  * menentukan apakah periode boleh dinyatakan Effective.
  */
+const JUDGEMENT_TONE: Record<MonitoringJudgement, { bg: string; fg: string }> = {
+  PENDING: { bg: "var(--status-draft-bg)", fg: "var(--status-draft)" },
+  OK: { bg: "var(--status-closed-bg)", fg: "var(--status-closed)" },
+  NG: { bg: "var(--status-danger-bg)", fg: "var(--status-danger)" },
+  OK_NEED_IMPROVEMENT: { bg: "var(--status-pending-bg)", fg: "var(--status-pending)" },
+};
+
 function CheckRow({
   periodId,
   check,
@@ -488,7 +518,33 @@ function CheckRow({
   const [uploading, setUploading] = useState(false);
   const [isDeleting, startDelete] = useTransition();
 
+  const [note, setNote] = useState(check.note ?? "");
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState<MonitoringJudgement | null>(null);
+  const [noteError, setNoteError] = useState<string | null>(null);
+
   const fulfilled = check.files.length > 0;
+  const judged = check.judgement !== "PENDING";
+
+  async function judge(judgement: (typeof CHECK_JUDGEMENTS)[number]) {
+    setNoteError(null);
+    setSaving(judgement);
+
+    try {
+      const result = await setCheckJudgement(periodId, check.itemId, { judgement, note });
+
+      if (!result.ok) {
+        setNoteError(result.fieldErrors?.note?.[0] ?? result.message ?? "Gagal disimpan.");
+        return;
+      }
+
+      toast.success("Hasil pemantauan tersimpan", { description: result.message });
+      setEditing(false);
+      onChanged();
+    } finally {
+      setSaving(null);
+    }
+  }
 
   async function upload(file: File) {
     setUploading(true);
@@ -514,9 +570,12 @@ function CheckRow({
   }
 
   return (
-    <div className="rounded-lg border border-nid-border px-3 py-2">
+    <div className="rounded-lg border border-nid-border px-3 py-2" data-check-order={check.order}>
       <div className="flex items-start gap-2.5">
-        {fulfilled ? (
+        {/* Hijau hanya bila keduanya lengkap: berkasnya ada dan hasilnya sudah ditulis.
+            Centang atas berkas saja akan menyatakan selesai untuk item yang belum
+            dibaca siapa pun. */}
+        {fulfilled && judged ? (
           <CheckCircle2 aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--status-closed)]" />
         ) : (
           <CircleDashed aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -564,6 +623,111 @@ function CheckRow({
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {judged && !editing ? (
+        <div className="mt-1.5 rounded-md bg-secondary px-2.5 py-2 pl-6.5">
+          <p className="flex flex-wrap items-center gap-1.5 text-xs">
+            <span
+              className="rounded-full px-2 py-0.5 font-medium"
+              style={{
+                backgroundColor: JUDGEMENT_TONE[check.judgement].bg,
+                color: JUDGEMENT_TONE[check.judgement].fg,
+              }}
+            >
+              {CHECK_JUDGEMENT_LABEL[check.judgement]}
+            </span>
+            {check.judgedByName ? (
+              <span className="text-muted-foreground">
+                {check.judgedByName}
+                {check.judgedAt ? ` · ${formatDateTime(check.judgedAt)}` : ""}
+              </span>
+            ) : null}
+          </p>
+
+          {check.note ? (
+            <p className="mt-1 whitespace-pre-line break-words text-xs">{check.note}</p>
+          ) : null}
+
+          {canUpload ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="mt-1"
+              onClick={() => {
+                setNote(check.note ?? "");
+                setEditing(true);
+              }}
+            >
+              Ubah hasil
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {canUpload && (!judged || editing) ? (
+        <div className="mt-1.5 space-y-1.5 pl-6.5">
+          <Label htmlFor={`check-note-${periodId}-${check.itemId}`} className="text-[11px] text-muted-foreground">
+            Catatan hasil pemantauan
+          </Label>
+          <Textarea
+            id={`check-note-${periodId}-${check.itemId}`}
+            rows={2}
+            value={note}
+            maxLength={1000}
+            placeholder="Mis. 500 pcs diperiksa, tidak ditemukan kaki patah; tekanan holding 48–52 MPa."
+            aria-invalid={noteError !== null}
+            onChange={(event) => {
+              setNote(event.target.value);
+              if (noteError) setNoteError(null);
+            }}
+          />
+
+          {noteError ? (
+            <p role="alert" className="text-[11px] text-destructive">
+              {noteError}
+            </p>
+          ) : null}
+
+          <div className="flex flex-wrap gap-1.5">
+            {CHECK_JUDGEMENTS.map((judgement) => (
+              <Button
+                key={judgement}
+                type="button"
+                size="sm"
+                variant={judgement === "OK" ? "secondary" : "outline"}
+                disabled={saving !== null}
+                onClick={() => void judge(judgement)}
+              >
+                {saving === judgement ? (
+                  <Loader2 aria-hidden className="animate-spin" />
+                ) : null}
+                {CHECK_JUDGEMENT_SHORT[judgement]}
+              </Button>
+            ))}
+
+            {editing ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={saving !== null}
+                onClick={() => {
+                  setEditing(false);
+                  setNote(check.note ?? "");
+                  setNoteError(null);
+                }}
+              >
+                Batal
+              </Button>
+            ) : null}
+          </div>
+
+          <p className="text-[11px] text-muted-foreground">
+            Catatan wajib untuk NG dan OK-NI.
+          </p>
+        </div>
       ) : null}
 
       {canUpload ? (
