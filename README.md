@@ -49,7 +49,7 @@ dari input sampai `Verified Closed`.
 | PDF | Puppeteer merender route `/print/[doc]/[id]` |
 | Email | Nodemailer + React Email, dibungkus `lib/mailer.ts` |
 | Cron | node-cron di worker terpisah (`worker/index.ts`) |
-| Charting | Recharts |
+| Grafik | SVG ditulis langsung; tidak ada pustaka grafik |
 | Testing | Vitest (state machine + Zod) · Playwright (E2E) |
 
 ## Setup
@@ -1031,6 +1031,63 @@ tombol mati tidak memberi tahu apa yang kurang, sedangkan menekannya memunculkan
 Definisi "apa saja yang dianggap evidence" hidup di satu tempat, `server/evidence-requests.ts`,
 dipakai bersama oleh tabel evidence pending di dasbor dan oleh gerbang ini — supaya menambah satu
 sumber evidence tidak pernah mengubah hanya separuh portal.
+
+## Berkas yang boleh diunggah
+
+| Jenis | Format | Catatan |
+| --- | --- | --- |
+| Foto | JPEG, PNG, WebP | Diperkecil ke 1600px di peramban **dan** di server |
+| Dokumen | PDF | Dibuka langsung di tab |
+| Office | `.docx`, `.xlsx`, `.pptx` | Diunduh, bukan dibuka di tab |
+
+**Batas 25 MB per berkas**, satu angka di `UPLOAD_LIMITS.maxBytes` (`lib/uploads.ts`) yang
+sekaligus menurunkan `serverActions.bodySizeLimit` di `next.config.ts`. Keduanya harus berasal
+dari satu sumber: kalau batas badan Next lebih kecil, unggahan ditolak HTTP 413 **sebelum** kode
+aplikasi berjalan, dan pesan ramah dari validator tidak pernah sempat tampil.
+
+Yang **tidak** diterima, dan sebabnya:
+
+- **Video** — unggahan melewati Server Action, yang menyangga seluruh badan permintaan di memori.
+  Di Termux, lonjakan itulah yang membuat Android menghentikan prosesnya. Simpan video di
+  penyimpanan perusahaan, lalu catat tautannya.
+- **Format Office biner lama** (`.doc`, `.xls`, `.ppt`) — tidak dapat dibedakan dari berkas biner
+  lain tanpa membaca struktur OLE.
+- **`.docm`, `.xlsm`** — isinya bisa memuat makro.
+- **SVG dan HTML** — dapat memuat skrip, dan berkas unggahan disajikan dari origin yang sama.
+
+### Kenapa jenis berkas tidak ditentukan dari MIME saja
+
+`File.type` dari peramban **tidak dapat dipercaya untuk berkas Office**. Windows mengambilnya dari
+registry, Android dari penyedia dokumen, dan keduanya sering mengirim `application/octet-stream` —
+atau string kosong — untuk `.docx` yang sepenuhnya sah. Menolak berdasarkan MIME saja berarti
+menolak berkas yang benar, dan pengunggahnya tidak punya cara memperbaikinya.
+
+`resolveUploadType()` karena itu memutuskan bertingkat:
+
+1. MIME dipercaya bila ia memang salah satu yang diizinkan;
+2. bila peramban mengaku tidak tahu, **ekstensinya** yang dipakai — dan hanya untuk format Office,
+   karena di situlah ketidaktahuan itu terjadi;
+3. MIME yang jelas tetapi tidak diizinkan **tidak pernah** ditimpa ekstensi, sehingga
+   `virus.exe` yang dinamai ulang `.docx` tidak lolos lewat celah ini.
+
+Langkah 2 membuka satu celah: berkas apa pun bisa dinamai `.docx`. Karena itu `saveUpload()`
+memeriksa **isinya** — ketiga format Office sebenarnya arsip ZIP, jadi berkas yang tidak berawalan
+tanda tangan `PK` ditolak sebelum tersimpan. Yang diperiksa hanya tanda tangan arsipnya, bukan isi
+XML-nya: itu cukup menutup celah penamaan ulang, sedangkan membongkar arsip milik orang lain di
+server adalah pekerjaan yang risikonya sendiri lebih besar daripada yang dicegahnya.
+
+`pnpm upload:check` menguji keempat jalur ini tanpa peramban — termasuk `.docx` ber-MIME
+`octet-stream` yang harus diterima, dan berkas bukan Office bernama `.docx` yang harus ditolak.
+
+### Foto part tetap gambar saja
+
+`ACCEPT_IMAGES` dipakai khusus di panel foto part; `ACCEPT_EVIDENCE` di semua titik evidence.
+Pemisahan ini bukan kosmetik: foto standard/actual ikut tercetak ke lembar Bad News dan CPAR
+sebagai gambar, dan `.docx` di sana akan menjadi kotak kosong pada PDF yang dikirim ke pelanggan.
+
+Nilai `accept` memuat MIME **dan** ekstensi sekaligus, karena pemilih berkas Windows mencocokkan
+ekstensi sedangkan Android mencocokkan MIME — menulis salah satunya saja membuat berkas Office
+tampak kelabu dan tidak dapat dipilih di salah satu dari keduanya.
 
 ## Pemantauan CAPA: apa yang diukur, dan angkanya
 

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { formatDateTime } from "@/lib/format";
 import { EVIDENCE_NAME_MIN } from "@/schemas/cpar";
 import { deleteCparEvidence, uploadOtherEvidence } from "@/server/actions/cpar-filling";
+import { ACCEPT_EVIDENCE } from "@/lib/uploads";
 
 export interface OtherEvidenceFile {
   readonly id: string;
@@ -171,7 +172,7 @@ export function OtherEvidence({
               // nama lebih dulu, jadi uji yang menyapu seluruh input berkas pada halaman
               // CPAR harus melewatinya — bukan mengirim berkas tanpa nama ke sini.
               data-evidence="other"
-              accept="image/jpeg,image/png,image/webp,application/pdf"
+              accept={ACCEPT_EVIDENCE}
               className="sr-only"
               onChange={(event) => {
                 const file = event.target.files?.[0];

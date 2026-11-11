@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { canViewClaim } from "@/lib/permissions";
 import { readSessionActor } from "@/lib/session";
 import { storage } from "@/lib/storage";
+import { isOfficeDocument } from "@/lib/uploads";
 
 /**
  * Menyajikan berkas unggahan.
@@ -73,10 +74,18 @@ export async function GET(
   try {
     const data = await storage.read(relativePath);
 
+    // Berkas Office diunduh, tidak dibuka di tab.
+    //
+    // Peramban tidak dapat merendernya, jadi `inline` hanya menghasilkan tab kosong
+    // yang kemudian mengunduh diam-diam — terbaca sebagai kegagalan oleh yang menekan
+    // tautannya. `attachment` juga menjaga nama berkas aslinya tetap terbawa, bukan
+    // UUID yang dipakai di disk.
+    const disposition = isOfficeDocument(resource.mimeType) ? "attachment" : "inline";
+
     return new NextResponse(new Uint8Array(data), {
       headers: {
         "content-type": resource.mimeType,
-        "content-disposition": `inline; filename="${encodeURIComponent(resource.originalName)}"`,
+        "content-disposition": `${disposition}; filename="${encodeURIComponent(resource.originalName)}"`,
         // Berkas unggahan tidak pernah berubah isinya; yang berubah adalah barisnya.
         "cache-control": "private, max-age=3600",
       },

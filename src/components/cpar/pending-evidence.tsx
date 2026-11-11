@@ -32,6 +32,7 @@ import {
   hasActiveEvidenceFilter,
 } from "@/lib/evidence-requests";
 import { uploadActionItemEvidence, uploadInitialDocument } from "@/server/actions/cpar-filling";
+import { ACCEPT_EVIDENCE } from "@/lib/uploads";
 
 const COMPLETION_STYLE: Record<Completion, { className: string; icon: typeof CircleCheck }> = {
   DONE: {
@@ -297,7 +298,7 @@ function EvidenceRow({ row, now }: { row: EvidenceRequestRow; now: Date }) {
           <input
             ref={fileRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,application/pdf"
+            accept={ACCEPT_EVIDENCE}
             className="sr-only"
             onChange={(event) => {
               const file = event.target.files?.[0];

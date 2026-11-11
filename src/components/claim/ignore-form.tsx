@@ -16,6 +16,7 @@ import {
   ignoreClaim,
   uploadIgnorationEvidence,
 } from "@/server/actions/cpar";
+import { ACCEPT_EVIDENCE } from "@/lib/uploads";
 
 export interface EvidenceFile {
   readonly id: string;
@@ -176,7 +177,7 @@ export function IgnoreForm({
           <input
             ref={fileRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,application/pdf"
+            accept={ACCEPT_EVIDENCE}
             className="sr-only"
             onChange={(event) => {
               const file = event.target.files?.[0];

@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { SelectNative } from "@/components/ui/select-native";
 import type { ClaimFormValues } from "@/schemas/claim";
 import { deletePartPhoto, uploadPartPhoto } from "@/server/actions/claim";
+import { ACCEPT_IMAGES } from "@/lib/uploads";
 
 export interface PartPhoto {
   readonly id: string;
@@ -135,7 +136,7 @@ export function PartPanel({
         <input
           ref={fileRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept={ACCEPT_IMAGES}
           className="sr-only"
           onChange={(event) => {
             const file = event.target.files?.[0];

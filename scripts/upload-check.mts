@@ -138,6 +138,13 @@ async function attempt(label: string, file: File, expectReject = false): Promise
   await storage.remove(savedPath).catch(() => undefined);
 }
 
+/** Berkas berawalan tanda tangan ZIP — bentuk yang sama dengan .docx sungguhan. */
+function zipShapedDocument(): Buffer {
+  const header = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+
+  return Buffer.concat([header, Buffer.alloc(32 * 1024, 0x20)]);
+}
+
 async function main(): Promise<void> {
   const root = path.resolve(process.env.STORAGE_ROOT ?? "./storage/uploads");
   const megabytes = Number(arg("mb") ?? 4);
@@ -184,6 +191,24 @@ async function main(): Promise<void> {
       new File([new Uint8Array(photo)], "uji-unggah.jpg", { type: "image/jpeg" }),
     );
   }
+
+  // Dokumen Office: jalur yang paling mudah salah, karena jenisnya ditentukan dari
+  // ekstensi ketika peramban mengirim MIME yang tidak berguna — dan itulah yang terjadi
+  // di Windows. Dua percobaan, supaya kedua sisi penjaganya terbukti bekerja.
+  await attempt(
+    "dokumen .docx dengan MIME octet-stream (seperti kiriman Windows)",
+    new File([new Uint8Array(zipShapedDocument())], "notulen.docx", {
+      type: "application/octet-stream",
+    }),
+  );
+
+  await attempt(
+    "berkas bukan Office yang dinamai ulang .docx — harus ditolak",
+    new File([new Uint8Array(Buffer.from("MZ\u0090\u0000bukan dokumen"))], "palsu.docx", {
+      type: "application/octet-stream",
+    }),
+    true,
+  );
 
   // Folder uji ikut dibuang; berkasnya sudah dihapus, foldernya jangan ditinggalkan.
   await rm(path.join(root, "_upload-check"), { recursive: true, force: true }).catch(

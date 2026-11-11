@@ -23,6 +23,7 @@ import {
   saveCparActionPlan,
   uploadActionItemEvidence,
 } from "@/server/actions/cpar-filling";
+import { ACCEPT_EVIDENCE } from "@/lib/uploads";
 
 /** Calon PIC, sudah diringkas halaman server menjadi apa yang perlu tampil di pilihan. */
 export interface PicOption {
@@ -594,7 +595,7 @@ function ItemEvidencePanel({
           <input
             ref={fileRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,application/pdf"
+            accept={ACCEPT_EVIDENCE}
             className="sr-only"
             onChange={(event) => {
               const file = event.target.files?.[0];

@@ -27,6 +27,7 @@ import {
   uploadCheckEvidence,
   uploadMonitoringEvidence,
 } from "@/server/actions/monitoring";
+import { ACCEPT_EVIDENCE } from "@/lib/uploads";
 
 export interface PeriodEvidence {
   readonly id: string;
@@ -291,7 +292,7 @@ function PeriodCard({
               <input
                 ref={fileRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp,application/pdf"
+                accept={ACCEPT_EVIDENCE}
                 className="sr-only"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
@@ -534,7 +535,7 @@ function CheckRow({
             ref={fileRef}
             type="file"
             data-evidence="check"
-            accept="image/jpeg,image/png,image/webp,application/pdf"
+            accept={ACCEPT_EVIDENCE}
             className="sr-only"
             onChange={(event) => {
               const file = event.target.files?.[0];
