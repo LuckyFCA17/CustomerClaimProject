@@ -198,21 +198,43 @@ describe("monitoringResultSchema", () => {
     if (result.success) expect(result.data.quantity).toBe(500);
   });
 
-  it("membiarkan sebagian yang belum dinilai", () => {
-    // 500 diproduksi, baru 100 diperiksa. Itu keadaan wajar di tengah periode, bukan
-    // kesalahan — yang salah hanya bila yang dinilai lebih banyak daripada yang ada.
-    expect(monitoringResultSchema.safeParse({ ...BARIS, okCount: "98", ngCount: "2" }).success).toBe(
-      true,
+  it("menolak OK + NG yang kurang dari jumlahnya", () => {
+    // Kasus yang dulu lolos tanpa suara: 5.000 diproduksi, OK 2.000, NG 100. Baris itu
+    // masuk ke rekap sebagai NG 4,8% padahal 2.900 part tidak pernah dipertanggungjawabkan.
+    const [message] = errorsFor(
+      monitoringResultSchema.safeParse({
+        ...BARIS,
+        quantity: "5000",
+        okCount: "2000",
+        ngCount: "100",
+      }),
+      "okCount",
     );
+
+    expect(message).toContain("kurang dari");
+    expect(message).toContain("2.900");
   });
 
   it("menolak OK + NG yang melebihi jumlahnya", () => {
+    const [message] = errorsFor(
+      monitoringResultSchema.safeParse({ ...BARIS, quantity: "100", okCount: "99", ngCount: "5" }),
+      "okCount",
+    );
+
+    expect(message).toContain("melebihi");
+    expect(message).toContain("4");
+  });
+
+  it("menerima hanya ketika jumlahnya tepat habis terbagi OK dan NG", () => {
+    // Tiap part punya satu keputusan: OK atau NG. Tidak ada kategori ketiga.
     expect(
-      errorsFor(
-        monitoringResultSchema.safeParse({ ...BARIS, quantity: "100", okCount: "99", ngCount: "5" }),
-        "okCount",
-      ),
-    ).toHaveLength(1);
+      monitoringResultSchema.safeParse({ ...BARIS, quantity: "100", okCount: "100", ngCount: "0" })
+        .success,
+    ).toBe(true);
+    expect(
+      monitoringResultSchema.safeParse({ ...BARIS, quantity: "100", okCount: "0", ngCount: "100" })
+        .success,
+    ).toBe(true);
   });
 
   it("menolak jumlah nol — baris tanpa barang tidak mengukur apa pun", () => {

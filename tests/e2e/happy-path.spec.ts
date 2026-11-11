@@ -288,21 +288,71 @@ test("angka produksi dan inspeksi dicatat per tanggal, lalu direkap", async ({ p
   await expect(page.locator("body")).toContainText("0.40%");
 });
 
-test("OK + NG yang melebihi jumlahnya ditolak", async ({ page }) => {
+test("OK + NG yang tidak sama dengan jumlahnya ditolak, ke dua arah", async ({ page }) => {
   await loginAs(page, USERS.prodHead);
 
   await page.goto(`/monitoring/${claimUrl.split("/").pop()}`);
   await page.waitForLoadState("networkidle");
 
   const production = page.locator('[data-results="PRODUCTION"]').first();
-  await production.getByLabel("Tanggal produksi").fill("2026-11-17");
-  await production.getByLabel("Jumlah produksi").fill("100");
-  await production.getByLabel("Total OK").fill("99");
-  await production.getByLabel("Total NG").fill("5");
-  await production.getByRole("button", { name: "Tambah baris" }).click();
-  await page.waitForTimeout(1200);
 
+  async function coba(quantity: string, okCount: string, ngCount: string) {
+    await production.getByLabel("Tanggal produksi").fill("2026-11-17");
+    await production.getByLabel("Jumlah produksi").fill(quantity);
+    await production.getByLabel("Total OK").fill(okCount);
+    await production.getByLabel("Total NG").fill(ngCount);
+    await production.getByRole("button", { name: "Tambah baris" }).click();
+    await page.waitForTimeout(1200);
+  }
+
+  await coba("100", "99", "5");
   await expect(page.locator("body")).toContainText(/melebihi jumlahnya/i);
+
+  // Arah yang dulu lolos tanpa suara: 5.000 diproduksi, OK 2.000, NG 100.
+  await coba("5000", "2000", "100");
+  await expect(page.locator("body")).toContainText(/kurang dari jumlahnya/i);
+
+  // Menyunting salah satu angka membersihkan pesan server, dan petunjuk langsung yang
+  // mengambil alih — keduanya tidak pernah tampil bersamaan. Nilainya harus benar-benar
+  // berubah: mengisi ulang angka yang sama tidak memicu onChange, jadi tidak ada yang
+  // dibersihkan dan uji ini akan gagal karena alasan yang tidak ada hubungannya.
+  await production.getByLabel("Total OK").fill("2500");
+  await expect(production).not.toContainText(/kurang dari jumlahnya/i);
+  await expect(production).toContainText(/kurang 2\.400 dari 5\.000/i);
+
+  // Angka yang pas membuat petunjuknya berbalik, tanpa perlu menekan apa pun.
+  await production.getByLabel("Total OK").fill("4900");
+  await expect(production).toContainText(/cocok dengan jumlahnya/i);
+
+  // Dan tidak ada baris yang tersimpan dari kedua percobaan yang ditolak tadi.
+  await expect(production).not.toContainText("17 Nov 2026");
+});
+
+test("periode dapat ditutup dan dibuka lagi", async ({ page }) => {
+  await loginAs(page, USERS.prodHead);
+
+  await page.goto(`/monitoring/${claimUrl.split("/").pop()}`);
+  await page.waitForLoadState("networkidle");
+
+  const period = page.locator("details").filter({ hasText: "Periode 1" }).first();
+  const summary = period.locator("summary").first();
+
+  // Periode yang masih menunggu penilaian terbuka sejak awal.
+  await expect(period).toHaveAttribute("open", "");
+  await expect(period.getByText("Monitoring hasil produksi")).toBeVisible();
+
+  await summary.click();
+  await page.waitForTimeout(400);
+
+  await expect(period).not.toHaveAttribute("open", "");
+  await expect(period.getByText("Monitoring hasil produksi")).toBeHidden();
+
+  // Yang tersisa saat tertutup bukan hanya judulnya: keadaannya ikut terbaca.
+  await expect(summary).toContainText(/item berbukti/);
+
+  await summary.click();
+  await page.waitForTimeout(400);
+  await expect(period.getByText("Monitoring hasil produksi")).toBeVisible();
 });
 
 test("Effective ditolak selama item check belum ada buktinya", async ({ page }) => {

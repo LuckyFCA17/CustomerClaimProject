@@ -11,6 +11,7 @@ import {
   monitoringProgress,
   ngRate,
   planPeriods,
+  resultBalance,
   totalResults,
 } from "@/lib/monitoring";
 
@@ -286,5 +287,26 @@ describe("calendarRows", () => {
     ]);
 
     expect(days).toHaveLength(2);
+  });
+});
+
+describe("resultBalance", () => {
+  it("menyatakan seimbang hanya ketika OK + NG tepat sama dengan jumlahnya", () => {
+    expect(resultBalance(500, 498, 2)).toMatchObject({ judged: 500, gap: 0, balanced: true });
+  });
+
+  it("menghitung selisihnya saat kurang", () => {
+    // Baris dari tangkapan layar: 5.000 diproduksi, OK 2.000, NG 100.
+    expect(resultBalance(5000, 2000, 100)).toMatchObject({ judged: 2100, gap: 2900, balanced: false });
+  });
+
+  it("memberi selisih negatif saat lebih, supaya arahnya terbaca tanpa membandingkan lagi", () => {
+    expect(resultBalance(100, 99, 5)).toMatchObject({ judged: 104, gap: -4, balanced: false });
+  });
+
+  it("menganggap nol lawan nol seimbang", () => {
+    // Bukan keadaan yang bisa disimpan — jumlah minimal 1 — tetapi fungsinya tidak boleh
+    // membagi atau mengira-ngira; yang dijawabnya hanya "sama atau tidak".
+    expect(resultBalance(0, 0, 0).balanced).toBe(true);
   });
 });

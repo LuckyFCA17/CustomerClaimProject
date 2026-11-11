@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   CircleDashed,
   FileUp,
   Loader2,
@@ -19,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { MonitoringStatus } from "@/generated/prisma/enums";
-import { MONITORING_STATUS_LABEL } from "@/lib/monitoring";
+import { MONITORING_STATUS_LABEL, totalResults } from "@/lib/monitoring";
 import { formatDate, formatDateTime } from "@/lib/format";
 import {
   deleteMonitoringEvidence,
@@ -85,7 +86,16 @@ export function PeriodList({
     <ol className="space-y-4">
       {periods.map((period) => (
         <li key={period.id}>
-          <PeriodCard period={period} canUpload={canUpload} canAssess={canAssess} />
+          <PeriodCard
+            period={period}
+            canUpload={canUpload}
+            canAssess={canAssess}
+            // Periode yang sudah dinilai tertutup; yang masih menunggu terbuka.
+            // Yang sudah selesai tidak lagi dikerjakan siapa pun, dan membiarkannya
+            // terbentang hanya membuat periode yang justru perlu diisi terdorong jauh
+            // ke bawah layar. Siapa pun tetap boleh membuka atau menutup sendiri.
+            defaultOpen={period.status === "PENDING"}
+          />
         </li>
       ))}
     </ol>
@@ -102,10 +112,12 @@ function PeriodCard({
   period,
   canUpload,
   canAssess,
+  defaultOpen,
 }: {
   period: PeriodView;
   canUpload: boolean;
   canAssess: boolean;
+  defaultOpen: boolean;
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -166,9 +178,24 @@ function PeriodCard({
     }
   }
 
+  // Ringkasan yang terbaca saat kartunya ditutup. Tanpa ini, menutup periode berarti
+  // menyembunyikan keadaannya — dan orang harus membuka satu per satu untuk tahu mana
+  // yang masih perlu dikerjakan, yang justru lebih lambat daripada menggulir.
+  const digest = [
+    period.checks.length > 0
+      ? `${period.checks.length - outstandingChecks}/${period.checks.length} item berbukti`
+      : null,
+    period.results.length > 0
+      ? `${period.results.length} baris · NG ${totalResults(period.results).ngCount.toLocaleString("id-ID")}`
+      : null,
+  ].filter(Boolean);
+
   return (
-    <article className="rounded-lg border border-nid-border bg-card">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-nid-border px-4 py-3">
+    <details
+      open={defaultOpen}
+      className="group rounded-lg border border-nid-border bg-card [&[open]>summary]:border-b"
+    >
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1.5 border-nid-border px-4 py-3 [&::-webkit-details-marker]:hidden">
         <span className="grid size-6 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold tabular">
           {period.periodNo}
         </span>
@@ -183,6 +210,11 @@ function PeriodCard({
                 lewat tenggat
               </span>
             ) : null}
+            {/* Barisnya sendiri saat tertutup: disambung di belakang tenggat, ia
+                membungkus menjadi tiga baris pendek pada layar ponsel. */}
+            {digest.length > 0 ? (
+              <span className="block w-full group-open:hidden">{digest.join(" · ")}</span>
+            ) : null}
           </p>
         </div>
 
@@ -192,7 +224,12 @@ function PeriodCard({
         >
           {MONITORING_STATUS_LABEL[period.status]}
         </span>
-      </header>
+
+        <ChevronDown
+          aria-hidden
+          className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+        />
+      </summary>
 
       <div className="space-y-4 px-4 py-3">
         {period.checks.length > 0 ? (
@@ -424,7 +461,7 @@ function PeriodCard({
           </div>
         ) : null}
       </div>
-    </article>
+    </details>
   );
 }
 

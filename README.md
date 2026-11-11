@@ -1122,12 +1122,24 @@ harian, per shift, atau per lot. Portal tidak memaksakan salah satunya.
 
 Dua aturan pada angkanya:
 
-1. **`OK + NG` tidak boleh melebihi `quantity`.** Yang dinilai tidak mungkin lebih banyak daripada
-   yang ada, dan angka seperti itu selalu salah ketik. Boleh **kurang** — sisanya berarti belum
-   diperiksa, dan itu keadaan wajar di tengah periode.
-2. **Bagian NG dihitung dari `OK + NG`, bukan dari `quantity`.** Yang belum diperiksa belum
-   diketahui baik atau tidak; menghitungnya sebagai baik akan menurunkan angka NG hanya karena
-   pemeriksaannya tertinggal — persis ketika angka itu paling tidak boleh dipercaya.
+1. **`OK + NG` harus sama persis dengan `quantity`.** Tiap part yang dihitung punya satu
+   keputusan: OK atau NG. Tidak ada kategori ketiga, jadi selisih berapa pun berarti ada angka
+   yang salah ketik — dan itulah yang paling sering terjadi, karena ketiganya disalin dari lembar
+   lain.
+
+   Aturan ini semula hanya satu arah: menolak yang melebihi, membiarkan yang kurang, dengan alasan
+   sisanya "belum diperiksa". Alasan itu keliru untuk form ini — kolom jumlahnya adalah **yang
+   diproduksi** dan **yang diperiksa**, bukan yang direncanakan. Baris 5.000 / OK 2.000 / NG 100
+   lolos tanpa suara, lalu masuk ke rekap dan grafik sebagai NG 4,8% padahal 2.900 part tidak
+   pernah dipertanggungjawabkan. Yang dicatat sebagian cukup ditulis apa adanya: jumlahnya diisi
+   sebanyak yang memang sudah diperiksa, dan sisanya menjadi baris tersendiri.
+
+   `resultBalance()` dipakai bersama oleh tiga pihak yang harus sepakat: petunjuk langsung di form
+   saat diketik, penolakan Zod saat dikirim, dan penanda merah pada baris lama yang terlanjur
+   tersimpan sebelum aturan ini ada.
+2. **Bagian NG dihitung dari `OK + NG`, bukan dari `quantity`.** Keduanya kini selalu sama, jadi
+   aturan ini tidak lagi mengubah angkanya — tetapi tetap ditulis begitu supaya baris lama yang
+   tidak seimbang tidak melaporkan NG lebih rendah daripada yang sebenarnya.
 
 Tanggalnya adalah tanggal produksi atau inspeksinya, bukan tanggal barisnya dibuat, sehingga angka
 yang dimasukkan terlambat tetap jatuh pada harinya.
@@ -1158,6 +1170,19 @@ grafik punya legenda, dan tabelnya memuat angka yang tepat.
 
 Lembar cetak monitoring ikut memuat daftar item dan tabel per tanggal beserta totalnya, dan tetap
 satu halaman A4.
+
+### Periode dapat ditutup
+
+Tiap kartu periode adalah `<details>`, jadi dapat ditutup dan dibuka tanpa JavaScript, dengan
+dukungan papan ketik dan pembaca layar yang sudah melekat pada elemennya. **Periode yang masih
+menunggu penilaian terbuka sejak awal; yang sudah dinilai tertutup** — yang sudah selesai tidak
+lagi dikerjakan siapa pun, dan membiarkannya terbentang hanya mendorong periode yang justru perlu
+diisi jauh ke bawah layar. Siapa pun tetap boleh membuka atau menutup sendiri.
+
+Yang tertutup tetap menyebutkan keadaannya pada baris ringkas — berapa item sudah berbukti, berapa
+baris angka, dan berapa NG-nya. Tanpa itu, menutup periode berarti menyembunyikan keadaannya, dan
+orang harus membuka satu per satu untuk tahu mana yang perlu dikerjakan — justru lebih lambat
+daripada menggulir.
 
 ## State machine klaim
 

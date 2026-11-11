@@ -3,7 +3,7 @@
 import { useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
   RESULT_DATE_LABEL,
   RESULT_KIND_LABEL,
   RESULT_QUANTITY_LABEL,
+  resultBalance,
   totalResults,
 } from "@/lib/monitoring";
 import { addMonitoringResult, deleteMonitoringResult } from "@/server/actions/monitoring";
@@ -62,8 +63,30 @@ export function ResultsEditor({
   const totals = totalResults(rows);
   const quantityLabel = RESULT_QUANTITY_LABEL[kind];
 
-  const set = (field: keyof typeof EMPTY_FORM, value: string) =>
+  // Petunjuk langsung saat diketik. Tanpa ini, selisihnya baru ketahuan setelah tombol
+  // ditekan — padahal ketiganya disalin dari lembar lain dan selisih itu justru yang
+  // paling sering terjadi.
+  const typed = {
+    quantity: Number(form.quantity),
+    okCount: Number(form.okCount),
+    ngCount: Number(form.ngCount),
+  };
+  const filled =
+    form.quantity !== "" &&
+    form.okCount !== "" &&
+    form.ngCount !== "" &&
+    Object.values(typed).every((value) => Number.isFinite(value));
+  const balance = filled
+    ? resultBalance(typed.quantity, typed.okCount, typed.ngCount)
+    : null;
+
+  // Menyunting membersihkan galat dari percobaan sebelumnya. Galat merah yang tetap
+  // menyala sementara angkanya sedang diperbaiki menyatakan sesuatu yang sudah tidak
+  // benar lagi, dan petunjuk langsung di bawahnya sudah mengambil alih tugasnya.
+  const set = (field: keyof typeof EMPTY_FORM, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
+    setErrors({});
+  };
 
   async function add() {
     setErrors({});
@@ -111,10 +134,24 @@ export function ResultsEditor({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {rows.map((row) => {
+                // Baris lama dari sebelum aturan ini ada bisa saja tidak seimbang.
+                // Dibiarkan tanpa tanda, angkanya ikut terhitung di rekap dan grafik
+                // seolah-olah benar; yang ditawarkan di sini justru sebaliknya —
+                // ditunjukkan, lalu dihapus dan dicatat ulang.
+                const rowBalance = resultBalance(row.quantity, row.okCount, row.ngCount);
+
+                return (
                 <tr key={row.id} className="border-b border-nid-border last:border-0 align-top">
                   <td className="py-1.5 pr-2">
                     <span className="tabular">{formatDate(row.recordedOn)}</span>
+                    {rowBalance.balanced ? null : (
+                      <span className="mt-0.5 flex items-center gap-1 text-[11px] text-[var(--status-danger)]">
+                        <TriangleAlert aria-hidden className="size-3 shrink-0" />
+                        OK + NG {rowBalance.gap > 0 ? "kurang" : "lebih"}{" "}
+                        {Math.abs(rowBalance.gap).toLocaleString("id-ID")}
+                      </span>
+                    )}
                     {row.note ? (
                       <span className="block text-[11px] break-words text-muted-foreground">
                         {row.note}
@@ -155,7 +192,8 @@ export function ResultsEditor({
                     </td>
                   ) : null}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
             {totals.rows > 1 ? (
               <tfoot>
@@ -219,6 +257,25 @@ export function ResultsEditor({
               messages={errors.ngCount}
             />
           </div>
+
+          {/* Petunjuk langsung mundur selama pesan dari server masih terpampang: keduanya
+              menyatakan hal yang sama, dan dua kalimat merah berturut-turut terbaca
+              seperti dua masalah yang berbeda. */}
+          {balance && !errors.okCount?.length ? (
+            <p
+              className={`text-[11px] ${
+                balance.balanced
+                  ? "text-[var(--status-closed)]"
+                  : "text-[var(--status-danger)]"
+              }`}
+            >
+              {balance.balanced
+                ? `OK + NG = ${balance.judged.toLocaleString("id-ID")}, cocok dengan jumlahnya.`
+                : `OK + NG = ${balance.judged.toLocaleString("id-ID")} · ${
+                    balance.gap > 0 ? "kurang" : "lebih"
+                  } ${Math.abs(balance.gap).toLocaleString("id-ID")} dari ${typed.quantity.toLocaleString("id-ID")}.`}
+            </p>
+          ) : null}
 
           <Field
             id={`${fieldId}-note`}

@@ -65,9 +65,19 @@ export type StartMonitoringInput = z.infer<typeof startMonitoringSchema>;
 /**
  * Satu baris angka hasil produksi atau inspeksi.
  *
- * `okCount + ngCount` tidak boleh melebihi `quantity`: yang dinilai tidak mungkin lebih
- * banyak daripada yang ada, dan angka seperti itu selalu salah ketik. Boleh kurang —
- * sisanya berarti belum diperiksa, dan itu keadaan yang wajar di tengah periode.
+ * **`okCount + ngCount` harus sama persis dengan `quantity`.** Tiap part yang dihitung
+ * punya satu keputusan: OK atau NG. Tidak ada kategori ketiga, jadi selisih berapa pun
+ * berarti ada angka yang salah ketik — dan itulah yang paling sering terjadi, karena
+ * ketiganya disalin dari lembar lain.
+ *
+ * Aturan ini semula hanya satu arah (menolak yang melebihi, membiarkan yang kurang),
+ * dengan alasan sisanya "belum diperiksa". Alasan itu keliru untuk form ini: kolom
+ * jumlahnya adalah **yang diproduksi** dan **yang diperiksa**, bukan yang direncanakan.
+ * Baris 5.000 / OK 2.000 / NG 100 lolos tanpa suara, lalu masuk ke rekap dan grafik
+ * sebagai NG 4,8% — padahal 2.900 part tidak pernah dipertanggungjawabkan.
+ *
+ * Yang dicatat sebagian cukup ditulis apa adanya: jumlahnya diisi sebanyak yang memang
+ * sudah diperiksa, dan sisanya menjadi baris tersendiri saat gilirannya tiba.
  */
 export const monitoringResultSchema = z
   .object({
@@ -94,13 +104,20 @@ export const monitoringResultSchema = z
     note: z.string().trim().max(500, "Maksimal 500 karakter.").optional().or(z.literal("")),
   })
   .superRefine((value, ctx) => {
-    if (value.okCount + value.ngCount > value.quantity) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["okCount"],
-        message: `OK + NG (${value.okCount + value.ngCount}) melebihi jumlahnya (${value.quantity}).`,
-      });
-    }
+    const judged = value.okCount + value.ngCount;
+    if (judged === value.quantity) return;
+
+    const gap = Math.abs(judged - value.quantity);
+    const direction = judged > value.quantity ? "melebihi" : "kurang dari";
+
+    ctx.addIssue({
+      code: "custom",
+      path: ["okCount"],
+      message:
+        `OK + NG = ${judged.toLocaleString("id-ID")}, ${direction} jumlahnya ` +
+        `(${value.quantity.toLocaleString("id-ID")}) sebanyak ${gap.toLocaleString("id-ID")}. ` +
+        `Tiap part harus terhitung sebagai OK atau NG.`,
+    });
   });
 
 export type MonitoringResultInput = z.infer<typeof monitoringResultSchema>;

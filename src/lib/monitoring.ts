@@ -221,6 +221,26 @@ const EMPTY_TOTALS: ResultTotals = {
   ngRate: null,
 };
 
+export interface ResultBalance {
+  readonly judged: number;
+  /** `quantity - (OK + NG)`. Positif berarti kurang, negatif berarti lebih. */
+  readonly gap: number;
+  readonly balanced: boolean;
+}
+
+/**
+ * Apakah OK + NG menutup seluruh jumlahnya.
+ *
+ * Satu tempat untuk tiga pemakai yang harus sepakat: petunjuk langsung di form saat
+ * diketik, penolakan di skema Zod saat dikirim, dan penanda pada baris lama yang
+ * terlanjur tersimpan sebelum aturan ini ada.
+ */
+export function resultBalance(quantity: number, okCount: number, ngCount: number): ResultBalance {
+  const judged = okCount + ngCount;
+
+  return { judged, gap: quantity - judged, balanced: judged === quantity };
+}
+
 export function ngRate(okCount: number, ngCount: number): number | null {
   const judged = okCount + ngCount;
 
