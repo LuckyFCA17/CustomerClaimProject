@@ -1097,17 +1097,63 @@ tampak kelabu dan tidak dapat dipilih di salah satu dari keduanya.
 
 ## Claim Analytics
 
-Menu tersendiri berisi empat grafik, seluruhnya pada **satu periode yang sama**:
+Menu tersendiri berisi tujuh grafik, seluruhnya pada **satu periode yang sama**:
 
 | Grafik | Sumber | Komponen |
 | --- | --- | --- |
-| Jenis klaim | `Claim.type` | `ClaimTypeBars` |
+| Jenis klaim | `Claim.type` | `BreakdownBars` |
 | Klaim per bulan | `Claim.createdAt` | `MonthlyColumns` |
 | Jenis defek yang sering terjadi | `Claim.ncDetailId` | `ParetoBars` |
+| **Lead time per tahap** | tanggal `Claim` + `Cpar` | `LeadTimeBars` |
+| **Pengulangan kejadian** | `Claim.occurrence` | `BreakdownBars` |
+| **Defek yang paling sering kembali** | `ncDetailId` + `occurrence ≥ kedua` | `ParetoBars` |
 | Departemen penanggung jawab | `Cpar.responsibleDeptId` | `ParetoBars` |
 
-Tiga dari empat memakai ulang komponen dan perhitungan dashboard (`monthlySeries`,
-`paretoRows`) — satu implementasi, dua tempat memakainya. Yang baru hanya grafik jenis klaim.
+Sebagian besar memakai ulang komponen dan perhitungan dashboard (`monthlySeries`,
+`paretoRows`) — satu implementasi, beberapa tempat memakainya.
+
+### Lead time: di mana waktunya habis
+
+| Tahap | Dari → ke |
+| --- | --- |
+| Respons QA | `dateOfReceived` → `publishedAt` |
+| Pengisian departemen | `Cpar.issuedAt` → `submittedAt` |
+| Rantai verifikasi | `submittedAt` → `approvedAt` |
+| Pemantauan CAPA | `approvedAt` → `closedAt` |
+
+**Median, bukan rata-rata.** Satu klaim yang menggantung berbulan-bulan menarik rata-rata sampai
+angkanya tidak menggambarkan klaim mana pun.
+
+**Hari kalender, bukan hari kerja.** Tenggat portal memakai hari kerja, tetapi yang dijawab di
+sini berapa lama pelanggan menunggu — dan akhir pekan ikut berjalan bagi yang menunggu.
+
+**Jumlah sampel tercetak di tiap baris, dan itu bukan hiasan.** Klaim yang belum disetujui belum
+punya lama verifikasi, sehingga median satu tahap bisa berasal dari tiga klaim sementara tahap di
+sebelahnya dari empat puluh. Median yang disandingkan tanpa menyebut sampelnya mengundang
+perbandingan yang tidak sah. Tahap yang belum pernah dilewati siapa pun bernilai **null**, bukan
+nol: nol berarti "selesai seketika", dan menyamakan keduanya membuat tahap yang macet terbaca
+sebagai tahap tercepat.
+
+Tanggal yang urutannya terbalik — mis. tanggal diterima tersunting menjadi sesudah tanggal terbit
+— dibuang, bukan dihitung negatif. Dibiarkan masuk ia menarik median ke bawah secara diam-diam;
+dibuang ia hanya mengurangi sampel yang memang sudah disebutkan.
+
+### Pengulangan: apakah countermeasure-nya bekerja
+
+`Claim.occurrence` (First / Second / Third or more) adalah sinyal mutu terkuat di basis data:
+countermeasure yang benar-benar bekerja seharusnya menekan `THIRD_OR_MORE` ke nol.
+
+Warnanya **satu rona yang makin gelap**, bukan tiga warna kategori — pengulangan punya urutan, dan
+warna berurut menyampaikan urutan itu tanpa perlu dibaca. Warna status (hijau/kuning/merah)
+sengaja tidak dipakai: ia disediakan untuk keadaan yang menuntut tindakan segera, dan memakainya
+di sini membuat seluruh portal kehilangan arti merahnya.
+
+Pasangannya **Defek yang paling sering kembali** — Pareto yang hanya menghitung klaim berulang.
+Bukan defek terbanyak, melainkan defek yang akar masalahnya belum tersentuh; keduanya sering
+berbeda, dan yang kedua itulah yang pantas ditangani lebih dulu.
+
+Klaim yang `occurrence`-nya belum diisi ikut masuk penyebut porsi pengulangan. Dikeluarkan, angka
+pengulangan akan tampak lebih besar daripada yang sebenarnya diketahui.
 
 **Satu periode untuk keempatnya**, bukan satu per grafik. Halaman analitik yang tiap grafiknya
 menjawab rentang waktu berbeda tidak dapat dipakai membandingkan apa pun: "defek yang sering

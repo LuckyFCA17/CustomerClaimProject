@@ -1,13 +1,20 @@
 import type { Metadata } from "next";
 
-import { ClaimTypeBars } from "@/components/analytics/claim-type-bars";
+import { BreakdownBars } from "@/components/analytics/breakdown-bars";
+import { LeadTimeBars } from "@/components/analytics/lead-time-bars";
 import { MonthlyColumns } from "@/components/dashboard/monthly-columns";
 import { ParetoBars } from "@/components/dashboard/pareto-bars";
 import { PeriodFilter } from "@/components/dashboard/period-filter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ClaimType } from "@/generated/prisma/enums";
-import { typeBreakdown } from "@/lib/analytics";
-import { monthlySeries, paretoRows, resolvePeriod } from "@/lib/dashboard";
+import type { ClaimType, OccurrenceCount } from "@/generated/prisma/enums";
+import {
+  type LeadTimeInput,
+  leadTimeSummary,
+  occurrenceBreakdown,
+  repeatShare,
+  typeBreakdown,
+} from "@/lib/analytics";
+import { monthlySeries, paretoRows, percent, resolvePeriod } from "@/lib/dashboard";
 import { toJakartaParts } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { visibleClaimsWhere } from "@/lib/permissions";
@@ -52,8 +59,18 @@ export default async function AnalyticsPage({
   const period = resolvePeriod(one(query.from), one(query.to), now);
   const inPeriod = { ...where, createdAt: { gte: period.start, lt: period.end } };
 
-  const [dates, typeGroups, ncGroups, ncNames, deptGroups, departments, oldestClaim] =
-    await Promise.all([
+  const [
+    dates,
+    typeGroups,
+    ncGroups,
+    ncNames,
+    deptGroups,
+    departments,
+    oldestClaim,
+    occurrenceGroups,
+    stageDates,
+    repeatGroups,
+  ] = await Promise.all([
       db.claim.findMany({ where: inPeriod, select: { createdAt: true } }),
       db.claim.groupBy({ by: ["type"], where: inPeriod, _count: { _all: true } }),
       db.claim.groupBy({ by: ["ncDetailId"], where: inPeriod, _count: { _all: true } }),
@@ -76,6 +93,30 @@ export default async function AnalyticsPage({
       db.department.findMany({ select: { id: true, code: true, name: true } }),
 
       db.claim.findFirst({ where, orderBy: { createdAt: "asc" }, select: { createdAt: true } }),
+
+      db.claim.groupBy({ by: ["occurrence"], where: inPeriod, _count: { _all: true } }),
+
+      /**
+       * Tanggal tiap tahap. Diambil sebagai baris, bukan diagregasi di basis data:
+       * median tidak dapat dihitung dengan `groupBy`, dan jumlah klaim satu periode
+       * masih jauh di bawah ukuran yang membuat ini mahal.
+       */
+      db.claim.findMany({
+        where: inPeriod,
+        select: {
+          dateOfReceived: true,
+          publishedAt: true,
+          closedAt: true,
+          cpar: { select: { issuedAt: true, submittedAt: true, approvedAt: true } },
+        },
+      }),
+
+      /** Klaim berulang saja — "defek apa yang terus kembali meski sudah di-CPAR". */
+      db.claim.groupBy({
+        by: ["ncDetailId"],
+        where: { ...inPeriod, occurrence: { in: ["SECOND_TIME", "THIRD_OR_MORE"] } },
+        _count: { _all: true },
+      }),
     ]);
 
   const series = monthlySeries(
@@ -119,6 +160,37 @@ export default async function AnalyticsPage({
     }),
   );
 
+  const occurrences = occurrenceBreakdown(
+    Object.fromEntries(
+      occurrenceGroups
+        .filter((group) => group.occurrence !== null)
+        .map((group) => [group.occurrence, group._count._all]),
+    ) as Partial<Record<OccurrenceCount, number>>,
+    occurrenceGroups
+      .filter((group) => group.occurrence === null)
+      .reduce((sum, group) => sum + group._count._all, 0),
+  );
+
+  const leadTime = leadTimeSummary(
+    stageDates.map(
+      (claim): LeadTimeInput => ({
+        receivedAt: claim.dateOfReceived,
+        publishedAt: claim.publishedAt,
+        cparIssuedAt: claim.cpar?.issuedAt ?? null,
+        cparSubmittedAt: claim.cpar?.submittedAt ?? null,
+        cparApprovedAt: claim.cpar?.approvedAt ?? null,
+        closedAt: claim.closedAt,
+      }),
+    ),
+  );
+
+  const repeatDefects = paretoRows(
+    repeatGroups.map((group) => ({
+      label: group.ncDetailId ? (ncNameById.get(group.ncDetailId) ?? "Tidak dikenal") : "Tidak diisi",
+      count: group._count._all,
+    })),
+  );
+
   const thisYear = toJakartaParts(now).year;
   const oldestYear = oldestClaim ? toJakartaParts(oldestClaim.createdAt).year : null;
   const years = [
@@ -134,7 +206,7 @@ export default async function AnalyticsPage({
       <header className="space-y-1">
         <h1 className="font-display text-2xl font-bold text-nid-orange-700">Claim Analytics</h1>
         <p className="text-sm text-muted-foreground">
-          Empat pertanyaan tentang klaim, seluruhnya pada periode yang sama.
+          Tujuh pertanyaan tentang klaim, seluruhnya pada periode yang sama.
         </p>
       </header>
 
@@ -142,7 +214,7 @@ export default async function AnalyticsPage({
         <CardHeader>
           <CardTitle>Periode</CardTitle>
           <CardDescription>
-            Berlaku untuk keempat grafik di bawah, sehingga angkanya dapat dibandingkan satu
+            Berlaku untuk seluruh grafik di bawah, sehingga angkanya dapat dibandingkan satu
             sama lain.
           </CardDescription>
         </CardHeader>
@@ -167,7 +239,7 @@ export default async function AnalyticsPage({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ClaimTypeBars rows={types} />
+            <BreakdownBars rows={types} empty="Belum ada klaim pada periode ini." />
           </CardContent>
         </Card>
 
@@ -193,6 +265,49 @@ export default async function AnalyticsPage({
           </CardHeader>
           <CardContent>
             <ParetoBars rows={defects} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Lead time per tahap</CardTitle>
+            <CardDescription>
+              Di mana waktunya habis. Median, bukan rata-rata: satu klaim yang menggantung
+              berbulan-bulan menarik rata-rata sampai angkanya tidak menggambarkan klaim mana
+              pun.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <LeadTimeBars summary={leadTime} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Pengulangan kejadian</CardTitle>
+            <CardDescription>
+              {percent(repeatShare(occurrences))} klaim pada periode ini pernah terjadi
+              sebelumnya. Countermeasure yang benar-benar bekerja seharusnya menekan angka ini.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <BreakdownBars
+              rows={occurrences}
+              empty="Belum ada klaim pada periode ini."
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Defek yang paling sering kembali</CardTitle>
+            <CardDescription>
+              Hanya klaim yang pernah terjadi sebelumnya. Inilah defek yang akar masalahnya
+              belum tersentuh — bukan sekadar yang paling banyak jumlahnya.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ParetoBars rows={repeatDefects} />
           </CardContent>
         </Card>
 

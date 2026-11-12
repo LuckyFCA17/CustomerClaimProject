@@ -341,10 +341,19 @@ test("Claim Analytics: keempat grafik sepakat tentang periode yang sama", async 
     "Jenis klaim",
     "Klaim per bulan",
     "Jenis defek yang sering terjadi",
+    "Lead time per tahap",
+    "Pengulangan kejadian",
+    "Defek yang paling sering kembali",
     "Departemen penanggung jawab",
   ]) {
     await expect(body).toContainText(title);
   }
+
+  // Lead time menyebut sampelnya per tahap, bukan satu sampel untuk semuanya: klaim
+  // yang belum disetujui belum punya lama verifikasi, dan median tanpa sampelnya
+  // mengundang perbandingan yang tidak sah.
+  await expect(body).toContainText(/Respons QA/);
+  await expect(body).toContainText(/\d+ klaim/);
 
   /*
    * Total grafik jenis klaim harus sama dengan jumlah seluruh bulan pada grafik di
