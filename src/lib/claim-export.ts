@@ -1,3 +1,4 @@
+import { CLAIM_TYPE_LABEL } from "@/lib/analytics";
 import { CLAIM_STATUS_META } from "@/config/claim-status";
 import type { ClaimQuery } from "@/lib/claim-filters";
 import { hasActiveFilter } from "@/lib/claim-filters";
@@ -23,11 +24,12 @@ import { hasActiveFilter } from "@/lib/claim-filters";
  */
 export const EXPORT_ROW_MAX = 5000;
 
-export const TYPE_LABEL: Record<string, string> = {
-  OFFICIAL: "Official",
-  NON_OFFICIAL: "Non-Official",
-  INFORMATION_ONLY: "Information Only",
-};
+/**
+ * Diambil dari `lib/analytics.ts`, bukan disalin: label yang sama ditulis dua kali akan
+ * berbeda begitu salah satunya disunting, dan yang satu muncul di berkas ekspor
+ * sedangkan yang lain di grafik — selisihnya baru ketahuan saat keduanya dibandingkan.
+ */
+export const TYPE_LABEL: Record<string, string> = { ...CLAIM_TYPE_LABEL };
 
 const OCCURRENCE_LABEL: Record<string, string> = {
   FIRST_TIME: "First Time",

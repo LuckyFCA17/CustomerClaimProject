@@ -1095,6 +1095,57 @@ Nilai `accept` memuat MIME **dan** ekstensi sekaligus, karena pemilih berkas Win
 ekstensi sedangkan Android mencocokkan MIME — menulis salah satunya saja membuat berkas Office
 tampak kelabu dan tidak dapat dipilih di salah satu dari keduanya.
 
+## Claim Analytics
+
+Menu tersendiri berisi empat grafik, seluruhnya pada **satu periode yang sama**:
+
+| Grafik | Sumber | Komponen |
+| --- | --- | --- |
+| Jenis klaim | `Claim.type` | `ClaimTypeBars` |
+| Klaim per bulan | `Claim.createdAt` | `MonthlyColumns` |
+| Jenis defek yang sering terjadi | `Claim.ncDetailId` | `ParetoBars` |
+| Departemen penanggung jawab | `Cpar.responsibleDeptId` | `ParetoBars` |
+
+Tiga dari empat memakai ulang komponen dan perhitungan dashboard (`monthlySeries`,
+`paretoRows`) — satu implementasi, dua tempat memakainya. Yang baru hanya grafik jenis klaim.
+
+**Satu periode untuk keempatnya**, bukan satu per grafik. Halaman analitik yang tiap grafiknya
+menjawab rentang waktu berbeda tidak dapat dipakai membandingkan apa pun: "defek yang sering
+terjadi" sepanjang masa di sebelah "klaim bulanan" tahun ini akan terbaca seolah keduanya tentang
+periode yang sama. Periodenya hidup di URL, sehingga tautannya dapat dikirim ke orang lain.
+
+Seluruh angka disaring `visibleClaimsWhere` — User Dept. hanya melihat analitik klaimnya sendiri.
+Halaman analitik bukan celah untuk membaca klaim departemen lain.
+
+Dua hal yang tidak dihilangkan diam-diam, karena ketiadaan juga temuan: **jenis klaim yang nol**
+tetap digambar sebagai batang kosong, dan **draft yang jenisnya belum ditentukan** muncul sebagai
+baris abu "Belum diisi". Tanpa baris terakhir itu, total grafik jenis klaim tidak akan cocok
+dengan grafik klaim bulanan di sebelahnya — dan selisih yang tidak dijelaskan membuat seluruh
+halaman tidak dipercaya.
+
+Departemen penanggung jawab dibaca dari CPAR, bukan dari klaim, jadi **hanya klaim yang sudah
+diterbitkan CPAR yang terhitung.** Itu memang pertanyaannya — departemen mana yang paling sering
+menimbulkan klaim — dan klaim yang di-ignore atau belum ditindaklanjuti belum punya penanggung
+jawab.
+
+### `groupBy` sempat lolos dari penyaring soft delete
+
+Ditemukan justru lewat halaman ini: grafik jenis klaim menyebut 14, grafik klaim bulanan menyebut
+13, pada periode yang sama. Sebabnya `groupBy` tidak terdaftar di `READ_OPERATIONS`
+(`lib/db.ts`), sehingga ia **tidak ikut disaring `deletedAt: null`** sementara `findMany` ikut.
+
+Yang terdampak bukan hanya grafik:
+
+- **gerbang evidence CPAR** menghitung lampiran lewat `groupBy` — berkas yang sudah dihapus tetap
+  terhitung, dan submit final lolos atas bukti yang tidak ada lagi;
+- **lembar CPAR** mencetak jumlah evidence dari hitungan yang sama;
+- **pemakaian part** di Master Data ikut menghitung klaim yang sudah dihapus.
+
+Tidak ada satu pun pemanggil yang menginginkan baris terhapus ikut terhitung, jadi yang diperbaiki
+daftarnya — bukan tiap pemanggilnya satu per satu. Satu uji E2E menjaganya: total grafik jenis
+klaim harus sama dengan jumlah seluruh bulan pada grafik di sebelahnya. Selisih seperti itu tidak
+terlihat dari grafiknya, hanya dari angkanya yang dijumlahkan.
+
 ## Paket klaim
 
 Tombol **Download claim package** di halaman klaim menurunkan seluruh lembar cetak dan evidence

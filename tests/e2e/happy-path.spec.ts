@@ -330,6 +330,46 @@ test("OK + NG yang tidak sama dengan jumlahnya ditolak, ke dua arah", async ({ p
   await expect(production).not.toContainText("17 Nov 2026");
 });
 
+test("Claim Analytics: keempat grafik sepakat tentang periode yang sama", async ({ page }) => {
+  await loginAs(page, USERS.qaHead);
+  await page.goto("/analytics");
+  await page.waitForLoadState("networkidle");
+
+  const body = page.locator("body");
+
+  for (const title of [
+    "Jenis klaim",
+    "Klaim per bulan",
+    "Jenis defek yang sering terjadi",
+    "Departemen penanggung jawab",
+  ]) {
+    await expect(body).toContainText(title);
+  }
+
+  /*
+   * Total grafik jenis klaim harus sama dengan jumlah seluruh bulan pada grafik di
+   * sebelahnya. Keduanya membaca klaim yang sama lewat jalur Prisma yang berbeda —
+   * `groupBy` dan `findMany` — dan pernah berselisih karena hanya satu di antaranya
+   * ikut tersaring soft delete. Selisih seperti itu tidak terlihat dari grafiknya,
+   * hanya dari angkanya yang dijumlahkan.
+   */
+  const total = Number((await body.innerText()).match(/Total (\d+) klaim/)?.[1]);
+  expect(Number.isFinite(total)).toBe(true);
+
+  await page.getByText("Lihat sebagai tabel").first().click();
+  await page.waitForTimeout(400);
+
+  const monthly = await page
+    .locator("table")
+    .first()
+    .locator("tbody tr td:last-child")
+    .allInnerTexts();
+
+  const summed = monthly.reduce((sum, cell) => sum + Number(cell.trim() || 0), 0);
+
+  expect(summed).toBe(total);
+});
+
 test("paket klaim terunduh sebagai arsip berisi dokumen dan evidence terpilih", async ({
   page,
 }) => {

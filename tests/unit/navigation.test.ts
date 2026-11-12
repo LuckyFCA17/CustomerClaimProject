@@ -20,6 +20,9 @@ describe("navigasi portal", () => {
 
   it("menampilkan log notifikasi hanya untuk QA_HEAD dan ADMIN", () => {
     expect(navItemsFor(["USER_DEPT"]).map((item) => item.href)).not.toContain("/notifications");
+    // Claim Analytics terbuka untuk semua role: angkanya sudah disaring
+    // `visibleClaimsWhere`, jadi User Dept. hanya melihat analitik klaimnya sendiri.
+    expect(navItemsFor(["USER_DEPT"]).map((item) => item.href)).toContain("/analytics");
     expect(navItemsFor(["QA_HEAD"]).map((item) => item.href)).toContain("/notifications");
     expect(navItemsFor(["ADMIN"]).map((item) => item.href)).toContain("/notifications");
   });

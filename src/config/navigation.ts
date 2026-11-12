@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   Bell,
+  ChartColumnBig,
   ClipboardCheck,
   Database,
   FileWarning,
@@ -40,6 +41,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/claims", label: "Claims", icon: FileWarning, badgeKey: "claims" },
   { href: "/cpar", label: "CPAR", icon: ClipboardCheck, badgeKey: "cpar" },
   { href: "/monitoring", label: "Monitoring", icon: Activity, badgeKey: "monitoring" },
+  { href: "/analytics", label: "Claim Analytics", icon: ChartColumnBig },
   {
     href: "/notifications",
     label: "Notifications",

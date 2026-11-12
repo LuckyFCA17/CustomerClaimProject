@@ -31,6 +31,22 @@ const SOFT_DELETE_MODELS = new Set([
   "Notification",
 ]);
 
+/**
+ * Operasi baca yang ikut disaring soft delete.
+ *
+ * `groupBy` sempat tidak terdaftar, dan akibatnya tidak terlihat sampai dua grafik pada
+ * satu halaman menyebut angka yang berbeda untuk hal yang sama — satu memakai
+ * `findMany` (tersaring), satu memakai `groupBy` (tidak). Yang terdampak bukan hanya
+ * grafik:
+ *
+ *   · gerbang evidence CPAR menghitung lampiran lewat `groupBy`, sehingga berkas yang
+ *     sudah dihapus tetap terhitung dan submit lolos atas bukti yang tidak ada lagi;
+ *   · lembar CPAR mencetak jumlah evidence dari hitungan yang sama;
+ *   · pemakaian part di Master Data ikut menghitung klaim yang sudah dihapus.
+ *
+ * Tidak ada satu pun pemanggil yang menginginkan baris terhapus ikut terhitung, jadi
+ * yang diperbaiki daftarnya — bukan tiap pemanggilnya satu per satu.
+ */
 const READ_OPERATIONS = new Set([
   "findMany",
   "findFirst",
@@ -39,6 +55,7 @@ const READ_OPERATIONS = new Set([
   "findUniqueOrThrow",
   "count",
   "aggregate",
+  "groupBy",
 ]);
 
 type QueryArgs = { where?: Record<string, unknown> } & Record<string, unknown>;
