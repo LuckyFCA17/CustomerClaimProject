@@ -7,6 +7,7 @@ import { ClipboardCheck, ClipboardList, PencilLine, Printer, SquareArrowOutUpRig
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DueChip } from "@/components/shared/due-chip";
+import { ClaimPackageDialog } from "@/components/claim/claim-package-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { closureTiming } from "@/config/claim-status";
 import { StatusRail } from "@/components/shared/status-rail";
@@ -17,6 +18,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { draftLabel } from "@/lib/numbering";
 import { can, canViewClaim } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
+import { loadPackageContents } from "@/server/claim-package";
 
 export const metadata: Metadata = {
   title: "Claim detail",
@@ -149,6 +151,11 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
    * hanya membuang kertas.
    */
   const canPrintSheets = can(user, "claim.export", context) && claim.status !== "DRAFT";
+  const canPackage = can(user, "claim.package", context);
+
+  // Isi paket hanya dibaca bila tombolnya memang digambar: ia menyisir seluruh lampiran
+  // dan dokumen klaim, dan halaman ini dibuka jauh lebih sering daripada paketnya diunduh.
+  const packageContents = canPackage ? await loadPackageContents(claim.id) : null;
   const canReview = can(user, "claim.review.approve", context);
   // Action Button A (§6 Modul 2) muncul hanya pada klaim yang sudah terbit, dan
   // Action Button B begitu CPAR ada — keduanya mengikuti matriks izin, bukan ditebak.
@@ -208,6 +215,24 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
                   </a>
                 </Button>
               </>
+            ) : null}
+
+            {canPackage && packageContents ? (
+              <ClaimPackageDialog
+                claimId={claim.id}
+                documentCount={packageContents.documents.length}
+                missingDocuments={packageContents.missingDocuments}
+                groups={packageContents.groups.map((group) => ({
+                  folder: group.folder,
+                  items: group.items.map((item) => ({
+                    id: item.id,
+                    label: item.label,
+                    originalName: item.originalName,
+                    sizeBytes: item.sizeBytes,
+                    uploadedByName: item.uploadedByName,
+                  })),
+                }))}
+              />
             ) : null}
 
             {canReview ? (

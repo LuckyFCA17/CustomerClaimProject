@@ -6,6 +6,7 @@ import {
   OFFICE_EXTENSIONS,
   SERVER_ACTION_BODY_LIMIT_MB,
   UPLOAD_LIMITS,
+  formatSize,
   isAllowedType,
   isOfficeDocument,
   maxUploadLabel,
@@ -131,5 +132,20 @@ describe("isOfficeDocument", () => {
     for (const type of [DOCX, XLSX, PPTX]) {
       expect(isAllowedType(type), type).toBe(true);
     }
+  });
+});
+
+describe("formatSize", () => {
+  it("memakai satuan yang mengikuti besarnya", () => {
+    // Daftar isi paket berisi foto 17 KB dan PDF 3 MB berdampingan; "0.0 MB" pada
+    // keduanya tidak membantu siapa pun memutuskan apa yang dibuang.
+    expect(formatSize(512)).toBe("512 B");
+    expect(formatSize(17 * 1024)).toBe("17 KB");
+    expect(formatSize(3 * 1024 * 1024)).toBe("3.0 MB");
+  });
+
+  it("tetap menyebut MB pada pesan batas unggahan", () => {
+    // Batasnya memang ditulis dalam MB, jadi pesannya tidak ikut berganti satuan.
+    expect(maxUploadLabel()).toBe("25 MB");
   });
 });

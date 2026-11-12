@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { expect, test } from "@playwright/test";
 
 import {
@@ -326,6 +328,51 @@ test("OK + NG yang tidak sama dengan jumlahnya ditolak, ke dua arah", async ({ p
 
   // Dan tidak ada baris yang tersimpan dari kedua percobaan yang ditolak tadi.
   await expect(production).not.toContainText("17 Nov 2026");
+});
+
+test("paket klaim terunduh sebagai arsip berisi dokumen dan evidence terpilih", async ({
+  page,
+}) => {
+  const id = claimUrl.split("/").pop();
+
+  await loginAs(page, USERS.qaHead);
+  await page.goto(`/claims/${id}`);
+  await page.waitForLoadState("networkidle");
+
+  await page.getByRole("button", { name: /Download claim package/i }).click();
+  await page.waitForTimeout(800);
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText(/lembar cetak/);
+
+  // Satu grup dikosongkan, supaya yang diuji bukan hanya "arsipnya jadi" melainkan
+  // pilihannya benar-benar berpengaruh pada isinya.
+  const group = dialog.locator("section header").first();
+  const folder = (await group.innerText()).split("\n")[0];
+  await group.getByRole("checkbox").click();
+  await page.waitForTimeout(400);
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    dialog.getByRole("button", { name: /Download ZIP/i }).click(),
+  ]);
+
+  expect(download.suggestedFilename()).toMatch(/\.zip$/);
+
+  const file = await download.path();
+  const bytes = await readFile(file);
+
+  // Tanda tangan local file header; arsip yang gagal di tengah tidak punya ini.
+  expect(bytes.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+
+  // Nama berkas tersimpan apa adanya di arsip (metode STORE), jadi dapat dicari
+  // langsung pada byte-nya tanpa membongkar arsipnya.
+  const text = bytes.toString("latin1");
+
+  expect(text).toContain("ISI-PAKET.txt");
+  expect(text).toContain("01 Dokumen cetak/");
+  expect(text).toContain("TIDAK DIPILIH");
+  expect(text).toContain(folder);
 });
 
 test("lembar CAPA Monitoring dapat dicetak dari halaman monitoring", async ({ page }) => {

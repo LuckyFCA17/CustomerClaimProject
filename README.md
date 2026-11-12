@@ -1095,6 +1095,76 @@ Nilai `accept` memuat MIME **dan** ekstensi sekaligus, karena pemilih berkas Win
 ekstensi sedangkan Android mencocokkan MIME — menulis salah satunya saja membuat berkas Office
 tampak kelabu dan tidak dapat dipilih di salah satu dari keduanya.
 
+## Paket klaim
+
+Tombol **Download claim package** di halaman klaim menurunkan seluruh lembar cetak dan evidence
+satu klaim sebagai satu arsip ZIP. Dipakai saat klaim harus keluar dari portal: ke pelanggan, ke
+auditor, atau ke map mutu yang disimpan terpisah.
+
+```
+NID-CC-26-10-0008/
+  ISI-PAKET.txt
+  01 Dokumen cetak/        Bad News, Quick Info, CPAR, Monitoring, A3 — tiap versi
+  02 Foto part/
+  03 Pembatalan klaim/
+  04 CPAR - Initial Document Request/
+  05 CPAR - Evidence tindakan/
+  06 CPAR - Other Supporting Evidence/
+  07 Monitoring - Item yang dipantau/
+  08 Monitoring - Evidence periode/
+```
+
+Nama berkas memakai **judul yang terbaca**, bukan nama berkas dari kamera: nama dokumen awal,
+bunyi tindakan, nomor periode, atau judul yang diketik pengunggahnya. Nama aslinya tetap tercatat
+di `ISI-PAKET.txt`. Folder yang kosong tidak dibuat.
+
+### Tiga hal yang dijaga
+
+**Dokumen yang belum pernah dibuat tidak diam-diam hilang.** PDF portal ini snapshot yang lahir
+pada peristiwa tertentu — Bad News saat terbit, CPAR saat disetujui. Klaim yang belum sampai ke
+sana memang belum punya berkasnya, dan paket yang menghilangkannya tanpa kata akan terbaca sebagai
+paket lengkap. `ISI-PAKET.txt` menyebutnya di bawah **BELUM PERNAH DIBUAT**, dan pop-upnya
+memperingatkan sebelum diunduh.
+
+**Berkas yang hilang dari disk tidak menjatuhkan seluruh paket.** Ia dicatat di bawah **GAGAL
+DIBACA** dan sisanya tetap terunduh — paket yang gagal seluruhnya karena satu berkas lama yang
+terlanjur terhapus adalah paket yang tidak pernah bisa dibuat.
+
+**Yang tidak dipilih ikut tertulis**, lengkap dengan jumlahnya per bagian, sehingga penerimanya
+tahu paketnya sengaja disaring dan bukan kebetulan kurang.
+
+### Pop-up pemilihan
+
+Seluruh evidence tercentang sejak awal: paket yang diminta orang hampir selalu paket lengkap, dan
+pilihan dipakai untuk **membuang** — foto mentah yang berat, atau lampiran internal yang tidak
+untuk pelanggan. Memulai dari kosong berarti tiap paket lengkap menuntut dua puluh klik. Lembar
+cetak selalu ikut; itulah isi pokok paketnya.
+
+Dikirim sebagai **form POST biasa**, bukan `fetch`: unduhannya ditangani peramban sendiri,
+sehingga tidak ada arsip puluhan megabyte yang harus disusun sebagai blob di memori peramban
+ponsel. Daftar id juga terlalu panjang untuk query string pada klaim berisi puluhan lampiran.
+
+Satu jebakan yang sempat memakan waktu: menutup pop-up lewat `DialogClose` pada tombol submit
+melepas form dari DOM **di tik yang sama** dengan submit-nya, dan peramban membatalkan permintaan
+yang belum sempat berangkat. Gejalanya menyesatkan — tombolnya bekerja, pop-upnya menutup, dan
+tidak ada apa pun yang terunduh. Pop-upnya kini ditutup setelah jeda.
+
+### Penulis ZIP sendiri, tanpa pustaka
+
+`lib/zip.ts`, sekitar 200 baris, metode **STORE** saja. Dua alasannya berasal dari tempat portal
+ini berjalan: tiap dependensi baru adalah satu pemasangan lagi di ponsel lewat Termux, dan isi
+paket hampir seluruhnya JPEG dan PDF yang **sudah terkompresi** — deflate atasnya hanya
+menghabiskan CPU ponsel untuk penghematan nyaris nol.
+
+Yang disederhanakan disebut terang-terangan: tanpa ZIP64, tanpa enkripsi. Batas 4 GB dijaga dan
+**dilempar sebagai galat**, bukan dibiarkan menghasilkan arsip rusak yang baru ketahuan saat orang
+membukanya. Nama berkas ditandai UTF-8 (bendera bit 11) supaya huruf beraksen tidak rusak di
+Windows, `..` dan pemisah folder dibuang dari tiap ruas nama, dan nama yang bertabrakan diberi
+nomor alih-alih saling menimpa.
+
+Arsipnya **dialirkan**, bukan disusun utuh di memori: paket satu klaim dapat berisi puluhan foto,
+dan lonjakan itulah yang membuat Android menghentikan Termux.
+
 ## Pemantauan CAPA: apa yang diukur, dan angkanya
 
 Modul 4 menanyakan satu hal — apakah countermeasure benar-benar bekerja — dan menjawabnya dengan

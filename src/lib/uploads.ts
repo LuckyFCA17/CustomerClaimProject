@@ -118,8 +118,25 @@ export function maxUploadLabel(): string {
   return `${Math.round(UPLOAD_LIMITS.maxBytes / 1024 / 1024)} MB`;
 }
 
-/** Ukuran berkas untuk dibaca pengguna. Satu tempat, supaya tiap pesan menulisnya sama. */
+/**
+ * Ukuran berkas dalam MB. Dipakai pesan batas unggahan, yang batasnya memang dalam MB.
+ */
 export function formatSizeMb(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * Ukuran berkas untuk daftar isi — satuannya mengikuti besarnya.
+ *
+ * Berbeda dari `formatSizeMb` karena tugasnya berbeda: pesan batas unggahan selalu
+ * berbicara dalam MB karena batasnya memang 25 MB, sedangkan daftar yang dipakai memilih
+ * berisi foto 17 KB dan PDF 3 MB berdampingan. "0.0 MB" pada daftar seperti itu tidak
+ * membantu siapa pun memutuskan apa yang dibuang.
+ */
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 

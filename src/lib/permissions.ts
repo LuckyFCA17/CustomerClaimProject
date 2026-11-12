@@ -54,6 +54,7 @@ export const ACTIONS = [
   "claim.followUp",
   "claim.ignore",
   "claim.export",
+  "claim.package",
   "cpar.view",
   "cpar.section.fill",
   "cpar.evidence.upload",
@@ -205,6 +206,30 @@ export const PERMISSION_MATRIX: Record<Action, ActionRule> = {
    * tidak boleh dilihat orangnya, berapa pun lebar penyaring yang ia kirimkan.
    */
   "claim.export": { roles: READ_ONLY_FOR_EVERYONE, statuses: null },
+  /**
+   * Mengunduh paket klaim — seluruh lembar cetak dan evidence dalam satu arsip.
+   *
+   * Tidak lebih longgar daripada membuka berkasnya satu per satu: siapa pun yang boleh
+   * melihat klaimnya sudah dapat mengunduh tiap lampirannya dari layar. Yang berubah
+   * hanya jumlah klik, dan aturan keterlihatan klaim tetap dipasang lebih dulu.
+   *
+   * DRAFT dan tahap review tidak termasuk: belum ada satu pun lembar yang dibuat, dan
+   * paketnya hanya akan berisi foto part tanpa dokumen apa pun.
+   */
+  "claim.package": {
+    roles: READ_ONLY_FOR_EVERYONE,
+    statuses: [
+      "PUBLISHED",
+      "IGNORED",
+      "CPAR_ISSUED",
+      "CPAR_IN_PROGRESS",
+      "CPAR_UNDER_VERIFICATION",
+      "CPAR_REVISION",
+      "CPAR_APPROVED",
+      "CAPA_MONITORING",
+      "VERIFIED_CLOSED",
+    ],
+  },
 
   "cpar.view": { roles: READ_ONLY_FOR_EVERYONE, statuses: CPAR_PHASE_STATUSES },
   "cpar.section.fill": {
