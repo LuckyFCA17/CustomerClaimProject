@@ -272,9 +272,9 @@ export default async function AnalyticsPage({
           <CardHeader>
             <CardTitle>Lead time per tahap</CardTitle>
             <CardDescription>
-              Di mana waktunya habis. Median, bukan rata-rata: satu klaim yang menggantung
-              berbulan-bulan menarik rata-rata sampai angkanya tidak menggambarkan klaim mana
-              pun.
+              Di mana waktunya habis, dalam hari kerja Senin–Jumat. Median, bukan rata-rata:
+              satu klaim yang menggantung berbulan-bulan menarik rata-rata sampai angkanya
+              tidak menggambarkan klaim mana pun.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -33,6 +33,9 @@ export function LeadTimeBars({ summary }: { summary: LeadTimeSummary }) {
         </p>
         <p className="mt-0.5 text-2xl font-semibold leading-none">
           {formatDays(summary.totalMedianDays)}
+          {summary.totalMedianDays === null ? null : (
+            <span className="ml-1.5 text-sm font-normal text-muted-foreground">kerja</span>
+          )}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           Median dari {summary.totalSample} klaim yang sudah selesai sepenuhnya.
@@ -84,9 +87,9 @@ export function LeadTimeBars({ summary }: { summary: LeadTimeSummary }) {
       </ul>
 
       <figcaption className="border-t border-nid-border pt-2 text-xs text-muted-foreground">
-        Hari kalender, bukan hari kerja: tenggat portal memakai hari kerja, tetapi yang
-        dijawab di sini berapa lama pelanggan menunggu — dan akhir pekan ikut berjalan
-        bagi yang menunggu.
+        Seluruh angka dalam <strong className="font-medium text-foreground">hari kerja
+        Senin–Jumat</strong>, sama dengan cara tenggat CPAR dihitung — sehingga keduanya
+        dapat dibandingkan langsung. Hari libur nasional belum diperhitungkan.
       </figcaption>
     </figure>
   );

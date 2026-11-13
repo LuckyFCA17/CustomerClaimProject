@@ -6,12 +6,12 @@ import {
   type LeadTimeInput,
   OCCURRENCE_ORDER,
   UNKNOWN_KEY,
-  daysBetween,
   formatDays,
   leadTimeSummary,
   median,
   occurrenceBreakdown,
   repeatShare,
+  stageDays,
   totalOf,
   typeBreakdown,
 } from "@/lib/analytics";
@@ -129,33 +129,44 @@ describe("median", () => {
   });
 });
 
-describe("daysBetween", () => {
-  const at = (iso: string) => new Date(iso);
+describe("stageDays", () => {
+  // Pukul 10.00 WIB, supaya yang diuji tanggalnya — bukan pembulatan zona waktu.
+  const at = (iso: string) => new Date(`${iso}T03:00:00Z`);
 
-  it("menghitung selisih hari kalender", () => {
-    expect(daysBetween(at("2026-11-01T00:00:00Z"), at("2026-11-04T00:00:00Z"))).toBe(3);
+  it("menghitung hari kerja, bukan hari kalender", () => {
+    // Senin 2026-11-02 → Rabu 2026-11-04.
+    expect(stageDays(at("2026-11-02"), at("2026-11-04"))).toBe(2);
   });
 
-  it("menghitung akhir pekan juga", () => {
-    // Tenggat portal memakai hari kerja, tetapi yang dijawab di sini berapa lama orang
-    // menunggu — dan akhir pekan ikut berjalan bagi yang menunggu.
-    expect(daysBetween(at("2026-11-06T00:00:00Z"), at("2026-11-09T00:00:00Z"))).toBe(3);
+  it("melewati akhir pekan", () => {
+    // Jumat 2026-11-13 → Senin 2026-11-16 adalah 3 hari kalender, tetapi 1 hari kerja.
+    // Inilah sebabnya satuannya diganti: tenggat portal pun dihitung begini.
+    expect(stageDays(at("2026-11-13"), at("2026-11-16"))).toBe(1);
+  });
+
+  it("menghasilkan nol untuk peristiwa pada hari yang sama", () => {
+    expect(stageDays(at("2026-11-16"), at("2026-11-16"))).toBe(0);
+  });
+
+  it("menghasilkan nol untuk rentang yang seluruhnya akhir pekan", () => {
+    // Sabtu → Minggu: tidak ada kapasitas kerja yang terpakai.
+    expect(stageDays(at("2026-11-14"), at("2026-11-15"))).toBe(0);
   });
 
   it("mengabaikan ujung yang belum ada", () => {
-    expect(daysBetween(null, at("2026-11-04T00:00:00Z"))).toBeNull();
-    expect(daysBetween(at("2026-11-04T00:00:00Z"), null)).toBeNull();
+    expect(stageDays(null, at("2026-11-04"))).toBeNull();
+    expect(stageDays(at("2026-11-04"), null)).toBeNull();
   });
 
-  it("menolak urutan terbalik alih-alih menghasilkan angka negatif", () => {
-    // Tanggal yang tersunting menjadi sesudah tanggal terbit akan menarik median ke
-    // bawah secara diam-diam; dibuang, ia hanya mengurangi sampel yang memang disebut.
-    expect(daysBetween(at("2026-11-10T00:00:00Z"), at("2026-11-01T00:00:00Z"))).toBeNull();
+  it("menolak urutan terbalik alih-alih menghasilkan nol", () => {
+    // Tanggal yang tersunting menjadi sesudah tanggal terbit akan menjadi 0 dan menarik
+    // median ke bawah secara diam-diam; dibuang, ia hanya mengurangi sampel.
+    expect(stageDays(at("2026-11-10"), at("2026-11-01"))).toBeNull();
   });
 });
 
 describe("leadTimeSummary", () => {
-  const at = (iso: string) => new Date(`${iso}T00:00:00Z`);
+  const at = (iso: string) => new Date(`${iso}T03:00:00Z`);
 
   const claim = (overrides: Partial<LeadTimeInput> = {}): LeadTimeInput => ({
     receivedAt: at("2026-11-01"),
@@ -171,8 +182,9 @@ describe("leadTimeSummary", () => {
     const summary = leadTimeSummary([claim()]);
     const byStage = Object.fromEntries(summary.stages.map((row) => [row.stage, row.medianDays]));
 
-    expect(byStage).toEqual({ RESPONSE: 2, FILLING: 6, VERIFICATION: 2, MONITORING: 15 });
-    expect(summary.totalMedianDays).toBe(25);
+    // Hari kerja: 1 Nov Minggu, 3 Nov Selasa, 9 Nov Senin, 11 Nov Rabu, 26 Nov Kamis.
+    expect(byStage).toEqual({ RESPONSE: 2, FILLING: 4, VERIFICATION: 2, MONITORING: 11 });
+    expect(summary.totalMedianDays).toBe(19);
   });
 
   it("menghitung sampel per tahap, bukan satu sampel untuk semuanya", () => {
@@ -208,8 +220,8 @@ describe("leadTimeSummary", () => {
 
     const filling = summary.stages.find((row) => row.stage === "FILLING");
 
-    expect(filling?.medianDays).toBe(6);
-    expect(filling?.slowestDays).toBe(27);
+    expect(filling?.medianDays).toBe(4);
+    expect(filling?.slowestDays).toBe(19);
   });
 
   it("tidak melempar pada daftar kosong", () => {

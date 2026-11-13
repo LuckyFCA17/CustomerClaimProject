@@ -74,6 +74,54 @@ export function addWorkingDays(from: Date, days: number): Date {
   return endOfWorkingDay(cursor);
 }
 
+/** Nomor hari sejak epoch menurut kalender Jakarta. Dasar hitungan hari kerja. */
+function jakartaDayNumber(date: Date): number {
+  return Math.floor((date.getTime() + JAKARTA_OFFSET_MS) / 86_400_000);
+}
+
+/** 1970-01-01 jatuh pada Kamis; 0 = Minggu, mengikuti `jakartaDayOfWeek`. */
+const EPOCH_DAY_OF_WEEK = 4;
+
+/** Banyaknya hari kerja pada rentang [0, n] menurut penomoran hari sejak epoch. */
+function workingDaysThrough(n: number): number {
+  if (n < 0) return 0;
+
+  const days = n + 1;
+  const weeks = Math.floor(days / 7);
+  let count = weeks * 5;
+
+  for (let index = 0; index < days % 7; index += 1) {
+    const dayOfWeek = (weeks * 7 + index + EPOCH_DAY_OF_WEEK) % 7;
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) count += 1;
+  }
+
+  return count;
+}
+
+/**
+ * Banyaknya hari kerja yang terlewati dari satu saat ke saat lain.
+ *
+ * Dihitung per tanggal kalender Jakarta, bukan per selisih jam: dua peristiwa pada hari
+ * yang sama menghasilkan 0 berapa pun jaraknya dalam jam, dan Jumat ke Senin
+ * menghasilkan 1 — akhir pekannya dilewati.
+ *
+ * Sejalan dengan `addWorkingDays`: `workingDaysBetween(t, addWorkingDays(t, n))` kembali
+ * menghasilkan `n` untuk `t` pada hari kerja. Itu yang membuat lead time dapat
+ * dibandingkan langsung dengan tenggat yang ditetapkan portal.
+ *
+ * Libur nasional belum diperhitungkan (asumsi A-09), sama seperti seluruh perhitungan
+ * hari kerja lain di portal ini: periode yang melewati libur panjang akan terhitung
+ * lebih lama daripada kenyataannya.
+ */
+export function workingDaysBetween(from: Date, to: Date): number {
+  const start = jakartaDayNumber(from);
+  const end = jakartaDayNumber(to);
+
+  if (end <= start) return 0;
+
+  return workingDaysThrough(end) - workingDaysThrough(start);
+}
+
 /** Tenggat pengisian CPAR bawaan: H+3 hari kerja (§6 Modul 2, asumsi A-09). */
 export const DEFAULT_CPAR_DUE_WORKING_DAYS = 3;
 

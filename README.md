@@ -1124,8 +1124,20 @@ Sebagian besar memakai ulang komponen dan perhitungan dashboard (`monthlySeries`
 **Median, bukan rata-rata.** Satu klaim yang menggantung berbulan-bulan menarik rata-rata sampai
 angkanya tidak menggambarkan klaim mana pun.
 
-**Hari kalender, bukan hari kerja.** Tenggat portal memakai hari kerja, tetapi yang dijawab di
-sini berapa lama pelanggan menunggu — dan akhir pekan ikut berjalan bagi yang menunggu.
+**Hari kerja Senin–Jumat, bukan hari kalender.** Seluruh tenggat portal juga hari kerja — CPAR
+jatuh tempo H+3 hari kerja, periode pemantauan berjarak sekian hari kerja. Lead time dalam hari
+kalender **tidak dapat dibandingkan dengan tenggatnya sendiri**: median 7 hari kalender di sebelah
+target 3 hari kerja terbaca seperti keterlambatan padahal mungkin tepat waktu.
+
+`workingDaysBetween()` di `lib/dates.ts` menghitungnya per tanggal kalender Jakarta, dan sejalan
+dengan `addWorkingDays` — menghitung balik hasil `addWorkingDays(t, n)` kembali menghasilkan `n`.
+Akibatnya angkanya bulat dan mengecil: klaim yang diterima Jumat dan terbit Senin berjarak **1
+hari kerja**, bukan 3. Mediannya tetap bisa pecahan saat sampelnya genap, dan setengah hari itu
+tidak dibulatkan — pada tahap yang biasanya dua hari, setengah hari adalah seperempatnya.
+
+**Hari libur nasional belum diperhitungkan** (asumsi A-09), sama seperti seluruh perhitungan hari
+kerja lain di portal ini. Periode yang melewati libur panjang terhitung lebih lama daripada
+kenyataannya; obatnya master hari libur, yang sekaligus akan memperbaiki perhitungan tenggat.
 
 **Jumlah sampel tercetak di tiap baris, dan itu bukan hiasan.** Klaim yang belum disetujui belum
 punya lama verifikasi, sehingga median satu tahap bisa berasal dari tiga klaim sementara tahap di

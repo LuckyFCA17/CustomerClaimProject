@@ -1,4 +1,5 @@
 import type { ClaimType, OccurrenceCount } from "@/generated/prisma/enums";
+import { workingDaysBetween } from "@/lib/dates";
 
 /**
  * Perhitungan Claim Analytics (§7).
@@ -214,8 +215,6 @@ export function repeatShare(rows: readonly BreakdownRow[]): number {
 
 // ─────────────────────── Lead time per tahap ───────────────────────
 
-export const DAY_MS = 24 * 60 * 60 * 1000;
-
 /**
  * Median, bukan rata-rata.
  *
@@ -233,16 +232,31 @@ export function median(values: readonly number[]): number | null {
     : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
 }
 
-/** Selisih hari kalender, atau null bila salah satu ujungnya belum ada. */
-export function daysBetween(from: Date | null | undefined, to: Date | null | undefined): number | null {
+/**
+ * Lama satu tahap dalam **hari kerja**, atau null bila ujungnya belum ada.
+ *
+ * Hari kerja, bukan hari kalender, karena seluruh tenggat portal juga hari kerja: CPAR
+ * jatuh tempo H+3 hari kerja, periode pemantauan berjarak sekian hari kerja. Lead time
+ * dalam hari kalender tidak dapat dibandingkan dengan tenggatnya sendiri — median 7 hari
+ * kalender di sebelah target 3 hari kerja terbaca seperti keterlambatan padahal mungkin
+ * tepat waktu.
+ *
+ * Akibatnya angkanya bulat dan mengecil: klaim yang diterima Jumat dan terbit Senin
+ * berjarak 1 hari kerja, bukan 3. Keduanya benar — yang berbeda pertanyaannya, dan yang
+ * dijawab halaman ini berapa kapasitas kerja yang terpakai.
+ */
+export function stageDays(
+  from: Date | null | undefined,
+  to: Date | null | undefined,
+): number | null {
   if (!from || !to) return null;
 
-  const days = (to.getTime() - from.getTime()) / DAY_MS;
-
   // Urutan terbalik berarti datanya tidak masuk akal — mis. tanggal diterima disunting
-  // menjadi sesudah tanggal terbit. Dibiarkan masuk, ia menarik median ke bawah secara
-  // diam-diam; dibuang, ia hanya mengurangi jumlah sampel yang memang sudah disebutkan.
-  return days < 0 ? null : days;
+  // menjadi sesudah tanggal terbit. Dibiarkan masuk, ia menjadi 0 dan menarik median ke
+  // bawah secara diam-diam; dibuang, ia hanya mengurangi sampel yang memang disebutkan.
+  if (to.getTime() < from.getTime()) return null;
+
+  return workingDaysBetween(from, to);
 }
 
 export const LEAD_TIME_STAGES = [
@@ -282,7 +296,7 @@ export interface LeadTimeRow {
   readonly stage: LeadTimeStage;
   readonly label: string;
   readonly hint: string;
-  /** Hari kalender. Null bila belum ada satu pun klaim yang melewati tahap ini. */
+  /** Hari kerja. Null bila belum ada satu pun klaim yang melewati tahap ini. */
   readonly medianDays: number | null;
   readonly slowestDays: number | null;
   /** Berapa klaim yang benar-benar terhitung pada tahap ini. */
@@ -304,11 +318,7 @@ const STAGE_ENDS: Record<LeadTimeStage, (claim: LeadTimeInput) => [Date | null, 
 };
 
 /**
- * Berapa lama tiap tahap berlangsung, dalam hari kalender.
- *
- * **Hari kalender, bukan hari kerja.** Tenggat portal dihitung dengan hari kerja, tetapi
- * pertanyaan yang dijawab di sini berbeda: berapa lama pelanggan menunggu. Akhir pekan
- * ikut terhitung karena bagi yang menunggu, ia memang ikut berjalan.
+ * Berapa lama tiap tahap berlangsung, dalam hari kerja Senin–Jumat.
  *
  * Tiap tahap punya jumlah sampelnya sendiri, dan jumlah itu **wajib ikut ditampilkan**:
  * klaim yang belum disetujui belum punya lama verifikasi, sehingga median satu tahap
@@ -321,7 +331,7 @@ export function leadTimeSummary(claims: readonly LeadTimeInput[]): LeadTimeSumma
       .map((claim) => {
         const [from, to] = STAGE_ENDS[stage](claim);
 
-        return daysBetween(from, to);
+        return stageDays(from, to);
       })
       .filter((value): value is number => value !== null);
 
@@ -336,7 +346,7 @@ export function leadTimeSummary(claims: readonly LeadTimeInput[]): LeadTimeSumma
   });
 
   const totals = claims
-    .map((claim) => daysBetween(claim.receivedAt, claim.closedAt))
+    .map((claim) => stageDays(claim.receivedAt, claim.closedAt))
     .filter((value): value is number => value !== null);
 
   return {
@@ -346,7 +356,13 @@ export function leadTimeSummary(claims: readonly LeadTimeInput[]): LeadTimeSumma
   };
 }
 
-/** `2.5` → `2,5 hari`. Setengah hari muncul saat sampelnya genap. */
+/**
+ * `4` → `4 hari`, `2.5` → `2,5 hari`.
+ *
+ * Hari kerja selalu bulat, tetapi mediannya bisa pecahan saat sampelnya genap — dan
+ * setengah hari itu tidak dibulatkan: pada tahap yang biasanya hanya dua hari, selisih
+ * setengah hari adalah seperempat dari keseluruhannya.
+ */
 export function formatDays(days: number | null): string {
   if (days === null) return "—";
 
