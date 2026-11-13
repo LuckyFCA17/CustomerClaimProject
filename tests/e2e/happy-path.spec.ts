@@ -380,6 +380,45 @@ test("Claim Analytics: keempat grafik sepakat tentang periode yang sama", async 
 });
 
 /*
+ * Tidak ada kartu analitik yang berakhir dengan ruang putih kosong.
+ *
+ * Tinggi tiap kartu ditentukan datanya, dan pada kisi dua kolom kartu yang pendek
+ * dipaksa setinggi tetangganya — ratusan piksel kosong di bawah isinya, yang terbaca
+ * sebagai kartu yang gagal memuat sesuatu. Yang diukur di sini jarak dari ujung bawah
+ * isi terakhir ke ujung bawah kartunya, di lebar tempat kisi dua kolomnya aktif.
+ */
+test("kartu analitik berakhir di ujung isinya, bukan setinggi tetangganya", async ({ page }) => {
+  await page.setViewportSize({ width: 1330, height: 1000 });
+  await loginAs(page, USERS.qaHead);
+  await page.goto("/analytics");
+  await page.waitForLoadState("networkidle");
+
+  const slack = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll("[data-slot='card']")];
+
+    return cards.map((card) => {
+      const title = card.querySelector("[data-slot='card-title']")?.textContent ?? "?";
+      const content = card.lastElementChild?.getBoundingClientRect();
+      const box = card.getBoundingClientRect();
+
+      return { title, gap: content ? Math.round(box.bottom - content.bottom) : 0 };
+    });
+  });
+
+  expect(slack.length).toBeGreaterThanOrEqual(7);
+
+  /*
+   * Kartu yang tidak diregangkan berakhir tepat di ujung isinya — sisanya nol, dan
+   * beberapa piksel yang tersisa hanyalah pembulatan tata letak. Ambangnya dibuat
+   * rapat dengan sengaja: pada basis data uji yang kecil selisih tinggi antar kartu
+   * pun kecil, dan ambang yang longgar akan lolos justru ketika regangannya kembali.
+   */
+  for (const card of slack) {
+    expect(card.gap, `sisa ruang pada kartu "${card.title}"`).toBeLessThanOrEqual(8);
+  }
+});
+
+/*
  * Sumbu X grafik bulanan pada periode panjang.
  *
  * Diukur di peramban, bukan dipotret: yang rusak dahulu adalah tata letak, dan tata

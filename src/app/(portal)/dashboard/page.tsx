@@ -265,7 +265,12 @@ export default async function DashboardPage({
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/*
+        Dua kartu saja, jadi kisinya tetap — tetapi tanpa diregangkan: kartu yang lebih
+        pendek berhenti di akhir isinya alih-alih diberi ruang putih sampai setinggi
+        tetangganya. Dengan data sungguhan, Pareto-lah yang akan jauh lebih panjang.
+      */}
+      <div className="grid items-start gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Klaim per bulan</CardTitle>

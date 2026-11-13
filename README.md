@@ -1149,6 +1149,31 @@ Menu tersendiri berisi tujuh grafik, seluruhnya pada **satu periode yang sama**:
 Sebagian besar memakai ulang komponen dan perhitungan dashboard (`monthlySeries`,
 `paretoRows`) — satu implementasi, beberapa tempat memakainya.
 
+### Mengapa kartunya dipak sebagai kolom, bukan kisi
+
+Tinggi tiap kartu ditentukan datanya: Pareto dengan empat sebab jauh lebih pendek daripada
+lead time dengan tahapan dan catatannya. Pada kisi dua kolom, kedua kartu sebaris dipaksa
+setinggi yang tertinggi — yang pendek berakhir dengan ratusan piksel putih kosong di bawah
+isinya (terukur 94–259px pada data pengembangan), dan itu terbaca sebagai kartu yang gagal
+memuat sesuatu, bukan sebagai kartu yang memang pendek.
+
+Perataan `items-start` menghilangkan kosong **di dalam** kartunya, tetapi lubangnya hanya
+pindah ke latar: barisnya tetap setinggi kartu tertinggi. Jadi halamannya memakai
+`columns-1 lg:columns-2` — kolom tidak punya baris sama sekali, tiap kartu menempel pada
+kartu di atasnya, dan sisa ruangnya terkumpul di satu tempat di ujung kolom terpendek.
+Halamannya menjadi 175px lebih pendek pada 1330px, dan sisa di dalam tiap kartu turun dari
+94–259px menjadi 1px.
+
+`break-inside-avoid` menjaga satu kartu tidak terbelah di antara dua kolom. Urutan bacanya
+menurun dulu di kolom kiri sebelum pindah ke kanan — tetap berurut 1→7, bukan teracak. Di
+bawah `lg` kolomnya tinggal satu, jadi di ponsel tidak ada yang berubah.
+
+Dashboard tetap memakai kisi — kartunya hanya dua — tetapi dengan `items-start`, supaya yang
+pendek tidak ikut diregangkan ketika Pareto-nya memanjang oleh data sungguhan.
+
+Uji E2E `kartu analitik berakhir di ujung isinya` mengukur jarak dari ujung bawah isi
+terakhir ke ujung bawah tiap kartu pada lebar 1330px, dan menolak sisa lebih dari 8px.
+
 ### Lead time: di mana waktunya habis
 
 | Tahap | Dari → ke |

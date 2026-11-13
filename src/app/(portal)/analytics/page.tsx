@@ -228,8 +228,26 @@ export default async function AnalyticsPage({
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
+      {/*
+        Kartunya dipak sebagai kolom, bukan sebagai kisi.
+
+        Tinggi tiap kartu ditentukan datanya: Pareto dengan empat sebab jauh lebih pendek
+        daripada lead time dengan tahapan dan catatannya. Pada kisi dua kolom, kedua
+        kartu sebaris dipaksa setinggi yang tertinggi — yang pendek lantas berakhir
+        dengan ratusan piksel putih kosong di bawah isinya, dan itu terbaca sebagai
+        kartu yang gagal memuat sesuatu, bukan sebagai kartu yang memang pendek.
+
+        Perataan `items-start` menghilangkan kosong di dalam kartunya, tetapi lubangnya
+        hanya pindah ke latar: barisnya tetap setinggi kartu tertinggi. Kolom tidak punya
+        baris sama sekali — tiap kartu menempel pada kartu di atasnya, dan sisa ruangnya
+        terkumpul di satu tempat, di ujung kolom terpendek.
+
+        `break-inside-avoid` menjaga satu kartu tidak terbelah di antara dua kolom.
+        Urutannya tetap berurut, hanya menurun dulu di kolom kiri sebelum pindah ke
+        kanan — bukan urutan yang teracak.
+      */}
+      <div className="columns-1 gap-4 lg:columns-2">
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader>
             <CardTitle>Jenis klaim</CardTitle>
             <CardDescription>
@@ -243,7 +261,7 @@ export default async function AnalyticsPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader>
             <CardTitle>Klaim per bulan</CardTitle>
             <CardDescription>
@@ -255,7 +273,7 @@ export default async function AnalyticsPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader>
             <CardTitle>Jenis defek yang sering terjadi</CardTitle>
             <CardDescription>
@@ -268,7 +286,7 @@ export default async function AnalyticsPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader>
             <CardTitle>Lead time per tahap</CardTitle>
             <CardDescription>
@@ -282,7 +300,7 @@ export default async function AnalyticsPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader>
             <CardTitle>Pengulangan kejadian</CardTitle>
             <CardDescription>
@@ -298,7 +316,7 @@ export default async function AnalyticsPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader>
             <CardTitle>Defek yang paling sering kembali</CardTitle>
             <CardDescription>
@@ -311,7 +329,7 @@ export default async function AnalyticsPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-4 break-inside-avoid">
           <CardHeader>
             <CardTitle>Departemen penanggung jawab</CardTitle>
             <CardDescription>
