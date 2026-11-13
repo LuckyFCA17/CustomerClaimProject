@@ -30,6 +30,8 @@ export interface MonthBucket {
   readonly key: string;
   readonly label: string;
   readonly year: number;
+  /** 0–11; dipakai sumbu X untuk menandai awal kuartal dan awal tahun. */
+  readonly month: number;
   readonly count: number;
 }
 
@@ -61,6 +63,7 @@ export function monthlySeries(
       key: keyOf(year, month),
       label: MONTH_SHORT[month],
       year,
+      month,
       count: 0,
     });
   }
@@ -80,6 +83,81 @@ export function monthlySeries(
 
 function keyOf(year: number, month: number): string {
   return `${year}-${String(month + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Sumbu X grafik bulanan: label mana yang ditulis, dan di mana tahunnya disebut.
+ *
+ * Satu label per bulan hanya muat selama kolomnya masih selebar tulisannya. Pada
+ * periode dua atau tiga tahun kolomnya menyempit sampai di bawah 20px, sementara "Agu"
+ * tetap selebar aslinya — deretan label itu lantas lebih lebar daripada grafiknya
+ * sendiri, meluber keluar kartu, dan yang lebih buruk: ia tidak lagi sejajar dengan
+ * batang yang seharusnya ia namai. Pembaca membaca jumlah bulan November pada kolom
+ * bulan Juli.
+ *
+ * Jadi labelnya dijarangkan, dan jaraknya dikunci ke bulan yang bermakna — awal
+ * kuartal, bukan tiap kolom ke-sekian — supaya sumbunya tetap terbaca sebagai kalender:
+ *
+ *   · sampai 12 kolom: tiap bulan, seperti sebelumnya;
+ *   · sampai 16 kolom: tiap dua bulan (Jan, Mar, Mei, …);
+ *   · sampai 24 kolom: tiap kuartal (Jan, Apr, Jul, Okt);
+ *   · selebihnya: tiap setengah tahun (Jan, Jul).
+ *
+ * Delapan label adalah yang masih muat di lebar kartu pada layar 393px — dan karena
+ * Januari selalu kelipatan berapa pun langkahnya, awal tahun tidak pernah hilang.
+ */
+export const MAX_AXIS_LABELS = 8;
+
+export function axisStep(columns: number): number {
+  if (columns <= 12) return 1;
+
+  return [2, 3, 6].find((step) => Math.ceil(columns / step) <= MAX_AXIS_LABELS) ?? 12;
+}
+
+export interface MonthAxisTick {
+  /** `Agu`, atau null bila kolom ini sengaja tidak diberi label. */
+  readonly month: string | null;
+  /**
+   * `2026`, hanya pada satu kolom di tengah rentang tahun itu.
+   *
+   * Tahunnya ditulis di baris tersendiri, bukan disambung ke nama bulannya, karena
+   * "Jan 2026" dua kali lebih lebar daripada kolomnya dan akan menabrak label
+   * tetangganya. Satu label per tahun, ditaruh di tengah bentangannya, tidak punya
+   * tetangga untuk ditabrak: tahun yang pendek sekalipun hanya meluber ke ruang kosong.
+   */
+  readonly year: string | null;
+}
+
+/**
+ * Label sumbu X untuk tiap kolom, sepanjang dan seurutan dengan serinya.
+ *
+ * Dikembalikan per kolom — bukan hanya kolom yang berlabel — supaya komponennya dapat
+ * menggambar satu sel per kolom dan menitipkan labelnya di sel yang tepat. Label yang
+ * diposisikan sendiri lewat persentase akan meleset dari batangnya karena jarak antar
+ * kolom ikut memakan lebar.
+ */
+export function monthAxis(series: readonly MonthBucket[]): readonly MonthAxisTick[] {
+  const step = axisStep(series.length);
+  const years = [...new Set(series.map((bucket) => bucket.year))];
+
+  const yearAt = new Map<number, string>();
+
+  // Tahun hanya disebut bila serinya memang melintasi pergantian tahun. Pada rentang
+  // satu tahun angka itu tidak menambah apa pun — periodenya sudah tertulis di pemilih
+  // tepat di atas grafiknya.
+  if (years.length > 1) {
+    for (const year of years) {
+      const first = series.findIndex((bucket) => bucket.year === year);
+      const last = series.findLastIndex((bucket) => bucket.year === year);
+
+      yearAt.set(Math.floor((first + last) / 2), String(year));
+    }
+  }
+
+  return series.map((bucket, index) => ({
+    month: step === 1 || bucket.month % step === 0 ? bucket.label : null,
+    year: yearAt.get(index) ?? null,
+  }));
 }
 
 /** Nama bulan lengkap untuk pemilih periode; MONTH_SHORT terlalu singkat di daftar pilihan. */

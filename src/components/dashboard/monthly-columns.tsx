@@ -1,4 +1,4 @@
-import { axisTicks, type MonthBucket } from "@/lib/dashboard";
+import { axisTicks, monthAxis, type MonthBucket } from "@/lib/dashboard";
 
 /**
  * Jumlah klaim per bulan.
@@ -18,6 +18,9 @@ export function MonthlyColumns({ series }: { series: readonly MonthBucket[] }) {
   const ticks = axisTicks(max);
   const top = ticks[ticks.length - 1];
   const busiest = max > 0 ? series.findLastIndex((bucket) => bucket.count === max) : -1;
+
+  const axis = monthAxis(series);
+  const hasYearRow = axis.some((tick) => tick.year !== null);
 
   return (
     <figure className="m-0 space-y-3">
@@ -51,9 +54,19 @@ export function MonthlyColumns({ series }: { series: readonly MonthBucket[] }) {
               {series.map((bucket, index) => (
                 <li
                   key={bucket.key}
-                  className="relative flex h-full flex-1 items-end justify-center"
+                  className="relative flex h-full min-w-0 flex-1 items-end justify-center"
                   title={`${bucket.label} ${bucket.year}: ${bucket.count} klaim`}
                 >
+                  {/* Pergantian tahun ditandai di dalam bidang grafiknya, bukan hanya di
+                      bawah sumbu: pada rentang panjang inilah yang membuat dua tahun
+                      terbaca sebagai dua bentangan, bukan satu deret kolom tanpa batas. */}
+                  {bucket.month === 0 && index > 0 ? (
+                    <span
+                      aria-hidden
+                      className="absolute -left-px inset-y-0 border-l border-nid-border"
+                    />
+                  ) : null}
+
                   {/* Label langsung hanya pada bulan tertinggi — nilai di tiap batang
                       menjadi kerumunan angka yang justru tidak terbaca. */}
                   {index === busiest ? (
@@ -79,20 +92,28 @@ export function MonthlyColumns({ series }: { series: readonly MonthBucket[] }) {
             </ol>
           </div>
 
-          <ol className="mt-1.5 flex gap-[2px]">
-            {series.map((bucket) => (
-              <li
-                key={bucket.key}
-                className="flex-1 text-center text-[11px] text-muted-foreground"
-              >
-                {bucket.label}
-              </li>
-            ))}
-          </ol>
+          {/*
+            Dua baris terpisah, keduanya satu sel per kolom: sel yang `min-w-0` boleh
+            menyempit sampai di bawah lebar tulisannya, sehingga label yang kepanjangan
+            meluber di atas tetangganya alih-alih mendorong seluruh deret melebihi
+            grafiknya. Itulah yang membuat deret label dahulu keluar dari kartu dan
+            berhenti sejajar dengan batangnya.
+          */}
+          <AxisRow series={series} text={(index) => axis[index].month} className="mt-1.5" />
+
+          {hasYearRow ? (
+            <AxisRow
+              series={series}
+              text={(index) => axis[index].year}
+              className="mt-0.5 font-medium tabular text-foreground"
+            />
+          ) : null}
         </div>
       </div>
 
-      {/* Padanan tabel: tiap nilai tetap terbaca tanpa bergantung pada warna atau hover. */}
+      {/* Padanan tabel: tiap nilai tetap terbaca tanpa bergantung pada warna atau hover.
+          Pada rentang panjang ini bukan sekadar pelengkap aksesibilitas — sebagian besar
+          kolom memang tidak punya label sendiri, dan di sinilah angkanya dibaca. */}
       <details className="text-sm">
         <summary className="cursor-pointer text-xs text-muted-foreground">
           Lihat sebagai tabel
@@ -122,5 +143,33 @@ export function MonthlyColumns({ series }: { series: readonly MonthBucket[] }) {
         </table>
       </details>
     </figure>
+  );
+}
+
+/**
+ * Satu baris sumbu X: satu sel per kolom, teksnya hanya pada sel yang diberi label.
+ *
+ * Selnya tetap digambar untuk setiap kolom meski kosong. Itulah yang menjaga label
+ * tepat di atas batang yang dinamainya — sel yang lebarnya sama persis dengan kolomnya,
+ * bukan posisi yang dihitung ulang dengan persentase dan meleset karena jarak antar
+ * kolom ikut memakan lebar.
+ */
+function AxisRow({
+  series,
+  text,
+  className,
+}: {
+  readonly series: readonly MonthBucket[];
+  readonly text: (index: number) => string | null;
+  readonly className?: string;
+}) {
+  return (
+    <ol className={`flex h-4 gap-[2px] text-[11px] leading-4 text-muted-foreground ${className ?? ""}`}>
+      {series.map((bucket, index) => (
+        <li key={bucket.key} className="flex min-w-0 flex-1 justify-center">
+          {text(index) ? <span className="whitespace-nowrap">{text(index)}</span> : null}
+        </li>
+      ))}
+    </ol>
   );
 }

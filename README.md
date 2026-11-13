@@ -904,6 +904,43 @@ Batas querynya memakai awal bulan **kalender Jakarta**, bukan tengah malam UTC: 
 WIB adalah 31 Desember 17.00 UTC, jadi batas UTC akan membuang klaim yang masuk pada tujuh jam
 pertama setiap bulan.
 
+Pemilihnya dipakai bersama oleh Dashboard dan Claim Analytics, dan tujuannya dibaca dari
+`usePathname()` — bukan dituliskan sebagai `/dashboard`, dan bukan pula dioper sebagai prop
+yang dapat lupa diisi. Jalur yang tertulis mati pernah melempar orang dari Claim Analytics ke
+Dashboard begitu mereka mengganti bulan, beserta periode yang baru saja mereka pilih.
+
+#### Sumbu X pada periode panjang
+
+Satu label per bulan hanya muat selama kolomnya masih selebar tulisannya. Pada rentang dua
+atau tiga tahun kolomnya menyempit sampai di bawah 20px sementara "Agu" tetap selebar aslinya,
+sehingga deret labelnya menjadi lebih lebar daripada grafiknya sendiri: ia meluber keluar kartu
+dan — yang lebih berbahaya — berhenti sejajar dengan batang yang dinamainya, sehingga jumlah
+bulan November terbaca pada kolom bulan Juli.
+
+`axisStep()` menjarangkan labelnya, dan jaraknya dikunci ke bulan yang bermakna supaya sumbunya
+tetap terbaca sebagai kalender:
+
+| Jumlah kolom | Label | Contoh |
+|---|---|---|
+| ≤ 12 | tiap bulan | Jan Feb Mar … |
+| ≤ 16 | tiap dua bulan | Jan Mar Mei … |
+| ≤ 24 | tiap kuartal | Jan Apr Jul Okt |
+| ≤ 36 | tiap setengah tahun | Jan Jul |
+
+Januari kelipatan berapa pun langkahnya, jadi awal tahun tidak pernah hilang. Tahunnya sendiri
+ditulis di baris kedua, satu label per tahun di tengah bentangannya — "Jan 2026" dua kali lebih
+lebar daripada kolomnya dan akan menabrak tetangganya, sedangkan satu label per tahun tidak
+punya tetangga untuk ditabrak. Pergantian tahun juga ditandai garis tegak tipis di dalam bidang
+grafiknya, supaya dua tahun terbaca sebagai dua bentangan.
+
+Tiap kolom tetap digambar sebagai selnya sendiri meski tanpa label, dan selnya `min-w-0`:
+itulah dua hal yang menjaga label tepat di atas kolomnya sekaligus membuat label yang
+kepanjangan meluber di atas tetangganya alih-alih mendorong seluruh deret melebihi grafiknya.
+Uji E2E `sumbu grafik bulanan tetap di dalam kartunya pada periode tiga tahun` mengukur
+ketiganya di peramban — luberan, tumpang tindih, dan selisih titik tengah label terhadap
+kolomnya — karena yang rusak adalah tata letak, dan tata letak baru ada setelah teksnya
+benar-benar dirender.
+
 ## Ketepatan waktu penutupan di dasbor CPAR
 
 Pada dasbor dan detail CPAR, klaim berstatus `VERIFIED_CLOSED` ditampilkan sebagai salah satu

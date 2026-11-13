@@ -380,6 +380,77 @@ test("Claim Analytics: keempat grafik sepakat tentang periode yang sama", async 
 });
 
 /*
+ * Sumbu X grafik bulanan pada periode panjang.
+ *
+ * Diukur di peramban, bukan dipotret: yang rusak dahulu adalah tata letak, dan tata
+ * letak hanya ada setelah teksnya benar-benar dirender. Satu label per bulan membuat
+ * deret label lebih lebar daripada grafiknya — ia meluber keluar kartu dan, yang lebih
+ * berbahaya, berhenti sejajar dengan batang yang dinamainya.
+ */
+test("sumbu grafik bulanan tetap di dalam kartunya pada periode tiga tahun", async ({ page }) => {
+  await loginAs(page, USERS.qaHead);
+  await page.goto("/analytics?from=2024-01&to=2026-12");
+  await page.waitForLoadState("networkidle");
+
+  const figure = page
+    .getByText("Klaim per bulan", { exact: true })
+    .locator('xpath=ancestor::div[@data-slot="card"][1]')
+    .locator("figure")
+    .first();
+
+  const measured = await figure.evaluate((node) => {
+    const rows = [...node.querySelectorAll("ol")];
+    const bars = [...rows[0].children];
+    const months = [...rows[1].children];
+
+    const centerOf = (element: Element) => {
+      const box = element.getBoundingClientRect();
+      return (box.left + box.right) / 2;
+    };
+
+    let offset = 0;
+    let labelled = 0;
+    let gap = Number.POSITIVE_INFINITY;
+    let previousRight = Number.NEGATIVE_INFINITY;
+
+    months.forEach((cell, index) => {
+      const span = cell.querySelector("span");
+      if (!span) return;
+
+      labelled += 1;
+      offset = Math.max(offset, Math.abs(centerOf(span) - centerOf(bars[index])));
+
+      const box = span.getBoundingClientRect();
+      if (Number.isFinite(previousRight)) gap = Math.min(gap, box.left - previousRight);
+      previousRight = box.right;
+    });
+
+    const own = node.getBoundingClientRect();
+    let spill = 0;
+
+    for (const span of node.querySelectorAll("ol span")) {
+      const box = span.getBoundingClientRect();
+      spill = Math.max(spill, own.left - box.left, box.right - own.right);
+    }
+
+    return { columns: bars.length, labelled, offset, gap, spill };
+  });
+
+  expect(measured.columns).toBe(36);
+
+  // Dijarangkan: 36 label tidak mungkin muat, dan yang muat harus tetap menamai bulan.
+  expect(measured.labelled).toBeGreaterThan(0);
+  expect(measured.labelled).toBeLessThanOrEqual(8);
+
+  // Tidak ada label yang keluar dari grafiknya, dan tidak ada yang bertumpuk.
+  expect(measured.spill).toBeLessThanOrEqual(1);
+  expect(measured.gap).toBeGreaterThan(0);
+
+  // Dan yang paling menentukan: tiap label tepat di atas kolom yang dinamainya.
+  expect(measured.offset).toBeLessThanOrEqual(1);
+});
+
+/*
  * Pemilih periode dipakai bersama oleh Dashboard dan Claim Analytics, dan jalur
  * tujuannya pernah tertulis mati sebagai `/dashboard` — mengganti bulan di Analytics
  * melempar orang ke halaman lain beserta periode yang baru saja mereka pilih. Yang

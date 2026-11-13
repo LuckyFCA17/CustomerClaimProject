@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MAX_AXIS_LABELS,
   MAX_MONTHS,
+  axisStep,
   axisTicks,
+  monthAxis,
   monthlySeries,
   paretoRows,
   percent,
@@ -53,6 +56,102 @@ describe("monthlySeries", () => {
     const series = monthlySeries([new Date("2019-03-04T03:00:00Z")], NOW, 6);
 
     expect(series.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(0);
+  });
+});
+
+/**
+ * Sumbu X grafik bulanan.
+ *
+ * Yang diuji di sini adalah hal yang dahulu merusak tata letaknya: pada periode lebih
+ * dari satu tahun, satu label per kolom lebih lebar daripada grafiknya sendiri. Jadi
+ * yang dijaga adalah jumlah labelnya, letaknya pada bulan yang bermakna, dan bahwa
+ * tiap kolom tetap punya selnya sendiri — karena itulah yang menjaga label sejajar
+ * dengan batangnya.
+ */
+describe("axisStep", () => {
+  it("memberi label tiap bulan selama masih dua belas kolom atau kurang", () => {
+    expect(axisStep(1)).toBe(1);
+    expect(axisStep(12)).toBe(1);
+  });
+
+  it("menjarangkan label begitu kolomnya lebih banyak", () => {
+    expect(axisStep(13)).toBe(2);
+    expect(axisStep(16)).toBe(2);
+    expect(axisStep(17)).toBe(3);
+    expect(axisStep(24)).toBe(3);
+    expect(axisStep(25)).toBe(6);
+    expect(axisStep(MAX_MONTHS)).toBe(6);
+  });
+
+  it("tidak pernah melampaui batas jumlah label, sampai periode terpanjang", () => {
+    for (let columns = 1; columns <= MAX_MONTHS; columns += 1) {
+      const labels = Math.ceil(columns / axisStep(columns));
+
+      expect(labels).toBeLessThanOrEqual(Math.max(MAX_AXIS_LABELS, 12));
+    }
+  });
+
+  it("selalu berupa pembagi yang membuat Januari ikut berlabel", () => {
+    // 0 % step === 0 untuk langkah apa pun, jadi awal tahun tidak pernah hilang —
+    // dan di situlah tahunnya disebut.
+    for (let columns = 13; columns <= MAX_MONTHS; columns += 1) {
+      expect([2, 3, 6]).toContain(axisStep(columns));
+    }
+  });
+});
+
+describe("monthAxis", () => {
+  it("mengembalikan satu entri per kolom, bukan hanya kolom yang berlabel", () => {
+    const series = monthlySeries([], NOW, 24);
+
+    expect(monthAxis(series)).toHaveLength(24);
+  });
+
+  it("memberi label tiap bulan pada rentang dua belas bulan", () => {
+    const axis = monthAxis(monthlySeries([], NOW, 12));
+
+    expect(axis.every((tick) => tick.month !== null)).toBe(true);
+  });
+
+  it("menjatuhkan label pada awal kuartal untuk rentang dua tahun", () => {
+    const series = monthlySeries([], NOW, 24);
+    const axis = monthAxis(series);
+
+    const labelled = series
+      .map((bucket, index) => ({ bucket, tick: axis[index] }))
+      .filter((entry) => entry.tick.month !== null);
+
+    // Serinya mundur 24 bulan dari Nov 2026, jadi ia mulai di Des 2024 dan memuat
+    // kuartal dua tahun penuh — delapan label, tepat di batas MAX_AXIS_LABELS.
+    expect(labelled.map((entry) => entry.bucket.key)).toEqual([
+      "2025-01",
+      "2025-04",
+      "2025-07",
+      "2025-10",
+      "2026-01",
+      "2026-04",
+      "2026-07",
+      "2026-10",
+    ]);
+    // Bulan yang tersisa memang sengaja kosong, bukan diberi teks kosong.
+    expect(axis.filter((tick) => tick.month === null)).toHaveLength(16);
+  });
+
+  it("menyebut tiap tahun sekali, di tengah bentangannya", () => {
+    const axis = monthAxis(monthlySeries([], NOW, 24));
+    const years = axis
+      .map((tick, index) => ({ index, year: tick.year }))
+      .filter((entry) => entry.year !== null);
+
+    expect(years.map((entry) => entry.year)).toEqual(["2024", "2025", "2026"]);
+    // Des 2024 sendirian di kolom 0; 2025 membentang di kolom 1–12; 2026 di 13–23.
+    expect(years.map((entry) => entry.index)).toEqual([0, 6, 18]);
+  });
+
+  it("tidak menyebut tahun sama sekali bila seluruh seri satu tahun", () => {
+    const axis = monthAxis(monthlySeries([], new Date("2026-12-15T03:00:00Z"), 12));
+
+    expect(axis.every((tick) => tick.year === null)).toBe(true);
   });
 });
 
