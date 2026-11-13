@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Loader2, RotateCcw } from "lucide-react";
 
@@ -9,13 +9,19 @@ import { SelectNative } from "@/components/ui/select-native";
 import { MONTH_NAMES } from "@/lib/dashboard";
 
 /**
- * Pemilih periode grafik dashboard.
+ * Pemilih periode grafik — dipakai Dashboard maupun Claim Analytics.
  *
  * Periodenya hidup di URL (`?from=2026-01&to=2026-06`), bukan di state komponen. Tiga
  * alasannya: halaman dashboard adalah server component yang menghitung angkanya di
  * basis data, jadi periode harus sampai ke server; tautannya dapat dikirim ke orang
  * lain dan menampilkan periode yang sama; dan tombol kembali peramban mengembalikan
  * periode sebelumnya tanpa kode tambahan.
+ *
+ * Tujuannya diambil dari `usePathname`, bukan dituliskan sebagai `/dashboard`: komponen
+ * ini dipakai di lebih dari satu halaman, dan jalur yang tertulis mati pernah melempar
+ * orang dari Claim Analytics ke Dashboard begitu mereka mengganti bulan. Membacanya dari
+ * alamat yang sedang dibuka berarti halaman berikutnya yang memakai pemilih ini tidak
+ * perlu mengingat apa pun.
  *
  * Tidak ada tombol "Terapkan". Di layar sentuh setiap ketukan tambahan terasa, dan
  * pilihan yang sudah dipilih tetapi belum diterapkan adalah keadaan yang membingungkan —
@@ -34,6 +40,7 @@ export function PeriodFilter({
   readonly isDefault: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
 
   const split = (value: string) => {
@@ -50,7 +57,7 @@ export function PeriodFilter({
     startTransition(() => {
       // `replace`, bukan `push`: mengubah bulan berkali-kali tidak boleh menumpuk
       // belasan langkah di riwayat yang harus ditekan kembali satu per satu.
-      router.replace(`/dashboard?${params.toString()}`);
+      router.replace(`${pathname}?${params.toString()}`);
     });
   }
 
@@ -125,7 +132,7 @@ export function PeriodFilter({
         ) : (
           <button
             type="button"
-            onClick={() => startTransition(() => router.replace("/dashboard"))}
+            onClick={() => startTransition(() => router.replace(pathname))}
             className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-nid-orange-700 hover:bg-secondary"
           >
             <RotateCcw aria-hidden className="size-3.5" />

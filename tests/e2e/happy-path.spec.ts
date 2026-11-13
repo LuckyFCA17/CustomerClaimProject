@@ -379,6 +379,35 @@ test("Claim Analytics: keempat grafik sepakat tentang periode yang sama", async 
   expect(summed).toBe(total);
 });
 
+/*
+ * Pemilih periode dipakai bersama oleh Dashboard dan Claim Analytics, dan jalur
+ * tujuannya pernah tertulis mati sebagai `/dashboard` — mengganti bulan di Analytics
+ * melempar orang ke halaman lain beserta periode yang baru saja mereka pilih. Yang
+ * diuji di sini alamatnya, bukan grafiknya: grafiknya memang terlihat benar di
+ * Dashboard, dan justru itu yang membuat bug-nya tidak kentara.
+ */
+test("pemilih periode tetap di halaman tempat ia dipakai", async ({ page }) => {
+  await loginAs(page, USERS.qaHead);
+  await page.goto("/analytics");
+  await page.waitForLoadState("networkidle");
+
+  // Bulan yang benar-benar berbeda dari yang sedang terpilih: `selectOption` dengan
+  // nilai yang sama tidak memicu `onChange`, dan ujinya akan lulus tanpa menguji apa pun.
+  const startMonth = page.getByLabel("Bulan awal");
+  const current = await startMonth.inputValue();
+  await startMonth.selectOption(current === "0" ? "5" : "0");
+  await page.waitForURL(/\/analytics\?from=/);
+
+  expect(new URL(page.url()).pathname).toBe("/analytics");
+
+  // Tombol kembali ke bawaan juga, bukan hanya pemilih bulannya.
+  await page.getByRole("button", { name: /Kembali ke 12 bulan terakhir/i }).click();
+  await page.waitForURL((url) => url.pathname === "/analytics" && url.search === "");
+
+  expect(new URL(page.url()).pathname).toBe("/analytics");
+  await expect(page.locator("body")).toContainText("Claim Analytics");
+});
+
 test("paket klaim terunduh sebagai arsip berisi dokumen dan evidence terpilih", async ({
   page,
 }) => {
