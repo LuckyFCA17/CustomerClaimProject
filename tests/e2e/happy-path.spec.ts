@@ -642,12 +642,21 @@ test("lembar CAPA Monitoring dapat dicetak dari halaman monitoring", async ({ pa
   await page.goto(`/monitoring/${id}`);
   await page.waitForLoadState("networkidle");
 
+  /*
+   * Rute pemantauan berkunci id CPAR sejak satu klaim dapat menerbitkan beberapa.
+   * Tautan lama berbasis id klaim — yang sudah tersebar di email dan bookmark — tetap
+   * dilayani lewat pengalih, dan itulah yang dipastikan baris ini: `goto` di atas
+   * memakai id klaim, dan halaman mendarat pada id CPAR.
+   */
+  const cparId = page.url().split("/").pop();
+  expect(cparId).not.toBe(id);
+
   const print = page.getByRole("link", { name: /Print CAPA Monitoring/i });
-  await expect(print).toHaveAttribute("href", `/print/monitoring/${id}?autoprint=1`);
+  await expect(print).toHaveAttribute("href", `/print/monitoring/${cparId}?autoprint=1`);
 
   // Halaman cetaknya dibuka langsung: yang diuji bukan tombolnya ada, melainkan
   // tautannya mendarat pada lembar yang benar dan memuat angka yang sudah dicatat.
-  await page.goto(`/print/monitoring/${id}`);
+  await page.goto(`/print/monitoring/${cparId}`);
   await page.waitForLoadState("networkidle");
 
   const sheet = page.locator("body");
@@ -843,6 +852,13 @@ test("seluruh periode efektif, klaim ditutup Verified Closed", async ({ page }) 
   await page.waitForLoadState("networkidle");
   await expect(page.locator("body")).toContainText(/Verified closed/i);
 
+  // Kartu CPAR pada halaman klaim memuat tautan ke tiap CPAR-nya; dari sanalah id
+  // CPAR klaim ini diambil, alih-alih diturunkan dari id klaim seperti dulu.
+  const cparHref = await page.locator(`a[href^="/cpar/"]`).first().getAttribute("href");
+  const cparId = cparHref?.split("/").pop();
+
+  expect(cparId).toBeTruthy();
+
   // Di dasbor CPAR, status akhir dipecah menurut ketepatan waktunya. Yang diuji adalah
   // badge-nya memang salah satu dari keduanya, bukan yang mana — tenggat pada fikstur
   // ini tanggal tetap, jadi menguncinya ke satu label akan membuat uji ini berubah
@@ -858,7 +874,10 @@ test("seluruh periode efektif, klaim ditutup Verified Closed", async ({ page }) 
    * puncak daftar dan `.first()` menunjuk CPAR yang salah. Ujinya lalu gagal pada
    * hari tertentu saja, tanpa ada yang berubah di kode.
    */
-  const row = page.locator("li").filter({ has: page.locator(`a[href="/cpar/${id}"]`) });
+  // Tautannya kini menunjuk id CPAR, bukan id klaim, jadi id itu diambil lebih dulu
+  // dari halaman klaimnya — bukan ditebak dari urutan daftar, yang persis masalah
+  // yang dijelaskan di atas.
+  const row = page.locator("li").filter({ has: page.locator(`a[href="/cpar/${cparId}"]`) });
 
   await expect(row).toContainText(/Closed (under due date|overdue date)/);
   await expect(row).not.toContainText(/Verified closed/);
