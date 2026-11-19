@@ -108,13 +108,30 @@ describe("Modul 4 — mencetak lembar monitoring", () => {
 });
 
 describe("Modul 1 — informasi klaim", () => {
-  it("hanya membiarkan QA pembuatnya menyunting dan mengirim draft", () => {
+  /*
+   * QA bekerja sebagai satu regu: klaim yang dicatat rekannya tetap dapat disunting dan
+   * dikirim. Yang dulu menghentikan pekerjaan adalah kebalikannya — klaim menggantung
+   * sampai pencatatnya kembali dari libur atau dari lapangan.
+   */
+  it("membiarkan QA mana pun menyunting dan mengirim draft rekannya", () => {
     const own = claim("DRAFT", { createdById: qa.id });
     const other = claim("DRAFT", { createdById: "u-qa-lain" });
 
     expect(can(qa, "claim.submit", own)).toBe(true);
-    expect(can(qa, "claim.submit", other)).toBe(false);
-    expect(can(qa, "claim.update", other)).toBe(false);
+    expect(can(qa, "claim.submit", other)).toBe(true);
+    expect(can(qa, "claim.update", other)).toBe(true);
+  });
+
+  /*
+   * Membuang draft tetap milik pencatatnya. Itu bukan menyunting, dan draft yang belum
+   * dikirim tidak menghalangi siapa pun — jadi tidak ada yang mendesak untuk dibuang
+   * orang lain.
+   */
+  it("tidak membiarkan QA membuang draft rekannya", () => {
+    const other = claim("DRAFT", { createdById: "u-qa-lain" });
+
+    expect(can(qa, "claim.discard", claim("DRAFT", { createdById: qa.id }))).toBe(true);
+    expect(can(qa, "claim.discard", other)).toBe(false);
   });
 
   it("menolak penyuntingan setelah klaim terbit", () => {
@@ -183,10 +200,10 @@ describe("Modul 1 — informasi klaim", () => {
       }
     });
 
-    it("tetap milik pembuatnya untuk QA Staff, dan tertutup bagi departemen pelaksana", () => {
+    it("terbuka bagi seluruh QA, dan tertutup bagi departemen pelaksana", () => {
       const otherQa: Actor = { id: "u-qa-2", roles: ["QA"], departmentId: "dept-qa" };
 
-      expect(can(otherQa, "claim.amend", claim("PUBLISHED"))).toBe(false);
+      expect(can(otherQa, "claim.amend", claim("PUBLISHED"))).toBe(true);
       expect(can(prodHead, "claim.amend", claim("CPAR_IN_PROGRESS"))).toBe(false);
       expect(can(prodStaff, "claim.amend", claim("CPAR_IN_PROGRESS"))).toBe(false);
       expect(can(factoryMgr, "claim.amend", claim("PUBLISHED"))).toBe(false);

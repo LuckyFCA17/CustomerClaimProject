@@ -134,8 +134,24 @@ export const PERMISSION_MATRIX: Record<Action, ActionRule> = {
     roles: { QA: "ALL", QA_HEAD: "ALL", ADMIN: "ALL" },
     statuses: null,
   },
+  /**
+   * QA bekerja sebagai satu regu, bukan sebagai pemilik berkas masing-masing.
+   *
+   * `claim.update`, `claim.amend`, dan `claim.submit` berlaku `ALL` bagi QA: siapa pun
+   * di QA dapat menyunting dan mengirim klaim yang dicatat rekannya. Yang menuntut ini
+   * keadaan sehari-hari — klaim masuk saat pencatatnya libur, bertukar shift, atau
+   * sedang di lapangan — dan sebelumnya klaim itu terhenti sampai orangnya kembali.
+   *
+   * Yang menjaga pertanggungjawabannya bukan kepemilikan, melainkan jejaknya: tiap
+   * penyuntingan klaim yang sudah terbit menulis audit log beserta nama pelakunya, dan
+   * pencatat aslinya tetap tercantum sebagai pembuat di lembar cetaknya.
+   *
+   * `claim.discard` sengaja **tidak** ikut: membuang draft orang lain bukan menyunting,
+   * dan draft yang belum dikirim tidak menghalangi siapa pun sehingga tidak ada yang
+   * mendesak untuk dibuang orang lain.
+   */
   "claim.update": {
-    roles: { QA: "OWNER", ADMIN: "ALL" },
+    roles: { QA: "ALL", ADMIN: "ALL" },
     statuses: ["DRAFT", "REVISION_REQUESTED"],
   },
   /**
@@ -161,7 +177,7 @@ export const PERMISSION_MATRIX: Record<Action, ActionRule> = {
    * naik dan semua memeriksa ulang, yang memang maksudnya.
    */
   "claim.amend": {
-    roles: { QA: "OWNER", QA_HEAD: "ALL", ADMIN: "ALL" },
+    roles: { QA: "ALL", QA_HEAD: "ALL", ADMIN: "ALL" },
     statuses: ["PUBLISHED", "CPAR_ISSUED", "CPAR_IN_PROGRESS", "CPAR_REVISION"],
   },
   /**
@@ -180,7 +196,7 @@ export const PERMISSION_MATRIX: Record<Action, ActionRule> = {
     statuses: ["DRAFT"],
   },
   "claim.submit": {
-    roles: { QA: "OWNER", ADMIN: "ALL" },
+    roles: { QA: "ALL", ADMIN: "ALL" },
     statuses: ["DRAFT", "REVISION_REQUESTED"],
   },
   "claim.review.approve": {

@@ -15,6 +15,9 @@ export const PASSWORD = "Nifco#2026";
 
 export const USERS = {
   qaStaff: "dimas.prayoga@nifco.co.id",
+  // QA kedua, bukan pembuat klaim mana pun dalam uji ini. Dipakai untuk memastikan QA
+  // bekerja sebagai satu regu: klaim rekannya tetap bisa disunting saat pencatatnya libur.
+  qaStaffOther: "sari.wulandari@nifco.co.id",
   qaHead: "rina.kusuma@nifco.co.id",
   prodHead: "bambang.setiawan@nifco.co.id",
   factoryManager: "toshiro.tanaka@nifco.co.id",

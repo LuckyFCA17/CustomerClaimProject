@@ -59,6 +59,33 @@ test("QA Dept. Head menyetujui, klaim terbit dengan nomor", async ({ page }) => 
   await expect(page.locator("body")).toContainText(/NID\/CC\/\d{2}\/\d{2}\/\d{4}/);
 });
 
+test("QA lain boleh menyunting klaim rekannya, tetapi tidak membuang draftnya", async ({
+  page,
+}) => {
+  // Sari Wulandari tidak membuat klaim ini — Dimas Prayoga yang mencatatnya. Yang diuji
+  // di sini bukan tampilan tombolnya, melainkan keputusan izin di belakangnya: QA adalah
+  // satu regu, jadi klaim yang masuk saat pencatatnya libur tidak boleh terhenti sampai
+  // orangnya kembali.
+  await loginAs(page, USERS.qaStaffOther);
+
+  await page.goto(claimUrl);
+  await page.waitForLoadState("networkidle");
+
+  await expect(page.getByRole("link", { name: /Edit claim information/i })).toBeVisible();
+
+  // Membuang draft orang lain bukan menyunting, dan tetap milik pembuatnya saja. Pada
+  // klaim yang sudah terbit tombol itu memang tidak pernah ada — asersi ini menjaga agar
+  // pelebaran izin menyunting tidak ikut menyeret pembuangan.
+  await expect(page.getByRole("button", { name: /Buang draft/i })).toHaveCount(0);
+
+  // Halaman suntingnya benar-benar terbuka, bukan hanya tombolnya yang tampil: route
+  // guard middleware dan `can()` di server action adalah dua lapis terpisah.
+  await page.goto(`${claimUrl}/edit`);
+  await page.waitForLoadState("networkidle");
+  await expect(page).toHaveURL(new RegExp(`${claimUrl.replace(/^https?:\/\/[^/]+/, "")}/edit$`));
+  await expect(page.locator('[name="qualityProblem"]')).toBeVisible();
+});
+
 test("QA Dept. Head menerbitkan CPAR ke departemen penanggung jawab", async ({ page }) => {
   await loginAs(page, USERS.qaHead);
 

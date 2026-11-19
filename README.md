@@ -717,7 +717,7 @@ daftar yang ditulis ulang di tiap halaman.
 
 | Tombol | Muncul saat | Untuk |
 |---|---|---|
-| Submit claim information | `DRAFT`, `REVISION_REQUESTED` | QA pembuat klaim |
+| Submit claim information | `DRAFT`, `REVISION_REQUESTED` | semua QA |
 | Review claim information | `PENDING_QA_HEAD_REVIEW` | QA Dept. Head |
 | **Action Button A** — Claim follow up / Ignore claim | `PUBLISHED` | QA, QA Dept. Head |
 | **Action Button B** — CPAR form | `CPAR_ISSUED` dan sesudahnya | semua yang boleh melihat klaim |
@@ -842,6 +842,25 @@ RBAC ditegakkan di tiga lapis, dengan `src/lib/permissions.ts` sebagai sumber ke
 3. **UI** — tombol yang tidak relevan disembunyikan. Ini kenyamanan, bukan pengaman.
 
 Matriks `ACTION × ROLE × STATUS` selengkapnya ada di [`PLAN.md` §2](./PLAN.md#2-matriks-permission-action--role--status).
+
+### QA adalah satu regu, bukan sekumpulan pemilik berkas
+
+`claim.update`, `claim.amend`, dan `claim.submit` berlaku `ALL` bagi role QA: siapa pun di QA
+dapat menyunting dan mengirim klaim yang dicatat rekannya. Yang menuntut ini keadaan
+sehari-hari — klaim masuk saat pencatatnya libur, bertukar shift, atau sedang di lapangan — dan
+dengan hak berbasis pemilik klaim itu terhenti sampai orangnya kembali. Seluruh aksi CPAR
+(`cpar.section.fill`, `cpar.submitFinal`, `monitoring.*`) memang sudah `ALL` sejak awal; yang
+tertinggal hanya sisi klaimnya.
+
+Pertanggungjawabannya tidak hilang, hanya tidak lagi bersandar pada kepemilikan:
+
+- tiap penyuntingan klaim yang sudah terbit menulis audit log beserta nama pelakunya;
+- pencatat aslinya tetap tercantum sebagai pembuat pada lembar cetaknya.
+
+**`claim.discard` sengaja tetap `OWNER`.** Membuang draft orang lain bukan menyunting, dan draft
+yang belum dikirim tidak menghalangi siapa pun — jadi tidak ada keadaan yang mendesak untuk
+membuangnya atas nama orang lain. Uji E2E `QA lain boleh menyunting klaim rekannya, tetapi tidak
+membuang draftnya` menjaga kedua sifat itu sekaligus.
 
 ### Menyunting klaim: dua hak, bukan satu
 
