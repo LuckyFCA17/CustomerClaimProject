@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { forbidden, notFound } from "next/navigation";
-import { CalendarClock, FileDown, FileText, Printer } from "lucide-react";
+import { CalendarClock, FileText, Printer } from "lucide-react";
 
 import {
   ActionPlanEditor,
@@ -372,24 +372,6 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
                 <a href={`/print/cpar/${id}?autoprint=1`} target="_blank" rel="noopener">
                   <Printer aria-hidden />
                   Print CPAR
-                </a>
-              </Button>
-            ) : null}
-
-            {/*
-              Unduhan PDF, dirender di server.
-
-              Bedanya dengan tombol di sebelahnya: dialog cetak peramban tidak ikut
-              campur, jadi ukuran kertas A3 mendatar dan penyesuaian satu halaman
-              berlaku apa pun pengaturan cetak di perangkat yang dipakai. Harganya
-              Chromium harus ada di mesin server — bila tidak, tombol ini menjawab
-              dengan sebabnya, dan tombol Print tetap bekerja.
-            */}
-            {can(user, "cpar.print", context) ? (
-              <Button asChild variant="outline" size="sm">
-                <a href={`/api/claims/${id}/document/cpar`} download>
-                  <FileDown aria-hidden />
-                  Download PDF
                 </a>
               </Button>
             ) : null}

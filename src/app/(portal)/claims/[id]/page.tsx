@@ -2,15 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { forbidden, notFound } from "next/navigation";
-import {
-  ClipboardCheck,
-  ClipboardList,
-  FileDown,
-  PencilLine,
-  Printer,
-  SquareArrowOutUpRight,
-  XCircle,
-} from "lucide-react";
+import { ClipboardCheck, ClipboardList, PencilLine, Printer, SquareArrowOutUpRight, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -220,28 +212,6 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
                   <a href={`/print/quick-info/${claim.id}?autoprint=1`} target="_blank" rel="noopener">
                     <Printer aria-hidden />
                     Print Quick Information
-                  </a>
-                </Button>
-
-                {/*
-                  Unduhan PDF, dirender di server.
-
-                  Tombol Print menyerahkan hasilnya pada dialog cetak peramban, yang
-                  pengaturannya berbeda-beda tiap perangkat. Yang ini membawa ukuran
-                  kertas dan tata letak lembarnya apa adanya — dengan syarat Chromium
-                  ada di mesin server.
-                */}
-                <Button asChild variant="outline">
-                  <a href={`/api/claims/${claim.id}/document/bad-news`} download>
-                    <FileDown aria-hidden />
-                    Download Bad News PDF
-                  </a>
-                </Button>
-
-                <Button asChild variant="outline">
-                  <a href={`/api/claims/${claim.id}/document/quick-info`} download>
-                    <FileDown aria-hidden />
-                    Download Quick Information PDF
                   </a>
                 </Button>
               </>
