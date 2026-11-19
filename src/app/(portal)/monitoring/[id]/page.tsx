@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { forbidden, notFound } from "next/navigation";
-import { FileText, Printer } from "lucide-react";
+import { FileDown, FileText, Printer } from "lucide-react";
 
 import { ImprovementReportForm } from "@/components/monitoring/improvement-report-form";
 import { MonitoringRecap } from "@/components/monitoring/monitoring-recap";
@@ -281,6 +281,16 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
                 <a href={`/print/monitoring/${id}?autoprint=1`} target="_blank" rel="noopener">
                   <Printer aria-hidden />
                   Print CAPA Monitoring
+                </a>
+              </Button>
+            ) : null}
+
+            {/* Unduhan PDF dari server; lihat catatan yang sama di halaman CPAR. */}
+            {can(user, "monitoring.print", context) ? (
+              <Button asChild variant="outline" size="sm">
+                <a href={`/api/claims/${id}/document/monitoring`} download>
+                  <FileDown aria-hidden />
+                  Download PDF
                 </a>
               </Button>
             ) : null}

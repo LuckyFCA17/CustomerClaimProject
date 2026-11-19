@@ -893,6 +893,35 @@ berjalan**, jadi di `CPAR_APPROVED` — sebelum pemantauan dibuka — dan di `CP
 Not Effective, siklusnya belum punya periode sama sekali dan tombolnya hanya akan menghasilkan
 lembar dengan tabel kosong. Selama klaimnya belum ditutup, lembarnya pun berwatermark DRAFT.
 
+### Mengunduh PDF dari server
+
+Di sebelah tiap tombol Print ada tombol **Download PDF**, yang menautkan ke
+`/api/claims/<id>/document/<doc>` dan merender lembarnya di server lewat `renderPdf()`. Keduanya
+sengaja berdampingan karena menjawab kebutuhan yang berbeda:
+
+| | Print | Download PDF |
+| --- | --- | --- |
+| Yang merender | Peramban yang sedang dipakai | Chromium di mesin server |
+| Butuh Chromium di server | Tidak | **Ya** |
+| Ukuran kertas dan margin | Ditentukan dialog cetak perangkat | Ditentukan lembarnya sendiri |
+| Bergantung pada `after()` | Tidak | Tidak — dirender saat diminta |
+
+Dua hal yang hanya didapat dari jalur unduhan. **Pertama**, dialog cetak tidak ikut campur: pada
+dialog yang kertasnya tersetel A4 atau marginnya bukan *None*, CPAR A3 akan meluap berapa pun
+penyesuaian di halaman — dan pengaturan itu milik perangkat, bukan portal. **Kedua**, ia tidak
+bergantung pada `after()`: PDF otomatis dibuat sesudah transaksi tersimpan, jadi klaim yang
+prosesnya berhenti lebih dulu tidak pernah punya lembar itu. Unduhan merender dari data terakhir,
+sehingga klaim lama pun tetap dapat diambil lembarnya.
+
+Izinnya **izin yang sama** dengan tombol Print masing-masing lembar — `claim.export` untuk Bad
+News dan Quick Information, `cpar.print` untuk CPAR dan A3, `monitoring.print` untuk Monitoring —
+bukan aturan baru, sehingga tidak ada kebijakan kedua yang lambat laun bisa berbeda. Klaim `DRAFT`
+ditolak, sama seperti tombol Print tidak ditawarkan di sana.
+
+Bila Chromium tidak ada di mesin itu, jawabannya **503 beserta sebabnya** dan cara memperbaikinya,
+bukan berkas rusak. Di Termux memang tidak ada, jadi di ponsel tombol Print-lah yang bekerja;
+setelah migrasi ke server internal, tombol unduhan inilah yang akan dipakai sehari-hari.
+
 ### Periode grafik dashboard
 
 Kedua grafik — Klaim per bulan dan Pareto non-conformance detail — mengikuti satu pemilih

@@ -608,6 +608,58 @@ test("lembar CPAR menyesuaikan diri ke satu halaman di peramban", async ({ page 
   expect(measured.height).toBeLessThanOrEqual(measured.available);
 });
 
+/*
+ * Unduhan PDF dari server, jalur yang tidak melewati dialog cetak peramban.
+ *
+ * Yang diuji dua hal yang membuat jalur ini ada: berkasnya benar-benar PDF dengan ukuran
+ * kertas lembarnya sendiri — bukan apa pun yang kebetulan dipilih di dialog cetak — dan
+ * tahap yang belum punya lembar tetap ditolak, bukan dibalas PDF kosong.
+ */
+test("lembar klaim dapat diunduh sebagai PDF dari server", async ({ page }) => {
+  const id = claimUrl.split("/").pop();
+
+  await loginAs(page, USERS.qaHead);
+  await page.goto(`/claims/${id}`);
+
+  for (const [slug, width, height] of [
+    ["bad-news", 297, 210],
+    ["quick-info", 210, 297],
+    ["cpar", 420, 297],
+  ] as const) {
+    const response = await page.request.get(`/api/claims/${id}/document/${slug}`, {
+      maxRedirects: 0,
+    });
+
+    expect(response.status(), `unduhan ${slug}`).toBe(200);
+    expect(response.headers()["content-type"]).toContain("application/pdf");
+
+    const pdf = Buffer.from(await response.body());
+    const text = pdf.toString("latin1");
+
+    // Ukuran kertas dibaca dari berkasnya, bukan dipercaya begitu saja.
+    const box = /\/MediaBox\s*\[([^\]]*)\]/.exec(text);
+    expect(box, `MediaBox ${slug}`).not.toBeNull();
+
+    const points = box![1].trim().split(/\s+/).map(Number);
+    const mm = (value: number) => Math.round((value / 72) * 25.4);
+
+    expect(mm(points[2] - points[0]), `lebar ${slug}`).toBe(width);
+    expect(mm(points[3] - points[1]), `tinggi ${slug}`).toBe(height);
+
+    // Dan CPAR tetap satu halaman — alasan jalur ini dibuat.
+    if (slug === "cpar") {
+      expect((text.match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBe(1);
+    }
+  }
+
+  // Ruas dokumen yang tidak dikenal tidak boleh menembus ke render apa pun.
+  const unknown = await page.request.get(`/api/claims/${id}/document/entah-apa`, {
+    maxRedirects: 0,
+  });
+
+  expect(unknown.status()).toBe(404);
+});
+
 test("lembar CAPA Monitoring dapat dicetak dari halaman monitoring", async ({ page }) => {
   const id = claimUrl.split("/").pop();
 
