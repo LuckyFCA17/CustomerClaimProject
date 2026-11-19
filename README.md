@@ -867,22 +867,29 @@ membuang draftnya` menjaga kedua sifat itu sekaligus.
 | Aksi | Status | Perilaku |
 |---|---|---|
 | `claim.update` | `DRAFT`, `REVISION_REQUESTED` | Auto-save tiap 30 detik, **tanpa** audit log (asumsi A-17) |
-| `claim.amend` | `PUBLISHED`, `CPAR_ISSUED`, `CPAR_IN_PROGRESS`, `CPAR_REVISION` | Simpan manual, audit log per field, dokumen dicetak ulang |
+| `claim.amend` | semua status setelah terbit **kecuali** `CPAR_UNDER_VERIFICATION` dan `IGNORED` | Simpan manual, audit log per field, dokumen dicetak ulang |
 
 Keduanya dipisah karena peristiwanya berbeda. Draft belum menjadi apa pun bagi siapa pun;
 mencatat tiap auto-save hanya akan menenggelamkan timeline klaim. Klaim yang sudah terbit
 dibaca dan dikerjakan departemen lain, jadi tiap perubahannya dicatat beserta **nilai lamanya** —
 pertanyaan auditor selalu "sebelumnya tertulis apa", dan tanpa itu jawabannya sudah tertimpa.
 
-Daftar statusnya berhenti sebelum verifikasi, dan itu disengaja:
+Penyuntingan terbuka sampai klaim ditutup — termasuk sesudah CPAR disetujui dan sesudah
+pemantauan berjalan. Yang menuntutnya kenyataan di lapangan: koreksi atas Claim Information
+(nomor lot salah ketik, jumlah NG yang direvisi pelanggan, tanggal kejadian yang baru
+terkonfirmasi) sering baru datang setelah CPAR disetujui. Sebelumnya satu-satunya jalan adalah
+memutar ulang seluruh rantai verifikasi lewat REVISE — dan memaksa empat orang menandatangani
+ulang demi satu nomor lot membuat orang memilih membiarkan datanya salah.
 
-- **`CPAR_UNDER_VERIFICATION` tidak termasuk.** Empat verifier sedang memutuskan atas isi yang
-  terpampang; mengubahnya di tengah jalan membuat sebagian memutuskan atas dokumen yang berbeda
-  dari sebagian lainnya, tanpa seorang pun tahu;
-- **`CPAR_APPROVED` dan sesudahnya juga tidak.** Tanda tangan sudah diberikan atas problem yang
-  dinyatakan. Mengubah pernyataan itu setelahnya membuat blok tanda tangan di lembar CPAR
-  menjaminkan sesuatu yang tidak pernah dibaca penandatangannya. Jalurnya REVISE dari verifier —
-  siklus naik dan semua memeriksa ulang, yang memang maksudnya.
+Yang dulu dijaga oleh larangan itu sekarang dijaga oleh **jejaknya**, bukan oleh penolakan:
+audit log mencatat nilai lamanya, dan dokumen dicetak ulang dengan versi naik sementara versi
+lama tetap tersimpan — jadi lembar yang ditandatangani tetap ada sebagai dirinya sendiri.
+
+**`CPAR_UNDER_VERIFICATION` tetap tertutup**, dan itu bukan sisa aturan lama. Pada status itu
+empat verifier memutuskan **secara bersamaan** atas isi yang terpampang; mengubahnya di tengah
+jalan membuat sebagian memutuskan atas dokumen yang berbeda dari sebagian lainnya. Audit log dan
+versi dokumen tidak dapat memperbaiki keputusan yang telanjur diambil atas teks yang keliru.
+Jendelanya pendek, dan jalurnya REVISE.
 
 **CPAR tidak perlu disalin ulang.** Section 1 CPAR membaca klaimnya langsung
 (`server/cpar-problem.ts`), jadi perbaikan pada Claim Information langsung terbaca di sana.

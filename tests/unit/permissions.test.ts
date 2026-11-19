@@ -159,9 +159,17 @@ describe("Modul 1 — informasi klaim", () => {
    * menjaga tanda tangan di lembar CPAR tetap bermakna.
    */
   describe("claim.amend", () => {
-    const ISSUED: ClaimStatus[] = ["PUBLISHED", "CPAR_ISSUED", "CPAR_IN_PROGRESS", "CPAR_REVISION"];
+    const ISSUED: ClaimStatus[] = [
+      "PUBLISHED",
+      "CPAR_ISSUED",
+      "CPAR_IN_PROGRESS",
+      "CPAR_REVISION",
+      "CPAR_APPROVED",
+      "CAPA_MONITORING",
+      "VERIFIED_CLOSED",
+    ];
 
-    it("membuka penyuntingan pada klaim terbit sampai sebelum verifikasi", () => {
+    it("membuka penyuntingan pada klaim terbit sampai klaim ditutup", () => {
       for (const status of ISSUED) {
         expect(can(qa, "claim.amend", claim(status)), status).toBe(true);
         expect(can(qaHead, "claim.amend", claim(status)), status).toBe(true);
@@ -169,22 +177,21 @@ describe("Modul 1 — informasi klaim", () => {
       }
     });
 
-    it("menutupnya begitu verifikasi berjalan atau selesai", () => {
-      // CPAR_UNDER_VERIFICATION: empat verifier sedang memutuskan atas isi yang
-      // terpampang. CPAR_APPROVED dan sesudahnya: tanda tangan sudah diberikan atas
-      // problem yang dinyatakan, dan mengubah pernyataan itu membuatnya menjaminkan
-      // sesuatu yang tidak pernah dibaca penandatangannya.
-      for (const status of [
-        "CPAR_UNDER_VERIFICATION",
-        "CPAR_APPROVED",
-        "CAPA_MONITORING",
-        "VERIFIED_CLOSED",
-        "IGNORED",
-      ] as ClaimStatus[]) {
-        expect(can(qa, "claim.amend", claim(status)), status).toBe(false);
-        expect(can(qaHead, "claim.amend", claim(status)), status).toBe(false);
-        expect(can(admin, "claim.amend", claim(status)), status).toBe(false);
-      }
+    it("tetap menutupnya selama empat verifier sedang memutuskan", () => {
+      // Satu-satunya status yang tertutup, dan bukan sisa aturan lama: pada
+      // CPAR_UNDER_VERIFICATION keempat verifier memutuskan secara bersamaan atas isi
+      // yang terpampang. Audit log dan versi dokumen tidak dapat memperbaiki keputusan
+      // yang telanjur diambil atas teks yang sudah berubah di tengah jalan.
+      expect(can(qa, "claim.amend", claim("CPAR_UNDER_VERIFICATION"))).toBe(false);
+      expect(can(qaHead, "claim.amend", claim("CPAR_UNDER_VERIFICATION"))).toBe(false);
+      expect(can(admin, "claim.amend", claim("CPAR_UNDER_VERIFICATION"))).toBe(false);
+    });
+
+    it("tidak membuka klaim yang diabaikan", () => {
+      // IGNORED bukan tahap dalam rantai CPAR; tidak ada yang perlu dikoreksi di sana.
+      expect(can(qa, "claim.amend", claim("IGNORED"))).toBe(false);
+      expect(can(qaHead, "claim.amend", claim("IGNORED"))).toBe(false);
+      expect(can(admin, "claim.amend", claim("IGNORED"))).toBe(false);
     });
 
     it("tidak tumpang tindih dengan claim.update", () => {

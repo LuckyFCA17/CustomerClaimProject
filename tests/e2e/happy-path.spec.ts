@@ -875,3 +875,26 @@ test("seluruh periode efektif, klaim ditutup Verified Closed", async ({ page }) 
     await expect(sheet).toContainText(role);
   }
 });
+
+test("Claim Information masih dapat dikoreksi setelah klaim ditutup", async ({ page }) => {
+  // Klaim sudah Verified Closed pada titik ini. Koreksi atas Claim Information — nomor
+  // lot salah ketik, jumlah NG yang direvisi pelanggan — sering baru datang justru
+  // setelah semuanya selesai, dan sebelumnya satu-satunya jalan adalah memutar ulang
+  // seluruh rantai verifikasi lewat REVISE demi satu field.
+  await loginAs(page, USERS.qaStaff);
+
+  await page.goto(claimUrl);
+  await page.waitForLoadState("networkidle");
+
+  await expect(page.locator("body")).toContainText(/Verified closed/i);
+  await expect(page.getByRole("link", { name: /Edit claim information/i })).toBeVisible();
+
+  // Tombolnya tampil karena izinnya ada, bukan karena UI lupa menyembunyikannya:
+  // halaman suntingnya benar-benar terbuka dan formnya terisi.
+  await page.goto(`${claimUrl}/edit`);
+  await page.waitForLoadState("networkidle");
+
+  const lot = page.locator('input[name="lotNo"]');
+  await expect(lot).toBeVisible();
+  await expect(lot).toHaveValue("LOT-E2E-0001");
+});

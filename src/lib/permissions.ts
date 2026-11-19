@@ -163,22 +163,41 @@ export const PERMISSION_MATRIX: Record<Action, ActionRule> = {
    * klaim yang sudah terbit mengubah dokumen yang sudah dibaca, dirujuk, dan mungkin
    * sedang dikerjakan departemen lain — setiap perubahannya dicatat.
    *
-   * Status yang diizinkan berhenti sebelum verifikasi dimulai, dan itu disengaja:
+   * Terbuka sampai klaim ditutup, termasuk sesudah CPAR disetujui dan sesudah pemantauan
+   * berjalan. Yang menuntut ini kenyataan di lapangan: koreksi atas Claim Information —
+   * nomor lot yang salah ketik, jumlah NG yang direvisi pelanggan, tanggal kejadian yang
+   * baru terkonfirmasi — sering datang justru setelah CPAR disetujui, dan sebelumnya
+   * satu-satunya jalan memperbaikinya adalah memutar ulang seluruh rantai verifikasi
+   * lewat REVISE. Memaksa empat orang menandatangani ulang demi satu nomor lot membuat
+   * orang memilih membiarkan datanya salah, dan itu hasil yang lebih buruk.
    *
-   *   · `CPAR_UNDER_VERIFICATION` tidak termasuk. Empat verifier sedang memutuskan atas
-   *     isi yang terpampang; mengubahnya di tengah jalan berarti sebagian memutuskan
-   *     atas dokumen yang berbeda dari sebagian lainnya, tanpa seorang pun tahu;
-   *   · `CPAR_APPROVED` dan sesudahnya juga tidak. Persetujuannya sudah diberikan atas
-   *     problem yang dinyatakan; mengubah pernyataan itu setelahnya membuat tanda tangan
-   *     yang tercetak di lembar CPAR menjaminkan sesuatu yang tidak pernah dibaca
-   *     penandatangannya.
+   * Yang dulu dijaga oleh larangan ini — bahwa tanda tangan tidak menjaminkan isi yang
+   * tidak pernah dibaca penandatangannya — sekarang dijaga oleh jejaknya, bukan oleh
+   * penolakan:
    *
-   * Bila klaim perlu diperbaiki pada tahap itu, jalurnya REVISE dari verifier — siklus
-   * naik dan semua memeriksa ulang, yang memang maksudnya.
+   *   · tiap penyuntingan menulis audit log beserta **nilai lamanya**, sehingga "sebelum
+   *     ditandatangani tertulis apa" selalu dapat dijawab;
+   *   · dokumennya dicetak ulang dengan nomor versi naik dan versi lama tetap tersimpan,
+   *     sehingga lembar yang ditandatangani tetap ada sebagai dirinya sendiri.
+   *
+   * `CPAR_UNDER_VERIFICATION` tetap **tidak** termasuk, dan itu bukan sisa aturan lama.
+   * Pada status itu empat verifier sedang memutuskan secara bersamaan atas isi yang
+   * terpampang; mengubahnya di tengah jalan membuat sebagian memutuskan atas dokumen yang
+   * berbeda dari sebagian lainnya, tanpa seorang pun tahu — dan tidak ada versi dokumen
+   * maupun audit log yang dapat memperbaiki keputusan yang sudah telanjur diambil atas
+   * teks yang keliru. Jendelanya pendek, dan jalurnya REVISE.
    */
   "claim.amend": {
     roles: { QA: "ALL", QA_HEAD: "ALL", ADMIN: "ALL" },
-    statuses: ["PUBLISHED", "CPAR_ISSUED", "CPAR_IN_PROGRESS", "CPAR_REVISION"],
+    statuses: [
+      "PUBLISHED",
+      "CPAR_ISSUED",
+      "CPAR_IN_PROGRESS",
+      "CPAR_REVISION",
+      "CPAR_APPROVED",
+      "CAPA_MONITORING",
+      "VERIFIED_CLOSED",
+    ],
   },
   /**
    * Membuang draft yang belum pernah dikirim.
