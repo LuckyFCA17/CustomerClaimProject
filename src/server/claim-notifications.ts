@@ -596,7 +596,7 @@ export async function notifyCapaNotEffective(
     type: "CAPA_NOT_EFFECTIVE",
     claimId,
     dedupeKey: `CAPA_NOT_EFFECTIVE:${periodId}`,
-    to: await cparParticipants(claimId),
+    to: await cparParticipants(cparId),
     payload,
   });
 }
