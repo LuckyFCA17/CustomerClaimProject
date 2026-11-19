@@ -1576,6 +1576,29 @@ menebak lewat gabungan `lockedAt` dan siklus verifikasi terakhir.
 Nomor periode pemantauan bernilai ulang per CPAR: dua CPAR pada satu klaim sama-sama punya
 periode 1 pada siklus 1, dan keduanya sah.
 
+### Halaman detail klaim memuat daftar CPAR-nya
+
+Kartu **CPAR** pada `Claims → Detail` menyebut tiap CPAR klaim itu satu per satu, bukan hanya
+menyatakan bahwa sebuah CPAR ada: nomornya sebagai tautan, badge tahapnya, chip tenggat, siklus,
+departemen penanggung jawab, jenis penanganan beserta anggota CFT, verifier User Dept. Head yang
+ditunjuk, kemajuan pengisian, dan tanggal terbit/kirim/setujui. Tombol **Buka CPAR** ada pada
+tiap baris, dan **Buka pemantauan** muncul begitu CPAR itu sampai tahap pemantauan.
+
+Dua hal yang sengaja diputuskan di sini:
+
+- **Badge tahap CPAR dipisah dari badge status klaim** (`CparStageBadge`, bukan `StatusBadge`),
+  meski tampilannya sama persis. Keduanya mengukur hal yang berbeda: status klaim adalah tahap
+  CPAR yang paling tertinggal, jadi pada klaim dengan dua CPAR badge di kepala halaman memang
+  akan berbeda dari salah satu badge di bawahnya. Menyatukannya ke satu komponen hanya akan
+  mengundang pemakaian yang tertukar tanpa ada yang menghalangi. Warnanya tetap satu sistem
+  (`CPAR_STAGE_TONE` memakai tone yang sama), supaya keduanya terbaca sebagai satu bahasa.
+- **Kemajuan pengisian memakai `missingRequiredSections`**, helper yang sama dengan gerbang submit
+  final — bukan penyaring sendiri. Hitungan naif "berapa baris `isRequired` yang terisi" akan
+  berselisih dengannya, karena gerbang itu mengecualikan section turunan (isinya dibaca dari
+  klaim) dan section yang sudah dicabut, yang barisnya masih ada di CPAR lama dengan `isRequired`
+  menyala dan isi kosong selamanya. Kartu yang menulis "7 dari 8" sementara tombol submit-nya
+  menerima lembar itu adalah kartu yang berbohong.
+
 ### Rute: id CPAR, dengan tautan lama tetap hidup
 
 `/cpar/[id]` dan `/monitoring/[id]` kini berkunci **id CPAR**. Keduanya dulu berkunci id klaim,

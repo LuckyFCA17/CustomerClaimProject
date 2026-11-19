@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DueChip } from "@/components/shared/due-chip";
 import { ClaimPackageDialog } from "@/components/claim/claim-package-dialog";
+import { CparStageBadge } from "@/components/shared/cpar-stage-badge";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { closureTiming } from "@/config/claim-status";
 import { StatusRail } from "@/components/shared/status-rail";
@@ -17,7 +18,8 @@ import { ClaimDocuments } from "@/components/claim/claim-documents";
 import { db } from "@/lib/db";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { draftLabel } from "@/lib/numbering";
-import { CPAR_STAGE_LABEL, leadCpar } from "@/lib/cpar-stage";
+import { isDerivedSection, isRetiredSection, missingRequiredSections } from "@/lib/cpar";
+import { leadCpar } from "@/lib/cpar-stage";
 import { can, canViewClaim, toClaimContext } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
 import { loadPackageContents } from "@/server/claim-package";
@@ -74,11 +76,23 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
           cparNo: true,
           cycle: true,
           status: true,
+          responsibilityType: true,
+          issuedAt: true,
           dueDate: true,
           submittedAt: true,
+          approvedAt: true,
+          closedAt: true,
           responsibleDeptId: true,
           responsibleDept: { select: { code: true, name: true } },
-          cftMembers: { select: { departmentId: true } },
+          userHeadVerifier: { select: { name: true, jobTitle: true } },
+          // Departemennya ikut dimuat, bukan hanya id-nya: kartu ini menyebut anggota
+          // CFT dengan nama, dan id departemen tidak berarti apa pun bagi pembacanya.
+          cftMembers: { select: { departmentId: true, department: { select: { code: true } } } },
+          // Dipakai menghitung kemajuan pengisian, dengan definisi yang sama persis
+          // dengan gerbang submit final — karena itu `content` dan `data` ikut dimuat,
+          // bukan hanya `filledAt`: section terstruktur (5 Why, action plan) menyimpan
+          // isinya di kolom Json.
+          sections: { select: { key: true, content: true, data: true, isRequired: true } },
         },
       },
     },
@@ -410,32 +424,131 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
-            {claim.cpars.map((entry) => (
-              <div
-                key={entry.id}
-                className="grid gap-x-8 gap-y-4 rounded-md border p-4 sm:grid-cols-2"
-              >
-                <Row
-                  label="CPAR no."
-                  value={
-                    canOpenCpar ? (
-                      <Link className="underline underline-offset-4" href={`/cpar/${entry.id}`}>
+            {claim.cpars.map((entry) => {
+              /*
+               * Kemajuan dihitung dengan helper yang dipakai gerbang submit final,
+               * bukan dengan penyaring sendiri.
+               *
+               * Hitungan naif "berapa baris section yang `isRequired` dan terisi" akan
+               * berselisih dengannya: gerbang itu mengecualikan section turunan (isinya
+               * dibaca dari klaim, bukan diketik) dan section yang sudah dicabut —
+               * barisnya masih ada di CPAR lama dengan `isRequired` menyala dan isi
+               * kosong selamanya. Kartu yang menulis "7 dari 8" sementara tombol
+               * submit-nya menerima lembar itu adalah kartu yang berbohong.
+               */
+              const countable = entry.sections.filter(
+                (section) =>
+                  section.isRequired &&
+                  !isDerivedSection(section.key) &&
+                  !isRetiredSection(section.key),
+              );
+              const missing = missingRequiredSections(entry.sections).length;
+              const filled = countable.length - missing;
+              const cftCodes = entry.cftMembers.map((member) => member.department.code);
+
+              return (
+                <div key={entry.id} className="rounded-md border p-4">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    {canOpenCpar ? (
+                      <Link
+                        href={`/cpar/${entry.id}`}
+                        className="font-medium tabular text-nid-orange-700 underline-offset-4 hover:underline"
+                      >
                         {entry.cparNo}
                       </Link>
                     ) : (
-                      entry.cparNo
-                    )
-                  }
-                />
-                <Row label="Tahap" value={CPAR_STAGE_LABEL[entry.status]} />
-                <Row
-                  label="Penanggung jawab"
-                  value={`${entry.responsibleDept.code} — ${entry.responsibleDept.name}`}
-                />
-                <Row label="Siklus" value={String(entry.cycle)} />
-                <Row label="Tenggat pengisian" value={formatDate(entry.dueDate)} />
-              </div>
-            ))}
+                      <span className="font-medium tabular">{entry.cparNo}</span>
+                    )}
+
+                    <CparStageBadge status={entry.status} />
+
+                    {/*
+                      Tenggat hanya diperingatkan selama masih menjadi tenggat. CPAR yang
+                      sudah dikirim tidak lagi menunggu siapa pun untuk mengisinya, jadi
+                      menandainya merah hanya membuat lembar yang sudah selesai terbaca
+                      seperti pekerjaan yang terlambat.
+                    */}
+                    <DueChip
+                      dueDate={entry.dueDate}
+                      now={new Date()}
+                      settled={entry.submittedAt !== null}
+                    />
+
+                    <span className="text-xs text-muted-foreground">Siklus {entry.cycle}</span>
+                  </div>
+
+                  <dl className="mt-3 grid gap-x-8 gap-y-3 sm:grid-cols-2">
+                    <Row
+                      label={
+                        entry.responsibilityType === "CFT"
+                          ? "Main responsible department"
+                          : "Departemen penanggung jawab"
+                      }
+                      value={`${entry.responsibleDept.code} — ${entry.responsibleDept.name}`}
+                    />
+                    <Row
+                      label="Jenis penanganan"
+                      value={
+                        entry.responsibilityType === "CFT"
+                          ? `Cross Functional Team${cftCodes.length > 0 ? ` · ${cftCodes.join(", ")}` : ""}`
+                          : "User Department"
+                      }
+                    />
+                    <Row
+                      label="Verifier User Dept. Head"
+                      value={
+                        entry.userHeadVerifier
+                          ? `${entry.userHeadVerifier.name}${entry.userHeadVerifier.jobTitle ? ` — ${entry.userHeadVerifier.jobTitle}` : ""}`
+                          : "Belum ditunjuk"
+                      }
+                    />
+                    <Row
+                      label="Kemajuan pengisian"
+                      value={`${filled} dari ${countable.length} section wajib`}
+                    />
+                    <Row label="Diterbitkan" value={formatDate(entry.issuedAt)} />
+                    <Row label="Tenggat pengisian" value={formatDate(entry.dueDate)} />
+                    <Row
+                      label="Dikirim ke verifikasi"
+                      value={entry.submittedAt ? formatDateTime(entry.submittedAt) : "Belum"}
+                    />
+                    <Row
+                      label="Disetujui seluruh verifier"
+                      value={entry.approvedAt ? formatDateTime(entry.approvedAt) : "Belum"}
+                    />
+                    {entry.closedAt ? (
+                      <Row label="Pemantauan selesai" value={formatDateTime(entry.closedAt)} />
+                    ) : null}
+                  </dl>
+
+                  {canOpenCpar ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/cpar/${entry.id}`}>
+                          <ClipboardList aria-hidden />
+                          Buka CPAR
+                        </Link>
+                      </Button>
+
+                      {/*
+                        Tautan pemantauan baru muncul setelah ada yang dipantau. Sebelum
+                        CPAR disetujui, halamannya hanya akan menjelaskan bahwa belum ada
+                        apa-apa di sana — tautan yang selalu mengecewakan lebih buruk
+                        daripada tautan yang belum ada.
+                      */}
+                      {entry.status === "MONITORING" || entry.status === "CLOSED" ? (
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/monitoring/${entry.id}`}>
+                            <ClipboardCheck aria-hidden />
+                            Buka pemantauan
+                          </Link>
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       ) : null}

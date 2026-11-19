@@ -1,3 +1,4 @@
+import type { StatusTone } from "@/config/claim-status";
 import type { ClaimStatus, CparStatus } from "@/generated/prisma/enums";
 
 /**
@@ -88,3 +89,21 @@ export function leadCpar<T extends { status: CparStatus }>(cpars: readonly T[]):
     CPAR_STAGE_ORDER[candidate.status] < CPAR_STAGE_ORDER[lowest.status] ? candidate : lowest,
   );
 }
+
+/**
+ * Warna tahap CPAR, memakai tone yang sama dengan badge status klaim.
+ *
+ * Satu klaim kini dapat menampilkan badge status klaim dan beberapa badge tahap CPAR
+ * berdampingan. Bila keduanya memakai sistem warna yang berbeda, pembaca akan menduga
+ * keduanya mengukur hal yang berbeda — padahal status klaim justru **diturunkan** dari
+ * tahap-tahap ini.
+ */
+export const CPAR_STAGE_TONE: Record<CparStatus, StatusTone> = {
+  ISSUED: "published",
+  IN_PROGRESS: "published",
+  UNDER_VERIFICATION: "pending",
+  REVISION: "pending",
+  APPROVED: "published",
+  MONITORING: "monitoring",
+  CLOSED: "closed",
+};

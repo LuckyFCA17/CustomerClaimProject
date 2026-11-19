@@ -116,6 +116,40 @@ test("QA Dept. Head menerbitkan CPAR ke departemen penanggung jawab", async ({ p
 
   await expect(page.locator("body")).toContainText(/NID\/CPAR\/\d{2}\/\d{4}/);
   await expect(page.locator("body")).toContainText(/Production/);
+
+  /*
+   * Halaman detail klaim adalah tempat orang mencari "CPAR klaim ini yang mana", jadi
+   * kartunya harus menyebut nomor CPAR, tahapnya, dan menautkannya — bukan hanya
+   * menyatakan bahwa sebuah CPAR ada.
+   */
+  await page.goto(claimUrl);
+  await page.waitForLoadState("networkidle");
+
+  const cparCard = page
+    .locator('div[data-slot="card"]')
+    .filter({ hasText: "Jenis penanganan" })
+    .first();
+
+  await expect(cparCard).toBeVisible();
+  await expect(cparCard).toContainText(/NID\/CPAR\/\d{2}\/\d{4}/);
+  // Tahap CPAR, bukan status klaim: keduanya nilai yang berbeda sejak satu klaim
+  // dapat memiliki beberapa CPAR.
+  await expect(cparCard).toContainText(/Terbit, belum diisi/i);
+  await expect(cparCard).toContainText(/PRD — Production/);
+  await expect(cparCard).toContainText(/Verifier User Dept\. Head/i);
+  await expect(cparCard).toContainText(/Bambang Setiawan/);
+  await expect(cparCard).toContainText(/section wajib/i);
+
+  // Tautannya menunjuk id CPAR, dan benar-benar mendarat pada lembarnya.
+  const open = cparCard.getByRole("link", { name: /Buka CPAR/i });
+  const href = await open.getAttribute("href");
+
+  expect(href).toMatch(/^\/cpar\/.+/);
+  expect(href).not.toBe(`/cpar/${claimUrl.split("/").pop()}`);
+
+  await open.click();
+  await page.waitForLoadState("networkidle");
+  await expect(page.locator("body")).toContainText(/NID\/CPAR\/\d{2}\/\d{4}/);
 });
 
 test("Production Dept. Head mengisi seluruh section CPAR", async ({ page }) => {
