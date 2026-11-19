@@ -133,7 +133,8 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
       orderBy: { submittedAt: "desc" },
     }),
     db.generatedDocument.findMany({
-      where: { claimId: id, kind: { in: ["MONITORING", "A3"] } },
+      // Lembar pemantauan CPAR ini saja.
+      where: { cparId: cpar.id, kind: { in: ["MONITORING", "A3"] } },
       orderBy: [{ cycle: "desc" }, { version: "desc" }],
     }),
   ]);
@@ -160,14 +161,14 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
     }),
   ]);
 
-  // Berkas item check disaring juga dengan claimId: id barisnya datang dari basis data,
+  // Berkas item check disaring juga dengan claimId klaimnya barisnya datang dari basis data,
   // tetapi penyaring ini yang menjaga agar rekap satu klaim tidak pernah memanggil
   // berkas klaim lain seandainya ada id yang bocor ke query.
   const checkFiles = await db.attachment.findMany({
     where: {
       entityType: MONITORING_CHECK_ENTITY,
       entityId: { in: checks.map((check) => check.id) },
-      claimId: id,
+      claimId: claim.id,
     },
     include: { uploadedBy: { select: { name: true } } },
     orderBy: { createdAt: "asc" },

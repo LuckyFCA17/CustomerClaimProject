@@ -149,14 +149,16 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
   if (!canViewClaim(user, context)) forbidden();
 
   const [problem, otherEvidence, documents] = await Promise.all([
-    loadProblemDescription(id),
+    // Deskripsi problem dibaca dari klaimnya, bukan dari CPAR-nya.
+    loadProblemDescription(cpar.claimId),
     db.attachment.findMany({
       where: { entityType: OTHER_EVIDENCE_ENTITY, entityId: cpar.id },
       include: { uploadedBy: { select: { name: true } } },
       orderBy: { createdAt: "asc" },
     }),
     db.generatedDocument.findMany({
-      where: { claimId: id, kind: "CPAR" },
+      // Dokumen lembar CPAR ini, bukan seluruh lembar CPAR klaimnya.
+      where: { cparId: cpar.id, kind: "CPAR" },
       orderBy: [{ cycle: "desc" }, { version: "desc" }],
     }),
   ]);
@@ -212,7 +214,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
       where: {
         entityType: ACTION_ITEM_ENTITY,
         entityId: { in: Object.values(actionPlans).flatMap((plan) => [...itemIds(plan)]) },
-        claimId: id,
+        claimId: cpar.claimId,
       },
       include: { uploadedBy: { select: { name: true } } },
       orderBy: { createdAt: "asc" },
@@ -221,7 +223,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
       where: {
         entityType: INITIAL_DOCUMENT_ENTITY,
         entityId: { in: cpar.initialDocuments.map((entry) => entry.initialDocumentId) },
-        claimId: id,
+        claimId: cpar.claimId,
       },
       include: { uploadedBy: { select: { name: true } } },
       orderBy: { createdAt: "asc" },

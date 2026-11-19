@@ -65,7 +65,7 @@ export default async function CparPrintPage({
   await authorizePrint("CPAR", id, token);
 
   const cpar = await loadCparForPrint(id);
-  const problem = await loadProblemDescription(id, { embedPhotos: true });
+  const problem = await loadProblemDescription(cpar.claimId, { embedPhotos: true });
   const claim = cpar.claim;
   const isDraft = query.draft === "1" || cpar.approvedAt === null;
 

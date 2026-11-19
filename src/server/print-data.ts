@@ -20,20 +20,35 @@ import { type ActionPlanInput, itemIds } from "@/schemas/action-plan";
  *   sesi  — dipakai manusia yang membuka ?preview=1 untuk memeriksa tata letak (§9)
  */
 
-export async function authorizePrint(kind: DocumentKind, claimId: string, token: string | null) {
-  if (verifyPrintToken(token, DOCUMENT_ROUTE[kind], claimId)) return;
+export async function authorizePrint(kind: DocumentKind, subjectId: string, token: string | null) {
+  if (verifyPrintToken(token, DOCUMENT_ROUTE[kind], subjectId)) return;
 
   const actor = await readSessionActor();
   if (!actor) forbidden();
 
+  /*
+   * `subjectId` adalah id klaim untuk Bad News dan Quick Information, dan id CPAR untuk
+   * lembar CPAR, monitoring, dan A3 — lihat `printUrl`. Izin selalu dinilai atas
+   * **klaim**-nya, jadi id CPAR ditukar lebih dulu ke klaim pemiliknya.
+   */
   const claim = await db.claim.findUnique({
-    where: { id: claimId },
+    where: { id: subjectId },
     select: CLAIM_CONTEXT_SELECT,
   });
 
-  if (!claim) notFound();
+  const subject =
+    claim ??
+    (await db.cpar
+      .findUnique({ where: { id: subjectId }, select: { claimId: true } })
+      .then((cpar) =>
+        cpar
+          ? db.claim.findUnique({ where: { id: cpar.claimId }, select: CLAIM_CONTEXT_SELECT })
+          : null,
+      ));
 
-  const allowed = canViewClaim(actor, toClaimContext(claim));
+  if (!subject) notFound();
+
+  const allowed = canViewClaim(actor, toClaimContext(subject));
 
   if (!allowed) forbidden();
 }
