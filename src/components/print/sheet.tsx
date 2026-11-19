@@ -30,10 +30,20 @@ export type PaperSize = keyof typeof PAPER;
 export function Sheet({
   draft,
   size = "a4",
+  onePage = false,
   children,
 }: {
   draft?: boolean;
   size?: PaperSize;
+  /**
+   * Lembar ini wajib muat satu halaman; isinya disesuaikan sampai muat.
+   *
+   * Ditandai di sini sebagai atribut, bukan disimpan sebagai daftar jenis dokumen di
+   * dua tempat: `AutoPrint` membacanya untuk menyesuaikan lembar, dan `renderPdf`
+   * membacanya untuk menunggu penyesuaian itu selesai. Satu penanda, jadi keduanya
+   * tidak mungkin berbeda pendapat tentang lembar mana yang disesuaikan.
+   */
+  onePage?: boolean;
   children: ReactNode;
 }) {
   const paper = PAPER[size];
@@ -48,7 +58,12 @@ export function Sheet({
       {/* Membuka dialog cetak sendiri bila dibuka lewat tombol Print; diam bila tidak. */}
       <AutoPrint />
 
-      <section className={paper.className} data-draft={draft ? "true" : undefined}>
+      <section
+        className={paper.className}
+        data-draft={draft ? "true" : undefined}
+        data-one-page={onePage ? "true" : undefined}
+        data-fit={onePage ? "pending" : undefined}
+      >
         {/*
           Pembungkus untuk penyusutan otomatis (lihat `fitToOnePage` di lib/pdf.ts).
           Zoom dipasang di sini, bukan pada .sheet, supaya yang mengecil hanya isinya —

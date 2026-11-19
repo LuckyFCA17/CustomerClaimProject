@@ -3,6 +3,8 @@ import path from "node:path";
 
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 
+import { FIT_ATTR, MIN_FIT, ONE_PAGE_ATTR } from "@/lib/sheet-fit";
+
 import type { DocumentKind } from "@/generated/prisma/enums";
 import { createPrintToken } from "@/lib/print-token";
 import { storage } from "@/lib/storage";
@@ -103,129 +105,42 @@ export function printUrl(kind: DocumentKind, claimId: string, extra = ""): strin
 }
 
 /**
- * Dokumen yang wajib muat satu halaman.
+ * Menunggu halaman selesai menyesuaikan lembarnya ke satu halaman.
  *
- * CPAR saja: lembar yang terbagi dua tidak dapat ditempel berdampingan saat review, dan
- * bagian yang paling sering dibandingkan — root cause dengan countermeasure-nya —
- * justru yang terpisah. Dokumen lain boleh sepanjang isinya.
+ * Perhitungannya tidak lagi di sini. Dulu begitu, dan akibatnya CPAR yang dicetak lewat
+ * tombol **Print CPAR** keluar dua halaman: tombol itu membuka dialog cetak peramban,
+ * yang tidak pernah melewati fungsi ini. Satu lembar, dua jalur cetak, dua hasil —
+ * dan yang dipakai sehari-hari justru jalur yang tidak disesuaikan.
+ *
+ * Sekarang halaman cetaklah yang menyesuaikan dirinya (`lib/sheet-fit.ts`, dipanggil
+ * `AutoPrint`), dan di sini tinggal menunggu penandanya berubah dari `pending`. Lembar
+ * yang tidak menandai dirinya wajib satu halaman tidak ditunggu sama sekali.
  */
-const ONE_PAGE: ReadonlySet<DocumentKind> = new Set<DocumentKind>(["CPAR"]);
+async function waitForFit(page: Page): Promise<number | null> {
+  const marked = await page.$(`.sheet[${ONE_PAGE_ATTR}="true"]`);
+  if (!marked) return null;
 
-/**
- * Batas bawah penyusutan.
- *
- * Di bawah ini huruf 7,5pt lembar A3 jatuh ke sekitar 5pt — muat satu halaman tetapi
- * tidak lagi terbaca dari jarak papan, yang justru alasan lembar ini dicetak A3.
- * Lebih baik dua halaman yang terbaca daripada satu halaman yang tidak.
- */
-const MIN_FIT = 0.65;
+  try {
+    await page.waitForFunction(
+      `document.querySelector('.sheet[${ONE_PAGE_ATTR}="true"]')?.getAttribute('${FIT_ATTR}') !== 'pending'`,
+      { timeout: 15_000 },
+    );
+  } catch {
+    // Skripnya tidak pernah selesai — bundel gagal dimuat, atau JS mati. Lembarnya
+    // dicetak apa adanya dan mungkin dua halaman. Itu tetap lebih baik daripada
+    // approve klaim yang gagal hanya karena PDF-nya tidak terbentuk: dokumen ini
+    // dibuat sesudah transaksi, dan kegagalannya tidak memulangkan status.
+    console.warn(
+      "Lembar tidak sempat menyesuaikan diri dalam 15 detik; dicetak tanpa penyesuaian.",
+    );
 
-/**
- * Batas atas pembesaran.
- *
- * 1,45 membuat huruf 7,5pt menjadi sekitar 10,9pt — masih terbaca sebagai formulir, bukan
- * poster. Tanpa batas, CPAR yang hampir seluruh sectionnya berisi "—" akan dibesarkan
- * sampai hurufnya janggal, dan dua lembar yang ditempel berdampingan akan terlihat
- * berasal dari dokumen yang berbeda.
- */
-const MAX_FIT = 1.45;
+    return null;
+  }
 
-/**
- * Menyesuaikan isi lembar sampai memenuhi satu halaman — mengecilkan maupun membesarkan.
- *
- * Dua masalah yang ditangani fungsi yang sama, karena keduanya pertanyaan yang sama:
- * "faktor terbesar yang isinya masih muat satu halaman".
- *
- *   · CPAR yang penuh meluap ke halaman kedua. Tata letaknya sendiri sudah dipadatkan
- *     sampai muat dengan sisa sekitar 8mm, dan sisa setipis itu habis oleh satu action
- *     plan yang panjang;
- *   · CPAR yang isiannya sedikit berhenti di dua pertiga halaman dan menyisakan pita
- *     kosong di bawahnya. Lembarnya tetap selembar A3 yang ditempel di papan, jadi ruang
- *     yang tidak terpakai itu hanya membuat hurufnya lebih kecil daripada yang bisa.
- *
- * Dicari lewat bagi dua, bukan sekali hitung: `zoom` mengalirkan ulang teks, jadi tinggi
- * tidak berbanding lurus dengan faktornya. Percobaan pertama selalu pada 1, sehingga
- * pencariannya menuruni rentang bila lembarnya meluap dan menaikinya bila masih longgar —
- * tanpa cabang terpisah.
- *
- * Seluruhnya berjalan di dalam peramban sebagai perhitungan tata letak; tidak ada
- * pencetakan ulang, jadi biayanya kecil.
- */
-async function fitToPage(page: Page): Promise<{ fit: number; fits: boolean }> {
   return page.evaluate(
-    async ([minFit, maxFit]: readonly [number, number]) => {
-      const sheet = document.querySelector<HTMLElement>(".sheet");
-      const content = sheet?.querySelector<HTMLElement>(".sheet-fit");
-      if (!sheet || !content) return { fit: 1, fits: true };
-
-      const style = getComputedStyle(sheet);
-
-      // Tinggi satu halaman sama dengan min-height lembar, menurut konstruksinya —
-      // dibaca dari sana supaya tetap benar bila ukuran kertasnya berubah.
-      const pageHeight = Number.parseFloat(style.minHeight);
-      if (!Number.isFinite(pageHeight) || pageHeight <= 0) return { fit: 1, fits: true };
-
-      /**
-       * Yang diukur isinya, bukan lembarnya.
-       *
-       * `.sheet` punya `min-height: 297mm`, jadi tingginya **tidak pernah** kurang dari
-       * satu halaman — isi sependek apa pun tetap terukur pas. Mengukurnya berarti
-       * ambang "muat" tidak dapat diberi jarak aman sama sekali, dan lembar yang
-       * tingginya meleset setengah piksel lolos pemeriksaan lalu tercetak dua halaman.
-       * Itu persis yang terjadi saat kotak tanda tangan ditinggikan.
-       */
-      const available =
-        pageHeight -
-        Number.parseFloat(style.paddingTop) -
-        Number.parseFloat(style.paddingBottom);
-
-      // Dua piksel jarak aman: tata letak layar dan tata letak cetak membulatkan
-      // berbeda, dan selisih sekecil itu cukup untuk menambah satu halaman kosong.
-      const safety = 2;
-
-      // Fungsi bantu bernama sengaja dihindari di seluruh blok ini: evaluate() mengirim
-      // fungsi ini ke peramban sebagai teks, dan esbuild membungkus fungsi bernama dengan
-      // helper __name yang tidak ada di sana.
-      let low = minFit;
-      let high = maxFit;
-      let best = 0;
-      let candidate = 1;
-
-      // Satu percobaan di 1 plus delapan kali bagi dua mempersempit selisihnya ke bawah
-      // 0,4% — jauh lebih halus daripada yang dapat dibedakan mata pada hasil cetak.
-      for (let pass = 0; pass < 9; pass += 1) {
-        sheet.style.setProperty("--fit", String(candidate));
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-
-        if (content.getBoundingClientRect().height <= available - safety) {
-          best = Math.max(best, candidate);
-          low = candidate;
-        } else {
-          high = candidate;
-        }
-
-        candidate = (low + high) / 2;
-      }
-
-      // Bahkan pada batas bawah keterbacaan isinya tidak muat. Lembar dibiarkan dua
-      // halaman: memaksanya lebih kecil lagi menghasilkan satu halaman yang tidak
-      // dapat dibaca, dan itu bukan perbaikan.
-      if (best === 0) {
-        sheet.style.setProperty("--fit", String(minFit));
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-
-        return {
-          fit: minFit,
-          fits: content.getBoundingClientRect().height <= available - safety,
-        };
-      }
-
-      sheet.style.setProperty("--fit", String(best));
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-
-      return { fit: best, fits: true };
-    },
-    [MIN_FIT, MAX_FIT] as const,
+    (attr: string) =>
+      Number(document.querySelector(`.sheet[data-one-page="true"]`)?.getAttribute(attr)),
+    FIT_ATTR,
   );
 }
 
@@ -252,16 +167,17 @@ export async function renderPdf({ kind, claimId, draft = false }: RenderPdfOptio
     // font pengganti dan tata letaknya bergeser.
     await page.evaluateHandle("document.fonts.ready");
 
-    if (ONE_PAGE.has(kind)) {
-      const { fit, fits } = await fitToPage(page);
+    const fit = await waitForFit(page);
+
+    if (fit !== null && Number.isFinite(fit)) {
       const percent = Math.round(fit * 100);
 
-      if (!fits) {
+      if (fit <= MIN_FIT) {
         console.warn(
-          `${DOCUMENT_TITLE[kind]} ${claimId}: isi tetap lebih dari satu halaman walau ` +
-            `disusutkan ke ${percent}%, batas bawah keterbacaan. Lembar dicetak apa adanya.`,
+          `${DOCUMENT_TITLE[kind]} ${claimId}: isi mungkin tetap lebih dari satu halaman ` +
+            `walau disusutkan ke ${percent}%, batas bawah keterbacaan.`,
         );
-      } else if (fit !== 1) {
+      } else if (percent !== 100) {
         console.info(
           `${DOCUMENT_TITLE[kind]} ${claimId}: isi ${fit < 1 ? "disusutkan" : "dibesarkan"} ` +
             `ke ${percent}% agar memenuhi satu halaman.`,

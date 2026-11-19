@@ -622,11 +622,26 @@ panjang menghabiskannya. Sebaliknya, CPAR yang isiannya sedikit berhenti di seki
 halaman dan menyisakan pita kosong di bawahnya — dan lembarnya tetap selembar A3 yang ditempel di
 papan, jadi ruang itu tidak menghemat apa pun.
 
-Karena itu ada **penyesuaian otomatis**: `fitToPage()` di `lib/pdf.ts` mengukur lembar tepat
-sebelum mencetak lalu menyesuaikan isinya sampai **memenuhi** satu halaman — mengecilkan yang
-meluap, membesarkan yang longgar. Keduanya pertanyaan yang sama, "faktor terbesar yang isinya
-masih muat satu halaman", jadi tidak ada cabang terpisah: percobaan pertama selalu pada 100%, dan
-bagi dua yang sama menuruni rentang bila lembarnya meluap dan menaikinya bila masih longgar.
+Karena itu ada **penyesuaian otomatis**: `fitSheetToPage()` di `lib/sheet-fit.ts` mengukur lembar
+lalu menyesuaikan isinya sampai **memenuhi** satu halaman — mengecilkan yang meluap, membesarkan
+yang longgar. Keduanya pertanyaan yang sama, "faktor terbesar yang isinya masih muat satu
+halaman", jadi tidak ada cabang terpisah: percobaan pertama selalu pada 100%, dan bagi dua yang
+sama menuruni rentang bila lembarnya meluap dan menaikinya bila masih longgar.
+
+**Penyesuaian itu berjalan di halaman cetaknya, bukan di sisi server.** Dulu sebaliknya — hanya
+`renderPdf()` yang menyesuaikan lembar — dan akibatnya CPAR yang dicetak lewat tombol **Print
+CPAR** keluar dua halaman: tombol itu membuka dialog cetak peramban, yang tidak pernah melewati
+`renderPdf()`. Satu lembar, dua jalur cetak, dua hasil, dan yang dipakai sehari-hari justru jalur
+yang tidak disesuaikan. Gejalanya menyesatkan karena ukuran kertasnya benar: PDF-nya tetap
+420×297mm, hanya isinya yang meluap ke halaman kedua.
+
+Sekarang `AutoPrint` menjalankan penyesuaian itu pada setiap pembukaan halaman cetak, dan
+`renderPdf()` hanya **menunggu** hasilnya. `Sheet` menandai lembar yang wajib satu halaman dengan
+`data-one-page`, dan menulis faktornya ke `data-fit` setelah selesai — satu penanda yang dibaca
+kedua jalur, sehingga keduanya tidak mungkin berbeda pendapat tentang lembar mana yang
+disesuaikan. Bila skrip halaman tidak pernah selesai, `renderPdf()` menunggu 15 detik lalu
+mencetak apa adanya: PDF dua halaman masih lebih baik daripada approve klaim yang gagal karena
+dokumennya tidak terbentuk.
 
 Tiga keputusan di dalamnya:
 

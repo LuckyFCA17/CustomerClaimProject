@@ -111,7 +111,7 @@ export default async function CparPrintPage({
   const earlierCycles = cpar.verifications.filter((entry) => entry.cycle < cpar.cycle);
 
   return (
-    <Sheet size="a3-landscape" draft={isDraft}>
+    <Sheet size="a3-landscape" draft={isDraft} onePage>
       <FormHeader
         formTitle="Corrective & Preventive Action Report"
         formCode="FM-QA-03 Rev.00 · CPAR"

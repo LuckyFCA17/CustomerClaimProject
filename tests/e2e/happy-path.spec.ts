@@ -563,6 +563,51 @@ test("paket klaim terunduh sebagai arsip berisi dokumen dan evidence terpilih", 
   expect(text).toContain(folder);
 });
 
+/*
+ * Lembar CPAR menyesuaikan dirinya sendiri, di halaman cetaknya.
+ *
+ * Penyesuaian itu dulu hanya ada di `renderPdf`, sementara tombol Print CPAR membuka
+ * dialog cetak peramban — yang tidak melewatinya. Akibatnya satu lembar punya dua hasil,
+ * dan yang dipakai sehari-hari justru yang tidak disesuaikan: CPAR tercetak dua halaman.
+ *
+ * Yang diuji di sini halaman cetaknya langsung, tanpa Puppeteer: bila penyesuaian di
+ * halaman hilang, `data-fit` tidak pernah berubah dari `pending` dan uji ini gagal.
+ */
+test("lembar CPAR menyesuaikan diri ke satu halaman di peramban", async ({ page }) => {
+  const id = claimUrl.split("/").pop();
+
+  await loginAs(page, USERS.qaHead);
+  await page.goto(`/print/cpar/${id}`);
+  await page.waitForLoadState("networkidle");
+
+  const sheet = page.locator('.sheet[data-one-page="true"]');
+  await expect(sheet).toHaveCount(1);
+
+  // Penandanya berubah dari "pending" begitu pencariannya selesai.
+  await expect(sheet).not.toHaveAttribute("data-fit", "pending", { timeout: 20_000 });
+
+  const measured = await sheet.evaluate((node) => {
+    const content = node.querySelector(".sheet-fit") as HTMLElement;
+    const style = getComputedStyle(node);
+    const available =
+      Number.parseFloat(style.minHeight) -
+      Number.parseFloat(style.paddingTop) -
+      Number.parseFloat(style.paddingBottom);
+
+    return {
+      fit: Number(node.getAttribute("data-fit")),
+      height: content.getBoundingClientRect().height,
+      available,
+    };
+  });
+
+  // Faktornya nyata, bukan nilai bawaan yang tidak pernah dihitung.
+  expect(measured.fit).toBeGreaterThan(0);
+
+  // Dan inilah sifat yang menentukan jumlah halaman: isi tidak melewati tinggi halaman.
+  expect(measured.height).toBeLessThanOrEqual(measured.available);
+});
+
 test("lembar CAPA Monitoring dapat dicetak dari halaman monitoring", async ({ page }) => {
   const id = claimUrl.split("/").pop();
 
@@ -778,7 +823,15 @@ test("seluruh periode efektif, klaim ditutup Verified Closed", async ({ page }) 
   await page.goto("/cpar");
   await page.waitForLoadState("networkidle");
 
-  const row = page.locator("li").filter({ hasText: /NID\/CPAR\// }).first();
+  /*
+   * Barisnya dicari lewat tautannya, bukan diambil sebagai baris pertama.
+   *
+   * Daftar CPAR diurutkan menurut tanggal kejadian klaimnya, dan klaim seed punya
+   * tanggal tetap: begitu tanggal itu terlewat di dunia nyata, klaim seed naik ke
+   * puncak daftar dan `.first()` menunjuk CPAR yang salah. Ujinya lalu gagal pada
+   * hari tertentu saja, tanpa ada yang berubah di kode.
+   */
+  const row = page.locator("li").filter({ has: page.locator(`a[href="/cpar/${id}"]`) });
 
   await expect(row).toContainText(/Closed (under due date|overdue date)/);
   await expect(row).not.toContainText(/Verified closed/);
