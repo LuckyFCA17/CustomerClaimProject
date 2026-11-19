@@ -65,12 +65,12 @@ const LOCK_TEXT: Record<LockReason, { badge: string; body: string }> = {
  * tombolnya digambar.
  */
 export function SectionEditor({
-  claimId,
+  cparId,
   sections,
   lockReason,
   derived,
 }: {
-  claimId: string;
+  cparId: string;
   sections: readonly SectionView[];
   lockReason: LockReason;
   /** Isi siap-pakai untuk section yang diturunkan dari klaim, bukan diketik. */
@@ -81,7 +81,7 @@ export function SectionEditor({
       {sections.map((section) => (
         <li key={section.key}>
           <SectionCard
-            claimId={claimId}
+            cparId={cparId}
             section={section}
             lockReason={lockReason}
             derivedContent={derived?.[section.key]}
@@ -93,12 +93,12 @@ export function SectionEditor({
 }
 
 function SectionCard({
-  claimId,
+  cparId,
   section,
   lockReason,
   derivedContent,
 }: {
-  claimId: string;
+  cparId: string;
   section: SectionView;
   lockReason: LockReason;
   derivedContent?: React.ReactNode;
@@ -123,7 +123,7 @@ function SectionCard({
     setSaving(true);
 
     try {
-      const result = await saveCparSection(claimId, { key: section.key, content: draft });
+      const result = await saveCparSection(cparId, { key: section.key, content: draft });
 
       if (!result.ok) {
         setError(result.fieldErrors?.content?.[0] ?? result.message ?? "Gagal menyimpan.");

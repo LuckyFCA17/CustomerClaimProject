@@ -21,10 +21,10 @@ import { verifyCpar } from "@/server/actions/cpar-filling";
  * hanya menerima "perbaiki", dan harus menebak bagian mana yang dimaksud.
  */
 export function VerificationPanel({
-  claimId,
+  cparId,
   capacity,
 }: {
-  claimId: string;
+  cparId: string;
   capacity: string;
 }) {
   const router = useRouter();
@@ -45,7 +45,7 @@ export function VerificationPanel({
     setPending(decision);
 
     try {
-      const result = await verifyCpar(claimId, {
+      const result = await verifyCpar(cparId, {
         decision,
         // Kapasitas ikut dikirim karena satu orang dapat memegang dua pada CPAR yang
         // sama; server memeriksa ulang bahwa kapasitas ini memang ia pegang.

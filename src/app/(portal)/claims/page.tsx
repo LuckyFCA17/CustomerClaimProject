@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DueChip } from "@/components/shared/due-chip";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { closureTiming } from "@/config/claim-status";
+import { leadCpar } from "@/lib/cpar-stage";
 import { db } from "@/lib/db";
 import {
   type ParamValue,
@@ -86,9 +87,11 @@ export default async function ClaimsPage({
       createdAt: true,
       customer: { select: { name: true } },
       createdBy: { select: { name: true } },
-      cpar: {
+      cpars: {
+        orderBy: { issuedAt: "asc" },
         select: {
           cparNo: true,
+          status: true,
           dueDate: true,
           submittedAt: true,
           responsibleDept: { select: { code: true } },
@@ -188,8 +191,10 @@ export default async function ClaimsPage({
                       <span className="block truncate text-xs text-muted-foreground">
                         {claim.internalPartNo || "—"}
                         {claim.customer ? ` · ${claim.customer.name}` : ""}
-                        {claim.cpar
-                          ? ` · ${claim.cpar.cparNo} (${claim.cpar.responsibleDept.code})`
+                        {claim.cpars.length > 0
+                          ? ` · ${claim.cpars
+                              .map((entry) => `${entry.cparNo} (${entry.responsibleDept.code})`)
+                              .join(", ")}`
                           : ""}
                         {" · "}
                         {claim.dateOfOccurrence
@@ -204,14 +209,14 @@ export default async function ClaimsPage({
                         menerbitkan CPAR memang belum punya tenggat, jadi chip-nya
                         tidak muncul sama sekali. */}
                     <DueChip
-                      dueDate={claim.cpar?.dueDate}
+                      dueDate={leadCpar(claim.cpars)?.dueDate}
                       now={now}
-                      settled={claim.cpar?.submittedAt !== null}
+                      settled={leadCpar(claim.cpars)?.submittedAt != null}
                     />
 
                     <StatusBadge
                       status={claim.status}
-                      closure={closureTiming(claim.closedAt, claim.cpar?.dueDate)}
+                      closure={closureTiming(claim.closedAt, leadCpar(claim.cpars)?.dueDate)}
                       showHint
                     />
                   </Link>

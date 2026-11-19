@@ -69,7 +69,7 @@ export async function generateDocument(
   const version = (latest?.version ?? 0) + 1;
   const isDraft = options.draft ?? claim.status === "DRAFT";
 
-  const pdf = await renderPdf({ kind, claimId, draft: isDraft });
+  const pdf = await renderPdf({ kind, subjectId: claimId, draft: isDraft });
   const stored = await storePdf(kind, claimFolder(claim.claimNo, claimId), claimNo, pdf, version);
 
   await db.generatedDocument.create({
@@ -100,14 +100,18 @@ export async function generateDocument(
  * boleh dibatalkan hanya karena Chromium tidak tersedia, seperti di Termux.
  */
 export async function generateCparDocument(
-  claimId: string,
+  cparId: string,
   actorId: string | null,
 ): Promise<GeneratedDoc | null> {
+  let claimId = "";
+
   try {
     const cpar = await db.cpar.findUniqueOrThrow({
-      where: { claimId },
-      select: { cycle: true, approvedAt: true },
+      where: { id: cparId },
+      select: { claimId: true, cparNo: true, cycle: true, approvedAt: true },
     });
+
+    claimId = cpar.claimId;
 
     const claim = await db.claim.findUniqueOrThrow({
       where: { id: claimId },
@@ -117,7 +121,7 @@ export async function generateCparDocument(
     const claimNo = claim.claimNo ?? `DRAFT-${claimId.slice(-6).toUpperCase()}`;
 
     const latest = await db.generatedDocument.findFirst({
-      where: { claimId, kind: "CPAR", cycle: cpar.cycle },
+      where: { claimId, cparId, kind: "CPAR", cycle: cpar.cycle },
       orderBy: { version: "desc" },
       select: { version: true },
     });
@@ -125,11 +129,13 @@ export async function generateCparDocument(
     const version = (latest?.version ?? 0) + 1;
     const isDraft = cpar.approvedAt === null;
 
-    const pdf = await renderPdf({ kind: "CPAR", claimId, draft: isDraft });
+    const pdf = await renderPdf({ kind: "CPAR", subjectId: cparId, draft: isDraft });
+    // Nomor CPAR ikut masuk nama berkas: satu klaim dapat punya beberapa lembar CPAR,
+    // dan tanpa itu keduanya bernama sama persis di folder yang sama.
     const stored = await storePdf(
       "CPAR",
       claimFolder(claim.claimNo, claimId),
-      `${claimNo}_c${cpar.cycle}`,
+      `${claimNo}_${cpar.cparNo.replaceAll("/", "-")}_c${cpar.cycle}`,
       pdf,
       version,
     );
@@ -137,11 +143,12 @@ export async function generateCparDocument(
     await db.generatedDocument.create({
       data: {
         claimId,
+        cparId,
         kind: "CPAR",
         version,
         cycle: cpar.cycle,
         path: stored.path,
-        snapshot: await cparSnapshot(claimId),
+        snapshot: await cparSnapshot(cparId),
         isDraft,
         generatedById: actorId,
       },
@@ -166,7 +173,7 @@ export async function generateCparDocument(
  * pernah membatalkan penutupan klaim yang sudah terjadi.
  */
 export async function generateClosingDocuments(
-  claimId: string,
+  cparId: string,
   actorId: string | null,
 ): Promise<GeneratedDoc[]> {
   const kinds: DocumentKind[] = ["MONITORING", "A3"];
@@ -174,10 +181,10 @@ export async function generateClosingDocuments(
 
   for (const kind of kinds) {
     try {
-      results.push(await generateCycleDocument(claimId, kind, actorId));
+      results.push(await generateCycleDocument(cparId, kind, actorId));
     } catch (error) {
       console.error(
-        `Gagal mencetak ${DOCUMENT_TITLE[kind]} untuk klaim ${claimId}:`,
+        `Gagal mencetak ${DOCUMENT_TITLE[kind]} untuk CPAR ${cparId}:`,
         error instanceof Error ? error.message : error,
       );
     }
@@ -188,14 +195,16 @@ export async function generateClosingDocuments(
 
 /** Dokumen yang diversi per siklus CPAR, bukan per klaim. */
 async function generateCycleDocument(
-  claimId: string,
+  cparId: string,
   kind: DocumentKind,
   actorId: string | null,
 ): Promise<GeneratedDoc> {
   const cpar = await db.cpar.findUniqueOrThrow({
-    where: { claimId },
-    select: { cycle: true },
+    where: { id: cparId },
+    select: { claimId: true, cparNo: true, cycle: true },
   });
+
+  const claimId = cpar.claimId;
 
   const claim = await db.claim.findUniqueOrThrow({
     where: { id: claimId },
@@ -205,18 +214,18 @@ async function generateCycleDocument(
   const claimNo = claim.claimNo ?? `DRAFT-${claimId.slice(-6).toUpperCase()}`;
 
   const latest = await db.generatedDocument.findFirst({
-    where: { claimId, kind, cycle: cpar.cycle },
+    where: { claimId, cparId, kind, cycle: cpar.cycle },
     orderBy: { version: "desc" },
     select: { version: true },
   });
 
   const version = (latest?.version ?? 0) + 1;
 
-  const pdf = await renderPdf({ kind, claimId, draft: false });
+  const pdf = await renderPdf({ kind, subjectId: cparId, draft: false });
   const stored = await storePdf(
     kind,
     claimFolder(claim.claimNo, claimId),
-    `${claimNo}_c${cpar.cycle}`,
+    `${claimNo}_${cpar.cparNo.replaceAll("/", "-")}_c${cpar.cycle}`,
     pdf,
     version,
   );
@@ -224,6 +233,7 @@ async function generateCycleDocument(
   await db.generatedDocument.create({
     data: {
       claimId,
+      cparId,
       kind,
       version,
       cycle: cpar.cycle,
@@ -258,9 +268,9 @@ async function monitoringSnapshot(claimId: string, cycle: number): Promise<Prism
   ) as Prisma.InputJsonValue;
 }
 
-async function cparSnapshot(claimId: string): Promise<Prisma.InputJsonValue> {
+async function cparSnapshot(cparId: string): Promise<Prisma.InputJsonValue> {
   const cpar = await db.cpar.findUniqueOrThrow({
-    where: { claimId },
+    where: { id: cparId },
     include: {
       responsibleDept: { select: { code: true, name: true } },
       cftMembers: { include: { department: { select: { code: true, name: true } } } },
@@ -323,6 +333,11 @@ export async function regenerateClaimDocuments(
 ): Promise<void> {
   await generateClaimDocuments(claimId, actorId);
 
-  const cpar = await db.cpar.findUnique({ where: { claimId }, select: { id: true } });
-  if (cpar) await generateCparDocument(claimId, actorId);
+  // Tiap CPAR dicetak ulang, bukan hanya yang pertama: Claim Information yang berubah
+  // terbaca di section 1 setiap CPAR klaim ini.
+  const cpars = await db.cpar.findMany({ where: { claimId }, select: { id: true } });
+
+  for (const cpar of cpars) {
+    await generateCparDocument(cpar.id, actorId);
+  }
 }

@@ -95,7 +95,8 @@ export async function loadPackageContents(claimId: string): Promise<PackageConte
     select: {
       id: true,
       claimNo: true,
-      cpar: { select: { id: true, cycle: true, sections: { select: { key: true, data: true } } } },
+      // Paket memuat seluruh CPAR klaim ini, bukan hanya yang pertama.
+      cpars: { select: { id: true, cycle: true, sections: { select: { key: true, data: true } } } },
     },
   });
 
@@ -131,7 +132,7 @@ export async function loadPackageContents(claimId: string): Promise<PackageConte
   // Bunyi tindakan hidup di kolom Json, jadi dikumpulkan sekali di sini — bukan dibaca
   // ulang untuk tiap berkas.
   const actionName = new Map<string, string>();
-  for (const section of claim.cpar?.sections ?? []) {
+  for (const section of claim.cpars.flatMap((cpar) => cpar.sections)) {
     if (!(ACTION_PLAN_SECTIONS as readonly string[]).includes(section.key)) continue;
 
     const plan = readActionPlan(section.data);

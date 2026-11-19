@@ -40,7 +40,7 @@ export default async function ReviewClaimPage({ params }: { params: Promise<{ id
 
   if (!claim) notFound();
 
-  const context = { status: claim.status, createdById: claim.createdById, cpar: null };
+  const context = { status: claim.status, createdById: claim.createdById, cpars: [] };
 
   // Klaim yang tidak sedang menunggu review tidak punya keputusan untuk diambil.
   if (!can(user, "claim.review.approve", context)) {

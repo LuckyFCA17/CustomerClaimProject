@@ -20,7 +20,7 @@ import { startMonitoring } from "@/server/actions/monitoring";
  * tanggal yang melompati akhir pekan adalah pekerjaan yang mudah salah dan tidak ada
  * gunanya diserahkan ke manusia.
  */
-export function StartMonitoring({ claimId }: { claimId: string }) {
+export function StartMonitoring({ cparId }: { cparId: string }) {
   const router = useRouter();
   const [periodCount, setPeriodCount] = useState("3");
   const [intervalDays, setIntervalDays] = useState("5");
@@ -34,7 +34,7 @@ export function StartMonitoring({ claimId }: { claimId: string }) {
     setPending(true);
 
     try {
-      const result = await startMonitoring(claimId, {
+      const result = await startMonitoring(cparId, {
         periodCount,
         intervalDays,
         checkItems,

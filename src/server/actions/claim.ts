@@ -50,26 +50,25 @@ export interface ActionResult {
 }
 
 type ClaimWithContext = Claim & {
-  cpar: { responsibleDeptId: string; cftMembers: { departmentId: string }[] } | null;
+  cpars: { id: string; responsibleDeptId: string; cftMembers: { departmentId: string }[] }[];
 };
 
 function toContext(claim: ClaimWithContext): ClaimContext {
   return {
     status: claim.status,
     createdById: claim.createdById,
-    cpar: claim.cpar
-      ? {
-          responsibleDeptId: claim.cpar.responsibleDeptId,
-          cftMemberDeptIds: claim.cpar.cftMembers.map((member) => member.departmentId),
-        }
-      : null,
+    cpars: claim.cpars.map((cpar) => ({
+      id: cpar.id,
+      responsibleDeptId: cpar.responsibleDeptId,
+      cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
+    })),
   };
 }
 
 async function loadClaim(claimId: string): Promise<ClaimWithContext> {
   const claim = await db.claim.findUnique({
     where: { id: claimId },
-    include: { cpar: { select: { responsibleDeptId: true, cftMembers: true } } },
+    include: { cpars: { select: { id: true, responsibleDeptId: true, cftMembers: true } } },
   });
 
   if (!claim) throw new NotFoundError("Klaim tidak ditemukan.");

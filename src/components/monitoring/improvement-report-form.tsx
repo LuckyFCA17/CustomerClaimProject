@@ -21,10 +21,10 @@ type Draft = Record<string, string>;
  * hanyalah ringkasan dan periode yang belum efektif, bukan kelengkapan A3.
  */
 export function ImprovementReportForm({
-  claimId,
+  cparId,
   blocker,
 }: {
-  claimId: string;
+  cparId: string;
   blocker: string | null;
 }) {
   const router = useRouter();
@@ -45,7 +45,7 @@ export function ImprovementReportForm({
     setPending(true);
 
     try {
-      const result = await submitImprovementReport(claimId, {
+      const result = await submitImprovementReport(cparId, {
         summary,
         lessonLearned: draft.lessonLearned ?? "",
         ...Object.fromEntries(A3_BLOCKS.map((block) => [block, draft[block] ?? ""])),

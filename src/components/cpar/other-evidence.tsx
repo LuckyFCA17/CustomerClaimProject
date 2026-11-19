@@ -36,11 +36,11 @@ export interface OtherEvidenceFile {
  * dengan nama aslinya, tanpa pura-pura ada yang pernah menamainya.
  */
 export function OtherEvidence({
-  claimId,
+  cparId,
   files,
   canUpload,
 }: {
-  claimId: string;
+  cparId: string;
   files: readonly OtherEvidenceFile[];
   canUpload: boolean;
 }) {
@@ -71,7 +71,7 @@ export function OtherEvidence({
         file,
         (chosen) => {
           const formData = new FormData();
-          formData.set("claimId", claimId);
+          formData.set("cparId", cparId);
           formData.set("name", name.trim());
           formData.set("file", chosen);
           return formData;

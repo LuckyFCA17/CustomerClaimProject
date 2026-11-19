@@ -37,6 +37,27 @@ enum ClaimStatus {
   VERIFIED_CLOSED
 }
 
+/// Tahap satu CPAR, terlepas dari CPAR lain pada klaim yang sama.
+///
+/// Dulu tahap ini **adalah** status klaim, karena satu klaim hanya punya satu CPAR.
+/// Dengan beberapa CPAR hal itu tidak lagi mungkin: CPAR A dapat sudah disetujui
+/// sementara CPAR B baru diisi, dan klaim hanya punya satu kolom status.
+///
+/// Disimpan, bukan diturunkan dari stempel waktu. Alasannya satu dan konkret: pada
+/// keputusan REVISE, `submittedAt` sengaja **tidak** dikosongkan — lembar itu memang
+/// pernah dikirim — sehingga REVISION dan UNDER_VERIFICATION tidak dapat dibedakan dari
+/// timestamp mana pun tanpa menebak lewat gabungan `lockedAt` dan siklus verifikasi
+/// terakhir. Tebakan seperti itu benar hari ini dan salah pada perubahan berikutnya.
+enum CparStatus {
+  ISSUED
+  IN_PROGRESS
+  UNDER_VERIFICATION
+  REVISION
+  APPROVED
+  MONITORING
+  CLOSED
+}
+
 enum ClaimType {
   OFFICIAL
   NON_OFFICIAL
@@ -418,7 +439,7 @@ model Claim {
   createdBy   User      @relation("ClaimCreatedBy", fields: [createdById], references: [id])
 
   parts         ClaimPart[]
-  cpar          Cpar?
+  cpars         Cpar[]
   monitoring    MonitoringPeriod[]
   checkItems    MonitoringCheckItem[]
   results       MonitoringResult[]
@@ -462,9 +483,20 @@ model ClaimPart {
 
 // ─────────────────────── CPAR (§6 Modul 2–3) ───────────────────────
 
+/// Corrective & Preventive Action Report.
+///
+/// Satu klaim dapat memiliki **lebih dari satu** CPAR, masing-masing berdiri sendiri:
+/// nomornya sendiri, departemen penanggung jawabnya sendiri, section, rantai verifikasi,
+/// dan pemantauannya sendiri. Yang menuntutnya kenyataan di lapangan — satu klaim sering
+/// berakar di dua tempat sekaligus (cacat injeksi di Produksi, lolosnya ke pelanggan di
+/// Warehouse), dan memaksa keduanya ke dalam satu CPAR berarti satu departemen
+/// menandatangani analisis departemen lain.
+///
+/// Tipe CFT tetap ada dan tidak digantikan ini: CFT untuk satu akar yang pemecahannya
+/// butuh banyak departemen, CPAR terpisah untuk akar yang memang berbeda.
 model Cpar {
   id      String @id @default(cuid())
-  claimId String @unique
+  claimId String
   claim   Claim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
   cparNo  String @unique
 
@@ -489,8 +521,14 @@ model Cpar {
   /// Naik 1 setiap keputusan REVISE atau periode monitoring NOT_EFFECTIVE.
   cycle    Int      @default(1)
 
+  /// Tahap CPAR ini sendiri. Status klaim adalah turunan dari seluruh nilai ini —
+  /// lihat `server/claim-status.ts`.
+  status CparStatus @default(ISSUED)
+
   submittedAt DateTime?
   approvedAt  DateTime?
+  /// Terisi ketika seluruh periode pemantauan CPAR ini dinyatakan efektif.
+  closedAt    DateTime?
 
   sections      CparSection[]
   verifications Verification[]
@@ -499,6 +537,13 @@ model Cpar {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  monitoring MonitoringPeriod[]
+  checkItems MonitoringCheckItem[]
+  documents  GeneratedDocument[]
+  reports    ImprovementReport[]
+
+  @@index([claimId])
+  @@index([status])
   @@index([responsibleDeptId])
   @@index([userHeadVerifierId])
   @@index([dueDate])
@@ -584,6 +629,14 @@ model Verification {
 
 model MonitoringPeriod {
   id      String @id @default(cuid())
+  /// CPAR yang countermeasure-nya dipantau periode ini.
+  ///
+  /// Pemantauan membuktikan countermeasure, dan countermeasure milik satu CPAR — bukan
+  /// milik klaim. Satu klaim dengan dua CPAR dipantau dua kali, masing-masing atas
+  /// tindakannya sendiri.
+  cparId  String
+  cpar    Cpar   @relation(fields: [cparId], references: [id], onDelete: Cascade)
+  /// Denormalisasi agar pengecekan izin dan rekap lintas CPAR tidak perlu join berantai.
   claimId String
   claim   Claim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
   /// Siklus CPAR saat periode dibuat — periode siklus lama tetap terbaca setelah revisi.
@@ -605,8 +658,11 @@ model MonitoringPeriod {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([claimId, cycle, periodNo])
+  // Nomor periode bernilai ulang per CPAR, bukan per klaim: dua CPAR pada satu klaim
+  // sama-sama punya periode 1 pada siklus 1, dan keduanya sah.
+  @@unique([cparId, cycle, periodNo])
   @@index([claimId, status])
+  @@index([cparId, status])
   @@index([dueDate])
 }
 
@@ -618,6 +674,10 @@ model MonitoringPeriod {
 /// itemnya sendiri, karena countermeasure-nya pun sudah berubah.
 model MonitoringCheckItem {
   id      String @id @default(cuid())
+  /// CPAR yang itemnya ditetapkan di sini — lihat `MonitoringPeriod.cparId`.
+  cparId  String
+  cpar    Cpar   @relation(fields: [cparId], references: [id], onDelete: Cascade)
+  /// Denormalisasi, sejalan dengan MonitoringPeriod.
   claimId String
   claim   Claim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
   cycle   Int    @default(1)
@@ -632,6 +692,7 @@ model MonitoringCheckItem {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  @@index([cparId, cycle])
   @@index([claimId, cycle])
 }
 
@@ -702,6 +763,11 @@ model MonitoringResult {
 
 model ImprovementReport {
   id      String @id @default(cuid())
+  /// CPAR yang perbaikannya dilaporkan. Laporan menutup satu pemantauan, dan pemantauan
+  /// milik satu CPAR.
+  cparId  String
+  cpar    Cpar   @relation(fields: [cparId], references: [id], onDelete: Cascade)
+  /// Denormalisasi, sejalan dengan MonitoringPeriod.
   claimId String
   claim   Claim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
   cycle   Int    @default(1)
@@ -718,6 +784,7 @@ model ImprovementReport {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  @@index([cparId, cycle])
   @@index([claimId])
   @@index([submittedById])
 }
@@ -754,6 +821,11 @@ model GeneratedDocument {
   id      String       @id @default(cuid())
   claimId String
   claim   Claim        @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  /// CPAR yang dokumennya, bila dokumen ini milik satu CPAR (lembar CPAR dan lembar
+  /// monitoring). Kosong untuk dokumen tingkat klaim — Bad News dan Quick Information
+  /// menggambarkan klaimnya, bukan salah satu CPAR-nya.
+  cparId  String?
+  cpar    Cpar?        @relation(fields: [cparId], references: [id], onDelete: Cascade)
   kind    DocumentKind
   version Int          @default(1)
   cycle   Int          @default(1)
@@ -769,8 +841,9 @@ model GeneratedDocument {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([claimId, kind, cycle, version])
+  @@unique([claimId, cparId, kind, cycle, version])
   @@index([claimId])
+  @@index([cparId])
 }
 
 model Notification {

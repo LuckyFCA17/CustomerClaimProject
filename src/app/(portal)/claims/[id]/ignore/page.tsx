@@ -32,7 +32,7 @@ export default async function IgnorePage({ params }: { params: Promise<{ id: str
 
   if (!claim) notFound();
 
-  if (!can(user, "claim.ignore", { status: claim.status, createdById: claim.createdById, cpar: null })) {
+  if (!can(user, "claim.ignore", { status: claim.status, createdById: claim.createdById, cpars: [] })) {
     redirect(`/claims/${id}`);
   }
 

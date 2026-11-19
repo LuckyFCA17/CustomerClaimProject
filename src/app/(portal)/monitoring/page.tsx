@@ -39,8 +39,24 @@ export default async function MonitoringDashboardPage() {
       status: true,
       partName: true,
       internalPartNo: true,
-      cpar: { select: { cparNo: true, cycle: true, responsibleDept: { select: { code: true } } } },
-      monitoring: { select: { periodNo: true, status: true, cycle: true } },
+      /*
+       * Pemantauan berjalan per CPAR, jadi daftar ini pun per CPAR.
+       *
+       * Periode ikut diambil di dalam tiap CPAR, bukan sekali di tingkat klaim: klaim
+       * dengan dua CPAR punya dua pemantauan yang berjalan sendiri-sendiri, dan
+       * mencampurnya membuat kemajuan salah satunya terbaca sebagai kemajuan keduanya.
+       */
+      cpars: {
+        orderBy: { issuedAt: "asc" },
+        select: {
+          id: true,
+          cparNo: true,
+          status: true,
+          cycle: true,
+          responsibleDept: { select: { code: true } },
+          monitoring: { select: { periodNo: true, status: true, cycle: true } },
+        },
+      },
     },
   });
 
@@ -98,7 +114,7 @@ export default async function MonitoringDashboardPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Klaim pada tahap pemantauan</CardTitle>
+          <CardTitle>CPAR pada tahap pemantauan</CardTitle>
           <CardDescription>
             Lima puluh terakhir, yang sudah ditutup lebih dulu. Batang menggambarkan periode
             siklus berjalan.
@@ -107,35 +123,37 @@ export default async function MonitoringDashboardPage() {
         <CardContent>
           {claims.length === 0 ? (
             <p className="rounded-lg border border-dashed border-nid-border px-3 py-8 text-center text-sm text-muted-foreground">
-              Belum ada klaim yang sampai tahap pemantauan.
+              Belum ada CPAR yang sampai tahap pemantauan.
             </p>
           ) : (
             <ul className="divide-y divide-nid-border">
-              {claims.map((claim) => {
-                const cycle = claim.cpar?.cycle ?? 1;
-                const progress = monitoringProgress(claim.monitoring, cycle);
+              {claims.flatMap((claim) =>
+                // Satu baris per CPAR. Klaim yang CPAR-nya dua muncul dua kali, dan itu
+                // memang yang benar: keduanya pekerjaan terpisah dengan kemajuannya
+                // masing-masing.
+                claim.cpars.map((cpar) => {
+                const cycle = cpar.cycle;
+                const progress = monitoringProgress(cpar.monitoring, cycle);
 
                 return (
-                  <li key={claim.id} className="py-3 first:pt-0">
+                  <li key={cpar.id} className="py-3 first:pt-0">
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                       <div className="min-w-0 flex-1">
                         <Link
-                          href={`/monitoring/${claim.id}`}
+                          href={`/monitoring/${cpar.id}`}
                           className="font-medium tabular text-nid-orange-700 hover:underline"
                         >
                           {claim.claimNo}
                         </Link>
                         <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                          {claim.cpar?.cparNo ? `${claim.cpar.cparNo} · ` : ""}
+                          {`${cpar.cparNo} · `}
                           {claim.partName} · {claim.internalPartNo}
                         </p>
                       </div>
 
-                      {claim.cpar ? (
-                        <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium">
-                          {claim.cpar.responsibleDept.code}
-                        </span>
-                      ) : null}
+                      <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium">
+                        {cpar.responsibleDept.code}
+                      </span>
 
                       <span className="text-xs tabular text-muted-foreground">
                         {progress.total === 0
@@ -167,7 +185,8 @@ export default async function MonitoringDashboardPage() {
                     ) : null}
                   </li>
                 );
-              })}
+                }),
+              )}
             </ul>
           )}
         </CardContent>

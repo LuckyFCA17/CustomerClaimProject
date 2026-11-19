@@ -28,6 +28,7 @@ function row(overrides: Partial<EvidenceRequestRow> = {}): EvidenceRequestRow {
     key: "k",
     kind: "ACTION_ITEM",
     claimId: "claim-1",
+    cparId: "cpar-1",
     claimNo: "NID/CC/26/10/0002",
     cparNo: "NID/CPAR/26/0001",
     sectionLabel: "Permanent countermeasure",

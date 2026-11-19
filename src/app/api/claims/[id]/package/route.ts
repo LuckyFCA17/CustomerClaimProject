@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
-import { can, canViewClaim, type ClaimContext } from "@/lib/permissions";
+import {
+  CLAIM_CONTEXT_SELECT,
+  can,
+  canViewClaim,
+  toClaimContext,
+  type ClaimContext,
+} from "@/lib/permissions";
 import { readSessionActor } from "@/lib/session";
 import { zipStream } from "@/lib/zip";
 import {
@@ -31,32 +37,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const claim = await db.claim.findUnique({
     where: { id },
-    select: {
-      status: true,
-      createdById: true,
-      cpar: {
-        select: {
-          responsibleDeptId: true,
-          cftMembers: { select: { departmentId: true } },
-          userHeadVerifierId: true,
-        },
-      },
-    },
+    select: CLAIM_CONTEXT_SELECT,
   });
 
   if (!claim) return new NextResponse("Not found", { status: 404 });
 
-  const context: ClaimContext = {
-    status: claim.status,
-    createdById: claim.createdById,
-    cpar: claim.cpar
-      ? {
-          responsibleDeptId: claim.cpar.responsibleDeptId,
-          cftMemberDeptIds: claim.cpar.cftMembers.map((member) => member.departmentId),
-          userHeadVerifierId: claim.cpar.userHeadVerifierId,
-        }
-      : null,
-  };
+  const context: ClaimContext = toClaimContext(claim);
 
   // Dua penjaga, dan keduanya perlu: yang pertama menolak klaim milik departemen lain,
   // yang kedua menolak tahap yang belum punya satu pun lembar untuk dipaketkan.

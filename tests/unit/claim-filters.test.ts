@@ -121,7 +121,7 @@ describe("claimFilterWhere", () => {
     expect(fields).toContain("internalPartNo");
     expect(fields).toContain("customerPartNo");
     expect(fields).toContain("customer");
-    expect(fields).toContain("cpar");
+    expect(fields).toContain("cpars");
   });
 
   it("mencari tanpa membedakan huruf besar kecil", () => {

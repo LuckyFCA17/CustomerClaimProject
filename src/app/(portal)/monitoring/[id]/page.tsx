@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { forbidden, notFound } from "next/navigation";
+import { forbidden, notFound, redirect } from "next/navigation";
 import { FileText, Printer } from "lucide-react";
 
 import { ImprovementReportForm } from "@/components/monitoring/improvement-report-form";
@@ -20,7 +20,7 @@ import {
   monitoringProgress,
 } from "@/lib/monitoring";
 import { DOCUMENT_TITLE } from "@/lib/pdf";
-import { can, canViewClaim, type ClaimContext } from "@/lib/permissions";
+import { can, canViewClaim, type ClaimContext, toClaimContext } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
 import { A3_BLOCK_LABEL } from "@/schemas/monitoring";
 import { readA3Content } from "@/server/print-data";
@@ -40,46 +40,48 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
   const { id } = await params;
   const user = await getPortalUser();
 
-  const claim = await db.claim.findUnique({
+  /*
+   * Rute ini berkunci id CPAR; pemantauan membuktikan countermeasure satu CPAR.
+   *
+   * Tautan lama memakai id klaim dan tetap dilayani — lihat alasan yang sama pada
+   * `/cpar/[id]`.
+   */
+  const cpar = await db.cpar.findUnique({
     where: { id },
     select: {
       id: true,
-      claimNo: true,
-      status: true,
-      createdById: true,
-      partName: true,
-      internalPartNo: true,
-      cpar: {
+      cparNo: true,
+      cycle: true,
+      responsibleDeptId: true,
+      responsibleDept: { select: { code: true, name: true } },
+      cftMembers: { select: { departmentId: true } },
+      claim: {
         select: {
           id: true,
-          cparNo: true,
-          cycle: true,
-          responsibleDeptId: true,
-          responsibleDept: { select: { code: true, name: true } },
-          cftMembers: { select: { departmentId: true } },
+          claimNo: true,
+          status: true,
+          createdById: true,
+          partName: true,
+          internalPartNo: true,
         },
       },
     },
   });
 
-  if (!claim) notFound();
+  if (!cpar) {
+    const siblings = await db.cpar.findMany({
+      where: { claimId: id },
+      select: { id: true },
+      orderBy: { issuedAt: "asc" },
+    });
 
-  const context: ClaimContext = {
-    status: claim.status,
-    createdById: claim.createdById,
-    cpar: claim.cpar
-      ? {
-          responsibleDeptId: claim.cpar.responsibleDeptId,
-          cftMemberDeptIds: claim.cpar.cftMembers.map((member) => member.departmentId),
-        }
-      : null,
-  };
+    if (siblings.length === 1) redirect(`/monitoring/${siblings[0].id}`);
+    if (siblings.length > 1) redirect(`/claims/${id}`);
 
-  if (!canViewClaim(user, context)) forbidden();
+    const claim = await db.claim.findUnique({ where: { id }, select: { id: true } });
 
-  // Klaim yang belum punya CPAR tidak pernah sampai ke tahap pemantauan; mengarahkan
-  // ke halaman klaim lebih berguna daripada halaman kosong tanpa penjelasan.
-  if (!claim.cpar) {
+    if (!claim) notFound();
+
     return (
       <div className="mx-auto max-w-3xl">
         <Card>
@@ -100,16 +102,33 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
     );
   }
 
-  const cycle = claim.cpar.cycle;
+  const claim = cpar.claim;
+
+  const context: ClaimContext = toClaimContext({
+    status: claim.status,
+    createdById: claim.createdById,
+    cpars: [
+      {
+        id: cpar.id,
+        responsibleDeptId: cpar.responsibleDeptId,
+        cftMembers: cpar.cftMembers,
+      },
+    ],
+  });
+
+  if (!canViewClaim(user, context)) forbidden();
+
+
+  const cycle = cpar.cycle;
 
   const [periods, reports, documents] = await Promise.all([
     db.monitoringPeriod.findMany({
-      where: { claimId: id },
+      where: { cparId: cpar.id },
       include: { filledBy: { select: { name: true } } },
       orderBy: [{ cycle: "asc" }, { periodNo: "asc" }],
     }),
     db.improvementReport.findMany({
-      where: { claimId: id },
+      where: { cparId: cpar.id },
       include: { submittedBy: { select: { name: true, jobTitle: true } } },
       orderBy: { submittedAt: "desc" },
     }),
@@ -256,8 +275,8 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
                 {claim.claimNo}
               </Link>{" "}
               ·{" "}
-              <Link href={`/cpar/${claim.id}`} className="tabular hover:underline">
-                {claim.cpar.cparNo}
+              <Link href={`/cpar/${cpar.id}`} className="tabular hover:underline">
+                {cpar.cparNo}
               </Link>{" "}
               · {claim.partName} · {claim.internalPartNo}
             </p>
@@ -305,7 +324,7 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <StartMonitoring claimId={id} />
+            <StartMonitoring cparId={id} />
           </CardContent>
         </Card>
       ) : null}
@@ -371,7 +390,7 @@ export default async function MonitoringPage({ params }: { params: Promise<{ id:
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ImprovementReportForm claimId={id} blocker={blocker} />
+            <ImprovementReportForm cparId={id} blocker={blocker} />
           </CardContent>
         </Card>
       ) : null}

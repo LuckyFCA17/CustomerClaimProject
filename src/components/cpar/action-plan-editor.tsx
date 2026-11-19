@@ -78,7 +78,7 @@ function toDraft(item: ActionItem): DraftItem {
  * Kata-katanya mengikuti sectionnya lewat ACTION_PLAN_COPY; bentuk isiannya sama.
  */
 export function ActionPlanEditor({
-  claimId,
+  cparId,
   sectionKey,
   value,
   people,
@@ -88,7 +88,7 @@ export function ActionPlanEditor({
   locked,
   legacyText,
 }: {
-  claimId: string;
+  cparId: string;
   sectionKey: ActionPlanSectionKey;
   value: ActionPlanInput;
   people: readonly PicOption[];
@@ -145,7 +145,7 @@ export function ActionPlanEditor({
     setSaving(true);
 
     try {
-      const result = await saveCparActionPlan(claimId, {
+      const result = await saveCparActionPlan(cparId, {
         sectionKey,
         items: rows.map((row) => ({
           id: row.id,
@@ -174,7 +174,7 @@ export function ActionPlanEditor({
   if (!editing) {
     return (
       <ActionPlanView
-        claimId={claimId}
+        cparId={cparId}
         sectionKey={sectionKey}
         value={value}
         people={people}
@@ -372,7 +372,7 @@ function FieldError({ messages }: { messages?: readonly string[] }) {
 
 /** Tampilan baca: satu kartu per baris, lengkap dengan evidence-nya. */
 export function ActionPlanView({
-  claimId,
+  cparId,
   sectionKey,
   value,
   people,
@@ -382,7 +382,7 @@ export function ActionPlanView({
   legacyText,
   onEdit,
 }: {
-  claimId: string;
+  cparId: string;
   sectionKey: ActionPlanSectionKey;
   value: ActionPlanInput;
   people: readonly PicOption[];
@@ -475,7 +475,7 @@ export function ActionPlanView({
 
               <div className="mt-2 pl-8.5">
                 <ItemEvidencePanel
-                  claimId={claimId}
+                  cparId={cparId}
                   itemId={item.id ?? null}
                   index={index}
                   files={item.id ? (evidence[item.id] ?? []) : []}
@@ -506,13 +506,13 @@ export function ActionPlanView({
 
 /** Evidence satu tindakan: daftar berkas yang ada, plus unggahan bila berhak. */
 function ItemEvidencePanel({
-  claimId,
+  cparId,
   itemId,
   index,
   files,
   canUpload,
 }: {
-  claimId: string;
+  cparId: string;
   itemId: string | null;
   index: number;
   files: readonly ItemEvidence[];
@@ -532,7 +532,7 @@ function ItemEvidencePanel({
         file,
         (chosen) => {
           const formData = new FormData();
-          formData.set("claimId", claimId);
+          formData.set("cparId", cparId);
           formData.set("itemId", itemId);
           formData.set("file", chosen);
           return formData;

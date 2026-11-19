@@ -46,13 +46,13 @@ export interface RequestedDocument {
  * sebenarnya masih kosong.
  */
 export function InitialDocuments({
-  claimId,
+  cparId,
   documents,
   people,
   canAssign,
   canUpload,
 }: {
-  claimId: string;
+  cparId: string;
   documents: readonly RequestedDocument[];
   people: readonly PicOption[];
   canAssign: boolean;
@@ -70,7 +70,7 @@ export function InitialDocuments({
         {documents.map((document) => (
           <li key={document.initialDocumentId}>
             <DocumentRow
-              claimId={claimId}
+              cparId={cparId}
               document={document}
               people={people}
               canAssign={canAssign}
@@ -94,13 +94,13 @@ export function InitialDocuments({
 }
 
 function DocumentRow({
-  claimId,
+  cparId,
   document,
   people,
   canAssign,
   canUpload,
 }: {
-  claimId: string;
+  cparId: string;
   document: RequestedDocument;
   people: readonly PicOption[];
   canAssign: boolean;
@@ -123,7 +123,7 @@ function DocumentRow({
         file,
         (chosen) => {
           const formData = new FormData();
-          formData.set("claimId", claimId);
+          formData.set("cparId", cparId);
           formData.set("initialDocumentId", document.initialDocumentId);
           formData.set("file", chosen);
           return formData;
@@ -141,7 +141,7 @@ function DocumentRow({
   function assign(value: string) {
     startTransition(async () => {
       const result = await assignInitialDocumentPic(
-        claimId,
+        cparId,
         document.initialDocumentId,
         value || null,
       );

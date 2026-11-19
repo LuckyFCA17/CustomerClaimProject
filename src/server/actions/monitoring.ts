@@ -21,6 +21,7 @@ import {
 import { assertCan, type ClaimContext } from "@/lib/permissions";
 import { requireActor } from "@/lib/session";
 import { claimFolder, saveUpload, storage } from "@/lib/storage";
+import { syncClaimStatus } from "@/server/claim-status";
 import {
   A3_BLOCKS,
   checkJudgementSchema,
@@ -51,40 +52,51 @@ export interface ActionResult {
 
 type LoadedClaim = Awaited<ReturnType<typeof loadClaim>>;
 
-async function loadClaim(claimId: string) {
-  const claim = await db.claim.findUnique({
-    where: { id: claimId },
-    include: {
-      cpar: { select: { id: true, cycle: true, responsibleDeptId: true, cftMembers: true } },
+/**
+ * Memuat satu CPAR beserta klaim dan periode pemantauannya.
+ *
+ * Berkunci id CPAR, bukan id klaim. Pemantauan membuktikan countermeasure, dan
+ * countermeasure milik satu CPAR: klaim dengan dua CPAR dipantau dua kali, masing-masing
+ * atas tindakannya sendiri, dengan penomoran periode yang berjalan sendiri pula.
+ */
+async function loadClaim(cparId: string) {
+  const cpar = await db.cpar.findUnique({
+    where: { id: cparId },
+    select: {
+      id: true,
+      cycle: true,
+      responsibleDeptId: true,
+      cftMembers: true,
+      claim: { select: { id: true, claimNo: true, status: true, createdById: true } },
       monitoring: { select: { id: true, periodNo: true, status: true, cycle: true } },
     },
   });
 
-  if (!claim) throw new NotFoundError("Klaim tidak ditemukan.");
+  if (!cpar) throw new NotFoundError("CPAR tidak ditemukan.");
 
-  return claim;
+  return cpar;
 }
 
-function toContext(claim: LoadedClaim): ClaimContext {
+function toContext(cpar: LoadedClaim): ClaimContext {
   return {
-    status: claim.status,
-    createdById: claim.createdById,
-    cpar: claim.cpar
-      ? {
-          responsibleDeptId: claim.cpar.responsibleDeptId,
-          cftMemberDeptIds: claim.cpar.cftMembers.map((member) => member.departmentId),
-        }
-      : null,
+    status: cpar.claim.status,
+    createdById: cpar.claim.createdById,
+    // Hanya CPAR yang sedang dipantau — lihat alasannya pada `toContext` di
+    // `actions/cpar-filling.ts`: konteks yang memuat seluruh CPAR klaim akan
+    // meloloskan departemen CPAR lain ke pemantauan yang bukan tanggungannya.
+    cpars: [
+      {
+        id: cpar.id,
+        responsibleDeptId: cpar.responsibleDeptId,
+        cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
+      },
+    ],
   };
 }
 
-/** Siklus CPAR adalah siklus pemantauan; klaim tanpa CPAR tidak pernah sampai ke sini. */
-function cycleOf(claim: LoadedClaim): number {
-  if (!claim.cpar) {
-    throw new ValidationError("Klaim ini belum memiliki CPAR, jadi belum dapat dipantau.");
-  }
-
-  return claim.cpar.cycle;
+/** Siklus CPAR adalah siklus pemantauan. */
+function cycleOf(cpar: LoadedClaim): number {
+  return cpar.cycle;
 }
 
 function failure(error: unknown): ActionResult {
@@ -116,11 +128,13 @@ function revalidateMonitoring(claimId: string): void {
 
 // ─────────────────────── Action Button C: membuka pemantauan ───────────────────────
 
-export async function startMonitoring(claimId: string, input: unknown): Promise<ActionResult> {
+export async function startMonitoring(cparId: string, input: unknown): Promise<ActionResult> {
   try {
     const actor = await requireActor();
-    const claim = await loadClaim(claimId);
-    const context = toContext(claim);
+    const cpar = await loadClaim(cparId);
+    const claim = cpar.claim;
+    const claimId = claim.id;
+    const context = toContext(cpar);
 
     assertCan(actor, "monitoring.start", context);
     assertTransition(claim.status, "CAPA_MONITORING", actor.roles);
@@ -134,13 +148,13 @@ export async function startMonitoring(claimId: string, input: unknown): Promise<
       };
     }
 
-    const cycle = cycleOf(claim);
+    const cycle = cycleOf(cpar);
     const { periodCount, intervalDays, checkItems, note } = parsed.data;
 
     // Siklus baru setelah Not Effective memakai nomor periode dari satu lagi: kunci
     // uniknya (claimId, cycle, periodNo) sudah memisahkan siklus, jadi penomoran
     // selalu mulai dari 1 dan tetap terbaca sebagai "periode ke-berapa di siklus ini".
-    const existing = claim.monitoring.filter((period) => period.cycle === cycle);
+    const existing = cpar.monitoring.filter((period) => period.cycle === cycle);
 
     if (existing.length > 0) {
       throw new ValidationError(
@@ -155,6 +169,7 @@ export async function startMonitoring(claimId: string, input: unknown): Promise<
     await db.$transaction(async (tx) => {
       await tx.monitoringPeriod.createMany({
         data: planned.map((period) => ({
+          cparId: cpar.id,
           claimId,
           cycle,
           periodNo: period.periodNo,
@@ -172,11 +187,20 @@ export async function startMonitoring(claimId: string, input: unknown): Promise<
       // membuat periode 1 dan periode 3 dapat dibandingkan — item yang berubah di
       // tengah jalan akan membuat "membaik" tidak berarti apa-apa.
       await tx.monitoringCheckItem.createMany({
-        data: checkItems.map((title, index) => ({ claimId, cycle, order: index + 1, title })),
+        data: checkItems.map((title, index) => ({
+          cparId: cpar.id,
+          claimId,
+          cycle,
+          order: index + 1,
+          title,
+        })),
       });
 
       const [createdPeriods, createdItems] = await Promise.all([
-        tx.monitoringPeriod.findMany({ where: { claimId, cycle }, select: { id: true } }),
+        tx.monitoringPeriod.findMany({
+          where: { cparId: cpar.id, cycle },
+          select: { id: true },
+        }),
         tx.monitoringCheckItem.findMany({ where: { claimId, cycle }, select: { id: true } }),
       ]);
 
@@ -186,7 +210,8 @@ export async function startMonitoring(claimId: string, input: unknown): Promise<
         ),
       });
 
-      await tx.claim.update({ where: { id: claimId }, data: { status: "CAPA_MONITORING" } });
+      await tx.cpar.update({ where: { id: cpar.id }, data: { status: "MONITORING" } });
+      await syncClaimStatus(tx, claimId);
 
       await writeAuditLog(
         tx,
@@ -211,7 +236,7 @@ export async function startMonitoring(claimId: string, input: unknown): Promise<
     });
 
     after(async () => {
-      await notifyMonitoringStarted(claimId, {
+      await notifyMonitoringStarted(cpar.id, {
         id: actor.id,
         name: actor.name,
         jobTitle: actor.jobTitle,
@@ -245,13 +270,14 @@ export async function uploadMonitoringEvidence(formData: FormData): Promise<Acti
 
     const period = await db.monitoringPeriod.findUnique({
       where: { id: periodId },
-      select: { id: true, claimId: true, periodNo: true, status: true },
+      select: { id: true, cparId: true, claimId: true, periodNo: true, status: true },
     });
 
     if (!period) throw new NotFoundError("Periode pemantauan tidak ditemukan.");
 
-    const claim = await loadClaim(period.claimId);
-    assertCan(actor, "monitoring.evidence.upload", toContext(claim));
+    const cpar = await loadClaim(period.cparId);
+    const claim = cpar.claim;
+    assertCan(actor, "monitoring.evidence.upload", toContext(cpar));
 
     // Periode yang sudah dinilai tidak lagi menerima bukti: penilaiannya mengacu pada
     // berkas yang ada saat itu, dan menambah sesudahnya membuat catatan tidak cocok
@@ -308,8 +334,8 @@ export async function deleteMonitoringEvidence(attachmentId: string): Promise<Ac
       throw new NotFoundError("Evidence tidak ditemukan.");
     }
 
-    const claim = await loadClaim(attachment.claimId);
-    assertCan(actor, "monitoring.evidence.upload", toContext(claim));
+    const cpar = await loadClaim(attachment.claimId);
+    assertCan(actor, "monitoring.evidence.upload", toContext(cpar));
 
     await db.attachment.update({ where: { id: attachmentId }, data: { deletedAt: new Date() } });
     await storage.remove(attachment.path).catch(() => undefined);
@@ -345,14 +371,15 @@ export async function uploadCheckEvidence(formData: FormData): Promise<ActionRes
       where: { periodId_itemId: { periodId, itemId } },
       include: {
         item: { select: { title: true } },
-        period: { select: { id: true, claimId: true, periodNo: true, status: true } },
+        period: { select: { id: true, cparId: true, claimId: true, periodNo: true, status: true } },
       },
     });
 
     if (!check) throw new NotFoundError("Item check tidak ditemukan pada periode ini.");
 
-    const claim = await loadClaim(check.period.claimId);
-    assertCan(actor, "monitoring.evidence.upload", toContext(claim));
+    const cpar = await loadClaim(check.period.cparId);
+    const claim = cpar.claim;
+    assertCan(actor, "monitoring.evidence.upload", toContext(cpar));
 
     if (check.period.status !== "PENDING") {
       throw new ForbiddenError(
@@ -413,14 +440,15 @@ export async function setCheckJudgement(
       where: { periodId_itemId: { periodId, itemId } },
       include: {
         item: { select: { title: true } },
-        period: { select: { claimId: true, periodNo: true, status: true, cycle: true } },
+        period: { select: { cparId: true, claimId: true, periodNo: true, status: true, cycle: true } },
       },
     });
 
     if (!check) throw new NotFoundError("Item check tidak ditemukan pada periode ini.");
 
-    const claim = await loadClaim(check.period.claimId);
-    assertCan(actor, "monitoring.evidence.upload", toContext(claim));
+    const cpar = await loadClaim(check.period.cparId);
+    const claim = cpar.claim;
+    assertCan(actor, "monitoring.evidence.upload", toContext(cpar));
 
     const parsed = checkJudgementSchema.safeParse(input);
     if (!parsed.success) {
@@ -492,13 +520,14 @@ export async function addMonitoringResult(periodId: string, input: unknown): Pro
 
     const period = await db.monitoringPeriod.findUnique({
       where: { id: periodId },
-      select: { id: true, claimId: true, periodNo: true, status: true },
+      select: { id: true, cparId: true, claimId: true, periodNo: true, status: true },
     });
 
     if (!period) throw new NotFoundError("Periode pemantauan tidak ditemukan.");
 
-    const claim = await loadClaim(period.claimId);
-    assertCan(actor, "monitoring.evidence.upload", toContext(claim));
+    const cpar = await loadClaim(period.cparId);
+    const claim = cpar.claim;
+    assertCan(actor, "monitoring.evidence.upload", toContext(cpar));
 
     const parsed = monitoringResultSchema.safeParse(input);
     if (!parsed.success) {
@@ -549,13 +578,13 @@ export async function deleteMonitoringResult(resultId: string): Promise<ActionRe
 
     const result = await db.monitoringResult.findUnique({
       where: { id: resultId },
-      include: { period: { select: { periodNo: true, status: true } } },
+      include: { period: { select: { cparId: true, periodNo: true, status: true } } },
     });
 
     if (!result) throw new NotFoundError("Baris tidak ditemukan.");
 
-    const claim = await loadClaim(result.claimId);
-    assertCan(actor, "monitoring.evidence.upload", toContext(claim));
+    const cpar = await loadClaim(result.period.cparId);
+    assertCan(actor, "monitoring.evidence.upload", toContext(cpar));
 
     if (result.period.status !== "PENDING") {
       throw new ForbiddenError(
@@ -630,13 +659,14 @@ export async function setEffectiveness(periodId: string, input: unknown): Promis
 
     const period = await db.monitoringPeriod.findUnique({
       where: { id: periodId },
-      select: { id: true, claimId: true, periodNo: true, status: true, cycle: true },
+      select: { id: true, cparId: true, claimId: true, periodNo: true, status: true, cycle: true },
     });
 
     if (!period) throw new NotFoundError("Periode pemantauan tidak ditemukan.");
 
-    const claim = await loadClaim(period.claimId);
-    const context = toContext(claim);
+    const cpar = await loadClaim(period.cparId);
+    const claim = cpar.claim;
+    const context = toContext(cpar);
 
     assertCan(actor, "monitoring.setEffectiveness", context);
 
@@ -655,7 +685,7 @@ export async function setEffectiveness(periodId: string, input: unknown): Promis
       );
     }
 
-    const cycle = cycleOf(claim);
+    const cycle = cycleOf(cpar);
 
     if (period.cycle !== cycle) {
       throw new ValidationError(
@@ -708,17 +738,23 @@ export async function setEffectiveness(periodId: string, input: unknown): Promis
 
       if (notEffective) {
         await tx.cpar.update({
-          where: { claimId: claim.id },
-          data: { cycle: nextCycle, submittedAt: null, approvedAt: null },
+          where: { id: cpar.id },
+          data: {
+            cycle: nextCycle,
+            submittedAt: null,
+            approvedAt: null,
+            status: "REVISION",
+          },
         });
 
         await tx.cparSection.updateMany({
-          where: { cparId: claim.cpar?.id },
+          where: { cparId: cpar.id },
           data: { lockedAt: null, revisionNote: note },
         });
 
-        await tx.claim.update({ where: { id: claim.id }, data: { status: "CPAR_REVISION" } });
       }
+
+      await syncClaimStatus(tx, claim.id);
 
       await writeAuditLog(
         tx,
@@ -745,7 +781,7 @@ export async function setEffectiveness(periodId: string, input: unknown): Promis
 
     if (notEffective) {
       after(async () => {
-        await notifyCapaNotEffective(claim.id, actorSummary, period.id, period.periodNo, note);
+        await notifyCapaNotEffective(cpar.id, actorSummary, period.id, period.periodNo, note);
       });
     }
 
@@ -765,13 +801,15 @@ export async function setEffectiveness(periodId: string, input: unknown): Promis
 // ─────────────────────── Improvement Report & penutupan ───────────────────────
 
 export async function submitImprovementReport(
-  claimId: string,
+  cparId: string,
   input: unknown,
 ): Promise<ActionResult> {
   try {
     const actor = await requireActor();
-    const claim = await loadClaim(claimId);
-    const context = toContext(claim);
+    const cpar = await loadClaim(cparId);
+    const claim = cpar.claim;
+    const claimId = claim.id;
+    const context = toContext(cpar);
 
     assertCan(actor, "monitoring.submitReport", context);
     assertTransition(claim.status, "VERIFIED_CLOSED", actor.roles);
@@ -785,8 +823,8 @@ export async function submitImprovementReport(
       };
     }
 
-    const cycle = cycleOf(claim);
-    const progress = monitoringProgress(claim.monitoring, cycle);
+    const cycle = cycleOf(cpar);
+    const progress = monitoringProgress(cpar.monitoring, cycle);
     const blocker = closingBlocker(progress);
 
     if (blocker) {
@@ -809,6 +847,7 @@ export async function submitImprovementReport(
     await db.$transaction(async (tx) => {
       await tx.improvementReport.create({
         data: {
+          cparId: cpar.id,
           claimId,
           cycle,
           summary,
@@ -819,10 +858,15 @@ export async function submitImprovementReport(
         },
       });
 
-      await tx.claim.update({
-        where: { id: claimId },
-        data: { status: "VERIFIED_CLOSED", closedAt },
+      // CPAR ini selesai; klaimnya baru ikut tertutup bila seluruh CPAR-nya tertutup.
+      // Klaim dengan CPAR kedua yang masih berjalan tetap terbuka, dan itu memang yang
+      // benar — pekerjaannya belum habis.
+      await tx.cpar.update({
+        where: { id: cpar.id },
+        data: { status: "CLOSED", closedAt },
       });
+
+      await syncClaimStatus(tx, claimId);
 
       await writeAuditLog(
         tx,
@@ -846,7 +890,7 @@ export async function submitImprovementReport(
 
     after(async () => {
       await notifyMonitoringFinished(
-        claimId,
+        cpar.id,
         { id: actor.id, name: actor.name, jobTitle: actor.jobTitle },
         cycle,
       );

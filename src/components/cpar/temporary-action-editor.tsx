@@ -59,13 +59,13 @@ function toDraft(entry: TemporaryActionEntry): DraftEntry {
  * bisa dipakai lebih dari sekali — misalnya dua gelombang sortir di pelanggan.
  */
 export function TemporaryActionEditor({
-  claimId,
+  cparId,
   value,
   canFill,
   locked,
   legacyText,
 }: {
-  claimId: string;
+  cparId: string;
   value: TemporaryActionInput;
   canFill: boolean;
   locked: boolean;
@@ -110,7 +110,7 @@ export function TemporaryActionEditor({
     setSaving(true);
 
     try {
-      const result = await saveCparTemporaryAction(claimId, {
+      const result = await saveCparTemporaryAction(cparId, {
         entries: rows.map((row) => ({
           kind: row.kind,
           label: row.label,

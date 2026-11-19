@@ -6,7 +6,7 @@ import type { DocumentKind } from "@/generated/prisma/enums";
 import { ACTION_ITEM_ENTITY } from "@/lib/cpar";
 import { db } from "@/lib/db";
 import { DOCUMENT_ROUTE } from "@/lib/pdf";
-import { canViewClaim } from "@/lib/permissions";
+import { CLAIM_CONTEXT_SELECT, canViewClaim, toClaimContext } from "@/lib/permissions";
 import { verifyPrintToken } from "@/lib/print-token";
 import { readSessionActor } from "@/lib/session";
 import { storage } from "@/lib/storage";
@@ -28,25 +28,12 @@ export async function authorizePrint(kind: DocumentKind, claimId: string, token:
 
   const claim = await db.claim.findUnique({
     where: { id: claimId },
-    select: {
-      status: true,
-      createdById: true,
-      cpar: { select: { responsibleDeptId: true, cftMembers: { select: { departmentId: true } } } },
-    },
+    select: CLAIM_CONTEXT_SELECT,
   });
 
   if (!claim) notFound();
 
-  const allowed = canViewClaim(actor, {
-    status: claim.status,
-    createdById: claim.createdById,
-    cpar: claim.cpar
-      ? {
-          responsibleDeptId: claim.cpar.responsibleDeptId,
-          cftMemberDeptIds: claim.cpar.cftMembers.map((member) => member.departmentId),
-        }
-      : null,
-  });
+  const allowed = canViewClaim(actor, toClaimContext(claim));
 
   if (!allowed) forbidden();
 }
@@ -69,9 +56,38 @@ export async function loadClaimForPrint(claimId: string) {
   return claim;
 }
 
-export async function loadCparForPrint(claimId: string) {
+/**
+ * Menerima id CPAR **atau** id klaim.
+ *
+ * Lembar cetak diminta dari dua arah: Puppeteer yang merender PDF selalu mengirim id
+ * CPAR, sementara tautan "Print CPAR" yang sudah beredar — di portal, di email, di
+ * bookmark — mengirim id klaim, karena dulu memang itu kuncinya. Keduanya dilayani di
+ * sini, sekali, alih-alih ditambal di tiap halaman cetak.
+ *
+ * Klaim dengan lebih dari satu CPAR mengambil yang pertama terbit: tautan lama tidak
+ * menyebut CPAR yang mana, dan satu-satunya yang pernah dimaksudkannya adalah CPAR yang
+ * sudah ada saat tautan itu dibuat.
+ */
+async function resolveCparId(id: string): Promise<string> {
+  const direct = await db.cpar.findUnique({ where: { id }, select: { id: true } });
+  if (direct) return direct.id;
+
+  const first = await db.cpar.findFirst({
+    where: { claimId: id },
+    orderBy: { issuedAt: "asc" },
+    select: { id: true },
+  });
+
+  if (!first) notFound();
+
+  return first.id;
+}
+
+export async function loadCparForPrint(idOrClaimId: string) {
+  const cparId = await resolveCparId(idOrClaimId);
+
   const cpar = await db.cpar.findUnique({
-    where: { claimId },
+    where: { id: cparId },
     include: {
       claim: {
         include: {
@@ -105,9 +121,11 @@ export async function loadCparForPrint(claimId: string) {
  * dicetak: lembar ini menggambarkan percobaan yang berhasil, sedangkan percobaan yang
  * gagal terbaca di timeline klaim dan di PDF siklus itu sendiri.
  */
-export async function loadMonitoringForPrint(claimId: string) {
+export async function loadMonitoringForPrint(idOrClaimId: string) {
+  const cparId = await resolveCparId(idOrClaimId);
+
   const cpar = await db.cpar.findUnique({
-    where: { claimId },
+    where: { id: cparId },
     include: {
       claim: {
         include: {
@@ -124,16 +142,16 @@ export async function loadMonitoringForPrint(claimId: string) {
 
   const [periods, checkItems, report] = await Promise.all([
     db.monitoringPeriod.findMany({
-      where: { claimId, cycle: cpar.cycle },
+      where: { cparId, cycle: cpar.cycle },
       include: { filledBy: { select: { name: true, jobTitle: true } } },
       orderBy: { periodNo: "asc" },
     }),
     db.monitoringCheckItem.findMany({
-      where: { claimId, cycle: cpar.cycle },
+      where: { cparId, cycle: cpar.cycle },
       orderBy: { order: "asc" },
     }),
     db.improvementReport.findFirst({
-      where: { claimId, cycle: cpar.cycle },
+      where: { cparId, cycle: cpar.cycle },
       include: { submittedBy: { select: { name: true, jobTitle: true } } },
       orderBy: { submittedAt: "desc" },
     }),

@@ -15,6 +15,7 @@ import { requireActor } from "@/lib/session";
 import { claimFolder, saveUpload, storage } from "@/lib/storage";
 import { followUpSchema, ignoreSchema } from "@/schemas/cpar";
 import { notifyClaimIgnored, notifyCparIssued } from "@/server/claim-notifications";
+import { syncClaimStatus } from "@/server/claim-status";
 
 /**
  * Server action Modul 2 (§6).
@@ -31,26 +32,25 @@ export interface ActionResult {
 }
 
 type ClaimWithCpar = Claim & {
-  cpar: { responsibleDeptId: string; cftMembers: { departmentId: string }[] } | null;
+  cpars: { id: string; responsibleDeptId: string; cftMembers: { departmentId: string }[] }[];
 };
 
 function toContext(claim: ClaimWithCpar): ClaimContext {
   return {
     status: claim.status,
     createdById: claim.createdById,
-    cpar: claim.cpar
-      ? {
-          responsibleDeptId: claim.cpar.responsibleDeptId,
-          cftMemberDeptIds: claim.cpar.cftMembers.map((member) => member.departmentId),
-        }
-      : null,
+    cpars: claim.cpars.map((cpar) => ({
+      id: cpar.id,
+      responsibleDeptId: cpar.responsibleDeptId,
+      cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
+    })),
   };
 }
 
 async function loadClaim(claimId: string): Promise<ClaimWithCpar> {
   const claim = await db.claim.findUnique({
     where: { id: claimId },
-    include: { cpar: { select: { responsibleDeptId: true, cftMembers: true } } },
+    include: { cpars: { select: { id: true, responsibleDeptId: true, cftMembers: true } } },
   });
 
   if (!claim) throw new NotFoundError("Klaim tidak ditemukan.");
@@ -86,7 +86,19 @@ export async function followUpClaim(claimId: string, input: unknown): Promise<Ac
     const context = toContext(claim);
 
     assertCan(actor, "claim.followUp", context);
-    assertTransition(claim.status, "CPAR_ISSUED", actor.roles);
+
+    /*
+     * Pemeriksaan transisi hanya berlaku bagi CPAR **pertama**.
+     *
+     * Menerbitkan CPAR berikutnya bukan perpindahan status klaim: ia membuat benda baru
+     * di bawah klaim yang sudah berjalan, dan status klaimnya dihitung ulang sesudahnya
+     * dari seluruh CPAR-nya. Menjalankan `assertTransition` di sini akan menolak CPAR
+     * kedua hanya karena klaimnya kebetulan sudah CPAR_IN_PROGRESS — padahal justru
+     * itulah keadaan yang membuat orang membutuhkannya.
+     */
+    if (claim.cpars.length === 0) {
+      assertTransition(claim.status, "CPAR_ISSUED", actor.roles);
+    }
 
     const parsed = followUpSchema.safeParse(input);
     if (!parsed.success) {
@@ -162,7 +174,7 @@ export async function followUpClaim(claimId: string, input: unknown): Promise<Ac
     const requestContext = await readRequestContext();
     const issuedAt = new Date();
 
-    const cparNo = await db.$transaction(async (tx) => {
+    const { cparNo, cparId } = await db.$transaction(async (tx) => {
       const number = await nextCparNo(tx, issuedAt);
 
       const cpar = await tx.cpar.create({
@@ -196,7 +208,10 @@ export async function followUpClaim(claimId: string, input: unknown): Promise<Ac
         },
       });
 
-      await tx.claim.update({ where: { id: claimId }, data: { status: "CPAR_ISSUED" } });
+      // Status klaim tidak disetel di sini melainkan dihitung dari seluruh CPAR-nya:
+      // CPAR baru yang masih ISSUED membuat klaim kembali ke tahap paling tertinggal,
+      // termasuk ketika klaimnya sudah sempat tertutup.
+      const claimStatus = await syncClaimStatus(tx, claimId);
 
       await writeAuditLog(
         tx,
@@ -207,7 +222,7 @@ export async function followUpClaim(claimId: string, input: unknown): Promise<Ac
           claimId,
           action: "claim.followUp",
           fromStatus: claim.status,
-          toStatus: "CPAR_ISSUED",
+          toStatus: claimStatus,
           payloadDiff: {
             cparNo: number,
             responsibilityType,
@@ -220,11 +235,11 @@ export async function followUpClaim(claimId: string, input: unknown): Promise<Ac
         requestContext,
       );
 
-      return number;
+      return { cparNo: number, cparId: cpar.id };
     });
 
     after(async () => {
-      await notifyCparIssued(claimId, {
+      await notifyCparIssued(cparId, {
         id: actor.id,
         name: actor.name,
         jobTitle: actor.jobTitle,

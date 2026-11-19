@@ -91,7 +91,7 @@ async function main(): Promise<void> {
   try {
     for (const kind of kinds) {
       try {
-        const pdf = await renderPdf({ kind, claimId });
+        const pdf = await renderPdf({ kind, subjectId: claimId });
         if (outDir) writeFileSync(path.join(outDir, `${kind}.pdf`), pdf);
 
         const size = paperSize(pdf);

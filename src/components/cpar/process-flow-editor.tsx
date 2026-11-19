@@ -39,13 +39,13 @@ function toDraft(step: ProcessStep): DraftStep {
  * sama. Menandainya di sini membuat kedua analisis berikutnya punya sasaran yang jelas.
  */
 export function ProcessFlowEditor({
-  claimId,
+  cparId,
   value,
   canFill,
   locked,
   legacyText,
 }: {
-  claimId: string;
+  cparId: string;
   value: ProcessFlowInput;
   canFill: boolean;
   locked: boolean;
@@ -81,7 +81,7 @@ export function ProcessFlowEditor({
     setSaving(true);
 
     try {
-      const result = await saveCparProcessFlow(claimId, {
+      const result = await saveCparProcessFlow(cparId, {
         // `id` hanya kunci React selama diedit; yang disimpan adalah urutannya.
         steps: steps.map((step) => ({
           name: step.name,

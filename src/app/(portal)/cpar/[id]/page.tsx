@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { forbidden, notFound } from "next/navigation";
+import { forbidden, notFound, redirect } from "next/navigation";
 import { CalendarClock, FileText, Printer } from "lucide-react";
 
 import {
@@ -48,7 +48,13 @@ import {
 import { db } from "@/lib/db";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { DOCUMENT_TITLE } from "@/lib/pdf";
-import { can, canFillSection, canViewClaim, type ClaimContext } from "@/lib/permissions";
+import {
+  can,
+  canFillSection,
+  canViewClaim,
+  toClaimContext,
+  type ClaimContext,
+} from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
 import { itemIds, readActionPlan } from "@/schemas/action-plan";
 import { readProcessFlow } from "@/schemas/process-flow";
@@ -74,7 +80,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
   const user = await getPortalUser();
 
   const cpar = await db.cpar.findUnique({
-    where: { claimId: id },
+    where: { id },
     include: {
       claim: {
         select: {
@@ -100,19 +106,45 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
     },
   });
 
-  if (!cpar) notFound();
+  /*
+   * Tautan lama tetap hidup.
+   *
+   * Rute ini dulu berkunci **id klaim**, dan id itu sudah tersebar: di email notifikasi
+   * yang terlanjur terkirim, di bookmark orang, dan di tautan yang ditempel pada chat
+   * grup. Mengubah kuncinya tanpa jalan kembali akan membuat semuanya berakhir di
+   * halaman "tidak ditemukan" — dan yang menerimanya tidak akan menyimpulkan "kuncinya
+   * berubah", melainkan "CPAR-nya hilang".
+   */
+  if (!cpar) {
+    const siblings = await db.cpar.findMany({
+      where: { claimId: id },
+      select: { id: true },
+      orderBy: { issuedAt: "asc" },
+    });
 
-  const context: ClaimContext = {
+    if (siblings.length === 0) notFound();
+
+    // Satu CPAR: langsung ke sana, persis seperti dulu. Lebih dari satu: tautan lama
+    // tidak lagi menyebut CPAR yang mana, jadi dibawa ke halaman klaim yang memuat
+    // daftarnya — menebak salah satunya justru menyesatkan.
+    redirect(siblings.length === 1 ? `/cpar/${siblings[0].id}` : `/claims/${id}`);
+  }
+
+  const context: ClaimContext = toClaimContext({
     status: cpar.claim.status,
     createdById: cpar.claim.createdById,
-    cpar: {
-      responsibleDeptId: cpar.responsibleDeptId,
-      cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
-      // Penunjukan ikut dibawa: tanpa ini, verifier yang ditunjuk tetapi tidak memegang
-      // role USER_HEAD akan ditolak penjaga izin sebelum kapasitasnya sempat dihitung.
-      userHeadVerifierId: cpar.userHeadVerifierId,
-    },
-  };
+    cpars: [
+      {
+        id: cpar.id,
+        responsibleDeptId: cpar.responsibleDeptId,
+        // Penunjukan ikut dibawa: tanpa ini, verifier yang ditunjuk tetapi tidak
+        // memegang role USER_HEAD akan ditolak penjaga izin sebelum kapasitasnya
+        // sempat dihitung.
+        userHeadVerifierId: cpar.userHeadVerifierId,
+        cftMembers: cpar.cftMembers,
+      },
+    ],
+  });
 
   if (!canViewClaim(user, context)) forbidden();
 
@@ -247,7 +279,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
     defaultProblem: string,
   ) => (
     <RootCauseEditor
-      claimId={id}
+      cparId={id}
       sectionKey={sectionKey}
       value={rootCause[sectionKey]}
       canFill={canFillSection(user, sectionKey, context)}
@@ -265,7 +297,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
   // kata-katanya, dan itu ditentukan komponennya dari sectionKey.
   const actionPlanEditor = (sectionKey: ActionPlanSectionKey) => (
     <ActionPlanEditor
-      claimId={id}
+      cparId={id}
       sectionKey={sectionKey}
       value={actionPlans[sectionKey]}
       people={picOptions}
@@ -448,7 +480,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
         </CardHeader>
         <CardContent>
           <InitialDocuments
-            claimId={id}
+            cparId={id}
             documents={requestedDocuments}
             people={picOptions}
             canAssign={can(user, "cpar.section.fill", context)}
@@ -467,14 +499,14 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
         </CardHeader>
         <CardContent>
           <SectionEditor
-            claimId={id}
+            cparId={id}
             sections={sections}
             lockReason={underVerification ? "VERIFYING" : "APPROVED"}
             derived={{
               PROBLEM_DESCRIPTION: <ProblemDescriptionPanel problem={problem} />,
               TEMPORARY_ACTION: (
                 <TemporaryActionEditor
-                  claimId={id}
+                  cparId={id}
                   value={temporaryAction}
                   canFill={canFillSection(user, "TEMPORARY_ACTION", context)}
                   locked={sectionRow("TEMPORARY_ACTION")?.lockedAt !== null}
@@ -497,7 +529,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
               STANDARDIZATION_HORIZONTAL: actionPlanEditor("STANDARDIZATION_HORIZONTAL"),
               PROCESS_FLOW: (
                 <ProcessFlowEditor
-                  claimId={id}
+                  cparId={id}
                   value={processFlow}
                   canFill={canFillSection(user, "PROCESS_FLOW", context)}
                   locked={sectionRow("PROCESS_FLOW")?.lockedAt !== null}
@@ -530,7 +562,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
         </CardHeader>
         <CardContent>
           <OtherEvidence
-            claimId={id}
+            cparId={id}
             canUpload={can(user, "cpar.evidence.upload", context)}
             files={otherEvidence.map(
               (file): OtherEvidenceFile => ({
@@ -566,7 +598,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <SubmitFinal claimId={id} cparNo={cpar.cparNo} />
+            <SubmitFinal cparId={id} cparNo={cpar.cparNo} />
           </CardContent>
         </Card>
       ) : null}
@@ -593,7 +625,7 @@ export default async function CparPage({ params }: { params: Promise<{ id: strin
             {underVerification
               ? pendingCapacities.map((role) => (
                   <div key={role} className="border-t border-nid-border pt-6">
-                    <VerificationPanel claimId={id} capacity={role} />
+                    <VerificationPanel cparId={id} capacity={role} />
                   </div>
                 ))
               : null}

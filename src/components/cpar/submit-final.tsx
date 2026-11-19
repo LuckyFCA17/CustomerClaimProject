@@ -27,7 +27,7 @@ import { submitCparFinal } from "@/server/actions/cpar-filling";
  * dilampirkan. Keduanya datang sudah berupa kalimat dari server, jadi komponen ini tidak
  * perlu tahu bedanya.
  */
-export function SubmitFinal({ claimId, cparNo }: { claimId: string; cparNo: string }) {
+export function SubmitFinal({ cparId, cparNo }: { cparId: string; cparNo: string }) {
   const router = useRouter();
   const [missing, setMissing] = useState<readonly string[] | null>(null);
   const [pending, setPending] = useState(false);
@@ -36,7 +36,7 @@ export function SubmitFinal({ claimId, cparNo }: { claimId: string; cparNo: stri
     setPending(true);
 
     try {
-      const result = await submitCparFinal(claimId);
+      const result = await submitCparFinal(cparId);
 
       if (!result.ok) {
         if (result.missingSections?.length) {

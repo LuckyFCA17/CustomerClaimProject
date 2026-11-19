@@ -49,6 +49,7 @@ import {
   temporaryActionSchema,
 } from "@/schemas/temporary-action";
 import { loadCparEvidenceSlots } from "@/server/evidence-requests";
+import { syncClaimStatus } from "@/server/claim-status";
 import {
   notifyCparApproved,
   notifyCparRevisionRequested,
@@ -78,9 +79,16 @@ export interface ActionResult {
 
 type LoadedCpar = Awaited<ReturnType<typeof loadCpar>>;
 
-async function loadCpar(claimId: string) {
+/**
+ * Memuat satu CPAR menurut **id CPAR-nya**, bukan id klaimnya.
+ *
+ * Dulu kuncinya claim id, dan itu sah selama satu klaim hanya punya satu CPAR. Sejak
+ * satu klaim dapat menerbitkan beberapa, kunci itu tidak lagi menunjuk satu baris —
+ * dan `findUnique` atasnya pun tidak lagi tipe yang sah.
+ */
+async function loadCpar(cparId: string) {
   const cpar = await db.cpar.findUnique({
-    where: { claimId },
+    where: { id: cparId },
     include: {
       claim: { select: { id: true, claimNo: true, status: true, createdById: true } },
       cftMembers: { select: { departmentId: true } },
@@ -89,7 +97,7 @@ async function loadCpar(claimId: string) {
     },
   });
 
-  if (!cpar) throw new NotFoundError("CPAR tidak ditemukan untuk klaim ini.");
+  if (!cpar) throw new NotFoundError("CPAR tidak ditemukan.");
 
   return cpar;
 }
@@ -98,13 +106,25 @@ function toContext(cpar: LoadedCpar): ClaimContext {
   return {
     status: cpar.claim.status,
     createdById: cpar.claim.createdById,
-    cpar: {
-      responsibleDeptId: cpar.responsibleDeptId,
-      cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
-      // Penunjukan ikut dibawa: tanpa ini, verifier yang ditunjuk tetapi tidak memegang
-      // role USER_HEAD akan ditolak penjaga izin sebelum kapasitasnya sempat dihitung.
-      userHeadVerifierId: cpar.userHeadVerifierId,
-    },
+    /*
+     * Hanya CPAR yang sedang dikerjakan, bukan seluruh CPAR klaimnya.
+     *
+     * Ini bukan penghematan query melainkan batas hak. Sejak satu klaim dapat memiliki
+     * beberapa CPAR, konteks yang memuat semuanya akan membuat orang yang ditunjuk
+     * sebagai User Dept. Head pada CPAR Produksi ikut lolos penjaga izin saat
+     * memverifikasi CPAR Warehouse — departemen yang sama sekali bukan tanggungannya.
+     * Dengan satu anggota, `can()` menilai persis CPAR yang sedang disentuh aksi ini.
+     */
+    cpars: [
+      {
+        id: cpar.id,
+        responsibleDeptId: cpar.responsibleDeptId,
+        cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
+        // Penunjukan ikut dibawa: tanpa ini, verifier yang ditunjuk tetapi tidak memegang
+        // role USER_HEAD akan ditolak penjaga izin sebelum kapasitasnya sempat dihitung.
+        userHeadVerifierId: cpar.userHeadVerifierId,
+      },
+    ],
   };
 }
 
@@ -165,10 +185,11 @@ function revalidateCpar(claimId: string): void {
  * yang sama, sehingga status tidak pernah tertinggal di belakang isinya bila proses mati
  * di antara dua penulisan.
  */
-export async function saveCparSection(claimId: string, input: unknown): Promise<ActionResult> {
+export async function saveCparSection(cparId: string, input: unknown): Promise<ActionResult> {
   try {
     const actor = await requireActor();
-    const cpar = await loadCpar(claimId);
+    const cpar = await loadCpar(cparId);
+    const claimId = cpar.claimId;
     const context = toContext(cpar);
 
     assertCan(actor, "cpar.section.fill", context);
@@ -218,7 +239,8 @@ export async function saveCparSection(claimId: string, input: unknown): Promise<
       });
 
       if (isFirstFill) {
-        await tx.claim.update({ where: { id: claimId }, data: { status: "CPAR_IN_PROGRESS" } });
+        await tx.cpar.update({ where: { id: cpar.id }, data: { status: "IN_PROGRESS" } });
+        await syncClaimStatus(tx, claimId);
       }
 
       await writeAuditLog(
@@ -252,14 +274,15 @@ export async function saveCparSection(claimId: string, input: unknown): Promise<
  * section ini terisi ketika tabelnya punya baris, meski kolom `content`-nya kosong.
  */
 export async function saveCparTemporaryAction(
-  claimId: string,
+  cparId: string,
   input: unknown,
 ): Promise<ActionResult> {
   const key: CparSectionKey = "TEMPORARY_ACTION";
 
   try {
     const actor = await requireActor();
-    const cpar = await loadCpar(claimId);
+    const cpar = await loadCpar(cparId);
+    const claimId = cpar.claimId;
     const context = toContext(cpar);
 
     assertCan(actor, "cpar.section.fill", context);
@@ -309,7 +332,8 @@ export async function saveCparTemporaryAction(
       });
 
       if (isFirstFill) {
-        await tx.claim.update({ where: { id: claimId }, data: { status: "CPAR_IN_PROGRESS" } });
+        await tx.cpar.update({ where: { id: cpar.id }, data: { status: "IN_PROGRESS" } });
+        await syncClaimStatus(tx, claimId);
       }
 
       await writeAuditLog(
@@ -350,12 +374,13 @@ export async function saveCparTemporaryAction(
  * kedua setelah dibahas bersama. Kelengkapannya diperiksa saat submit final, dan
  * kekurangannya sudah tampil di layar jauh sebelum itu.
  */
-export async function saveCparProcessFlow(claimId: string, input: unknown): Promise<ActionResult> {
+export async function saveCparProcessFlow(cparId: string, input: unknown): Promise<ActionResult> {
   const key: CparSectionKey = "PROCESS_FLOW";
 
   try {
     const actor = await requireActor();
-    const cpar = await loadCpar(claimId);
+    const cpar = await loadCpar(cparId);
+    const claimId = cpar.claimId;
     const context = toContext(cpar);
 
     assertCan(actor, "cpar.section.fill", context);
@@ -404,7 +429,8 @@ export async function saveCparProcessFlow(claimId: string, input: unknown): Prom
       });
 
       if (isFirstFill) {
-        await tx.claim.update({ where: { id: claimId }, data: { status: "CPAR_IN_PROGRESS" } });
+        await tx.cpar.update({ where: { id: cpar.id }, data: { status: "IN_PROGRESS" } });
+        await syncClaimStatus(tx, claimId);
       }
 
       await writeAuditLog(
@@ -448,10 +474,11 @@ export async function saveCparProcessFlow(claimId: string, input: unknown): Prom
  * Satu action untuk occurrence dan outflow: isinya sama bentuknya, dan memisahkannya
  * hanya akan menghasilkan dua salinan kode yang lambat laun berbeda.
  */
-export async function saveCparRootCause(claimId: string, input: unknown): Promise<ActionResult> {
+export async function saveCparRootCause(cparId: string, input: unknown): Promise<ActionResult> {
   try {
     const actor = await requireActor();
-    const cpar = await loadCpar(claimId);
+    const cpar = await loadCpar(cparId);
+    const claimId = cpar.claimId;
     const context = toContext(cpar);
 
     assertCan(actor, "cpar.section.fill", context);
@@ -502,7 +529,8 @@ export async function saveCparRootCause(claimId: string, input: unknown): Promis
       });
 
       if (isFirstFill) {
-        await tx.claim.update({ where: { id: claimId }, data: { status: "CPAR_IN_PROGRESS" } });
+        await tx.cpar.update({ where: { id: cpar.id }, data: { status: "IN_PROGRESS" } });
+        await syncClaimStatus(tx, claimId);
       }
 
       await writeAuditLog(
@@ -554,10 +582,11 @@ export async function saveCparRootCause(claimId: string, input: unknown): Promis
  * dari klien dapat menunjuk baris milik klaim lain. Kedua, PIC diperiksa benar-benar ada
  * dan masih aktif — daftar pilihan di layar bisa saja sudah basi.
  */
-export async function saveCparActionPlan(claimId: string, input: unknown): Promise<ActionResult> {
+export async function saveCparActionPlan(cparId: string, input: unknown): Promise<ActionResult> {
   try {
     const actor = await requireActor();
-    const cpar = await loadCpar(claimId);
+    const cpar = await loadCpar(cparId);
+    const claimId = cpar.claimId;
     const context = toContext(cpar);
 
     assertCan(actor, "cpar.section.fill", context);
@@ -658,7 +687,8 @@ export async function saveCparActionPlan(claimId: string, input: unknown): Promi
       }
 
       if (isFirstFill) {
-        await tx.claim.update({ where: { id: claimId }, data: { status: "CPAR_IN_PROGRESS" } });
+        await tx.cpar.update({ where: { id: cpar.id }, data: { status: "IN_PROGRESS" } });
+        await syncClaimStatus(tx, claimId);
       }
 
       await writeAuditLog(
@@ -695,7 +725,7 @@ export async function saveCparActionPlan(claimId: string, input: unknown): Promi
 
       after(async () => {
         for (const [picId, assigned] of byPic) {
-          await notifyEvidenceRequested(claimId, actorSummary, {
+          await notifyEvidenceRequested(cpar.id, actorSummary, {
             picId,
             items: assigned.map((item) => item.action),
             // Baris pertama yang berubah sudah cukup membedakan satu permintaan dari
@@ -828,7 +858,9 @@ export async function uploadActionItemEvidence(formData: FormData): Promise<Acti
   try {
     const actor = await requireActor();
 
-    const claimId = String(formData.get("claimId") ?? "");
+    // Form mengirim id CPAR, bukan id klaim: satu klaim dapat punya beberapa CPAR, dan
+    // unggahan selalu milik salah satunya.
+    const cparId = String(formData.get("cparId") ?? "");
     const itemId = String(formData.get("itemId") ?? "");
     const file = formData.get("file");
 
@@ -836,7 +868,8 @@ export async function uploadActionItemEvidence(formData: FormData): Promise<Acti
       throw new ValidationError("Pilih berkas yang akan diunggah.");
     }
 
-    const cpar = await loadCpar(claimId);
+    const cpar = await loadCpar(cparId);
+    const claimId = cpar.claimId;
     assertCan(actor, "cpar.evidence.upload", toContext(cpar));
 
     const section = cpar.sections.find(
@@ -898,7 +931,9 @@ export async function uploadOtherEvidence(formData: FormData): Promise<ActionRes
   try {
     const actor = await requireActor();
 
-    const claimId = String(formData.get("claimId") ?? "");
+    // Form mengirim id CPAR, bukan id klaim: satu klaim dapat punya beberapa CPAR, dan
+    // unggahan selalu milik salah satunya.
+    const cparId = String(formData.get("cparId") ?? "");
     const file = formData.get("file");
 
     const parsed = otherEvidenceSchema.safeParse({ name: formData.get("name") ?? "" });
@@ -915,7 +950,8 @@ export async function uploadOtherEvidence(formData: FormData): Promise<ActionRes
       throw new ValidationError("Pilih berkas yang akan diunggah.");
     }
 
-    const cpar = await loadCpar(claimId);
+    const cpar = await loadCpar(cparId);
+    const claimId = cpar.claimId;
     assertCan(actor, "cpar.evidence.upload", toContext(cpar));
 
     const saved = await saveUpload({
@@ -977,13 +1013,14 @@ export async function uploadOtherEvidence(formData: FormData): Promise<ActionRes
  * bukan siapa saja yang kebetulan boleh melampirkan berkas.
  */
 export async function assignInitialDocumentPic(
-  claimId: string,
+  cparId: string,
   initialDocumentId: string,
   picId: string | null,
 ): Promise<ActionResult> {
   try {
     const actor = await requireActor();
-    const cpar = await loadCpar(claimId);
+    const cpar = await loadCpar(cparId);
+    const claimId = cpar.claimId;
 
     assertCan(actor, "cpar.section.fill", toContext(cpar));
 
@@ -1039,7 +1076,7 @@ export async function assignInitialDocumentPic(
     if (picId && picId !== request.picId) {
       after(async () => {
         await notifyEvidenceRequested(
-          claimId,
+          cpar.id,
           { id: actor.id, name: actor.name, jobTitle: actor.jobTitle },
           {
             picId,
@@ -1074,7 +1111,9 @@ export async function uploadInitialDocument(formData: FormData): Promise<ActionR
   try {
     const actor = await requireActor();
 
-    const claimId = String(formData.get("claimId") ?? "");
+    // Form mengirim id CPAR, bukan id klaim: satu klaim dapat punya beberapa CPAR, dan
+    // unggahan selalu milik salah satunya.
+    const cparId = String(formData.get("cparId") ?? "");
     const initialDocumentId = String(formData.get("initialDocumentId") ?? "");
     const file = formData.get("file");
 
@@ -1082,7 +1121,8 @@ export async function uploadInitialDocument(formData: FormData): Promise<ActionR
       throw new ValidationError("Pilih berkas yang akan diunggah.");
     }
 
-    const cpar = await loadCpar(claimId);
+    const cpar = await loadCpar(cparId);
+    const claimId = cpar.claimId;
     assertCan(actor, "cpar.evidence.upload", toContext(cpar));
 
     const request = await db.cparInitialDocument.findUnique({
@@ -1160,6 +1200,59 @@ const EVIDENCE_ENTITIES: readonly string[] = [
   INITIAL_DOCUMENT_ENTITY,
 ];
 
+/**
+ * CPAR pemilik satu lampiran evidence.
+ *
+ * Lampiran tidak menyimpan `cparId` — kolomnya hanya `entityType`/`entityId` ditambah
+ * `claimId` sebagai denormalisasi. Selama satu klaim punya satu CPAR, claimId sudah
+ * cukup menunjuknya. Sekarang tidak lagi, jadi pemiliknya dicari dari penanda yang
+ * memang sudah ada pada tiap jenis evidence, bukan dengan menambah kolom dan memaksa
+ * seluruh baris lama ditebak isinya.
+ */
+async function findCparOwning(attachment: {
+  entityType: string;
+  entityId: string;
+  claimId: string | null;
+}): Promise<LoadedCpar> {
+  // Other Supporting Evidence menyimpan id CPAR-nya langsung sebagai entityId.
+  if (attachment.entityType === OTHER_EVIDENCE_ENTITY) return loadCpar(attachment.entityId);
+
+  if (!attachment.claimId) throw new NotFoundError("Evidence tidak ditemukan.");
+
+  if (attachment.entityType === INITIAL_DOCUMENT_ENTITY) {
+    const owner = await db.cpar.findFirst({
+      where: {
+        claimId: attachment.claimId,
+        initialDocuments: { some: { initialDocumentId: attachment.entityId } },
+      },
+      select: { id: true },
+    });
+
+    if (!owner) throw new NotFoundError("Evidence tidak ditemukan.");
+
+    return loadCpar(owner.id);
+  }
+
+  // Evidence per baris action plan: penanda barisnya UUID di dalam JSON section, jadi
+  // pemiliknya dikenali dari section yang memuat baris itu.
+  const candidates = await db.cpar.findMany({
+    where: { claimId: attachment.claimId },
+    select: { id: true, sections: { select: { key: true, data: true } } },
+  });
+
+  const owner = candidates.find((candidate) =>
+    candidate.sections.some(
+      (entry) =>
+        isActionPlanSection(entry.key) &&
+        itemIds(readActionPlan(entry.data)).includes(attachment.entityId),
+    ),
+  );
+
+  if (!owner) throw new NotFoundError("Evidence tidak ditemukan.");
+
+  return loadCpar(owner.id);
+}
+
 export async function deleteCparEvidence(attachmentId: string): Promise<ActionResult> {
   try {
     const actor = await requireActor();
@@ -1169,8 +1262,8 @@ export async function deleteCparEvidence(attachmentId: string): Promise<ActionRe
       throw new NotFoundError("Evidence tidak ditemukan.");
     }
 
-    const claimId = attachment.claimId;
-    const cpar = await loadCpar(claimId);
+    const cpar = await findCparOwning(attachment);
+    const claimId = cpar.claimId;
     assertCan(actor, "cpar.evidence.upload", toContext(cpar));
 
     await db.attachment.update({ where: { id: attachmentId }, data: { deletedAt: new Date() } });
@@ -1215,10 +1308,11 @@ export async function deleteCparEvidence(attachmentId: string): Promise<ActionRe
  * `SubmissionIncompleteError`, bukan diringkas jadi "lengkapi dulu" — orang yang menekan
  * tombol perlu tahu persis section mana, tanpa harus menyisir tujuh kotak satu per satu.
  */
-export async function submitCparFinal(claimId: string): Promise<ActionResult> {
+export async function submitCparFinal(cparId: string): Promise<ActionResult> {
   try {
     const actor = await requireActor();
-    const cpar = await loadCpar(claimId);
+    const cpar = await loadCpar(cparId);
+    const claimId = cpar.claimId;
     const context = toContext(cpar);
 
     assertCan(actor, "cpar.submitFinal", context);
@@ -1238,7 +1332,7 @@ export async function submitCparFinal(claimId: string): Promise<ActionResult> {
      */
     const missing = [
       ...missingRequiredSections(cpar.sections).map((key) => SECTION_LABEL[key]),
-      ...missingEvidenceLabels(await loadCparEvidenceSlots(claimId)),
+      ...missingEvidenceLabels(await loadCparEvidenceSlots(cpar.id)),
     ];
 
     if (missing.length > 0) {
@@ -1254,12 +1348,12 @@ export async function submitCparFinal(claimId: string): Promise<ActionResult> {
         data: { lockedAt: submittedAt },
       });
 
-      await tx.cpar.update({ where: { id: cpar.id }, data: { submittedAt } });
-
-      await tx.claim.update({
-        where: { id: claimId },
-        data: { status: "CPAR_UNDER_VERIFICATION" },
+      await tx.cpar.update({
+        where: { id: cpar.id },
+        data: { submittedAt, status: "UNDER_VERIFICATION" },
       });
+
+      await syncClaimStatus(tx, claimId);
 
       await writeAuditLog(
         tx,
@@ -1278,7 +1372,7 @@ export async function submitCparFinal(claimId: string): Promise<ActionResult> {
     });
 
     after(async () => {
-      await notifyCparUnderVerification(claimId, {
+      await notifyCparUnderVerification(cpar.id, {
         id: actor.id,
         name: actor.name,
         jobTitle: actor.jobTitle,
@@ -1303,10 +1397,11 @@ export async function submitCparFinal(claimId: string): Promise<ActionResult> {
  * dihitung. VERIFIED hanya memindahkan status bila seluruh kapasitas wajib sudah setuju
  * pada siklus yang sama.
  */
-export async function verifyCpar(claimId: string, input: unknown): Promise<ActionResult> {
+export async function verifyCpar(cparId: string, input: unknown): Promise<ActionResult> {
   try {
     const actor = await requireActor();
-    const cpar = await loadCpar(claimId);
+    const cpar = await loadCpar(cparId);
+    const claimId = cpar.claimId;
     const context = toContext(cpar);
 
     assertCan(actor, "cpar.verify", context);
@@ -1389,7 +1484,10 @@ export async function verifyCpar(claimId: string, input: unknown): Promise<Actio
       });
 
       if (decision === "REVISE") {
-        await tx.cpar.update({ where: { id: cpar.id }, data: { cycle: nextCycle } });
+        await tx.cpar.update({
+          where: { id: cpar.id },
+          data: { cycle: nextCycle, status: "REVISION" },
+        });
 
         // Seluruh section dibuka kembali, bukan hanya yang ditandai: perbaikan pada satu
         // section sering menuntut penyesuaian di section lain yang terkait.
@@ -1406,13 +1504,16 @@ export async function verifyCpar(claimId: string, input: unknown): Promise<Actio
         }
       }
 
-      if (willTransition) {
-        await tx.claim.update({ where: { id: claimId }, data: { status: nextStatus } });
+      if (decision === "VERIFIED" && progress.isComplete) {
+        await tx.cpar.update({
+          where: { id: cpar.id },
+          data: { approvedAt: decidedAt, status: "APPROVED" },
+        });
       }
 
-      if (decision === "VERIFIED" && progress.isComplete) {
-        await tx.cpar.update({ where: { id: cpar.id }, data: { approvedAt: decidedAt } });
-      }
+      // Dihitung setelah tahap CPAR ini tersimpan, bukan sebelumnya: klaim mengikuti
+      // CPAR yang paling tertinggal, dan nilai itu baru benar sesudah perubahannya ada.
+      const claimStatus = await syncClaimStatus(tx, claimId);
 
       await writeAuditLog(
         tx,
@@ -1422,8 +1523,8 @@ export async function verifyCpar(claimId: string, input: unknown): Promise<Actio
           entityId: cpar.id,
           claimId,
           action: "cpar.verify",
-          fromStatus: willTransition ? cpar.claim.status : null,
-          toStatus: willTransition ? nextStatus : null,
+          fromStatus: claimStatus === null ? null : cpar.claim.status,
+          toStatus: claimStatus,
           payloadDiff: {
             decision,
             capacity,
@@ -1440,11 +1541,11 @@ export async function verifyCpar(claimId: string, input: unknown): Promise<Actio
 
     if (decision === "REVISE") {
       after(async () => {
-        await notifyCparRevisionRequested(claimId, actorSummary, cpar.cycle, comment);
+        await notifyCparRevisionRequested(cpar.id, actorSummary, cpar.cycle, comment);
       });
     } else if (progress.isComplete) {
       after(async () => {
-        await notifyCparApproved(claimId, actorSummary, cpar.cycle);
+        await notifyCparApproved(cpar.id, actorSummary, cpar.cycle);
       });
     }
 

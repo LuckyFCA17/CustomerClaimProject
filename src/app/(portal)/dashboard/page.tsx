@@ -14,7 +14,7 @@ import { toJakartaParts } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { draftLabel } from "@/lib/numbering";
-import { can, visibleClaimsWhere, type Actor, type ClaimContext } from "@/lib/permissions";
+import { can, visibleClaimsWhere, type Actor, type ClaimContext, toClaimContext } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -97,9 +97,12 @@ export default async function DashboardPage({
           internalPartNo: true,
           createdById: true,
           updatedAt: true,
-          cpar: {
+          cpars: {
+            orderBy: { issuedAt: "asc" },
             select: {
+              id: true,
               cparNo: true,
+              status: true,
               cycle: true,
               dueDate: true,
               responsibleDeptId: true,
@@ -219,8 +222,13 @@ export default async function DashboardPage({
                           title={`${claim.partName} · ${claim.internalPartNo}`}
                         >
                           {claim.partName} · {claim.internalPartNo}
-                          {claim.cpar
-                            ? ` · ${claim.cpar.cparNo} (${claim.cpar.responsibleDept.code}, siklus ${claim.cpar.cycle})`
+                          {claim.cpars.length > 0
+                            ? ` · ${claim.cpars
+                                .map(
+                                  (entry) =>
+                                    `${entry.cparNo} (${entry.responsibleDept.code}, siklus ${entry.cycle})`,
+                                )
+                                .join(", ")}`
                             : ""}
                         </span>
                         <StatusBadge status={claim.status} />
@@ -303,10 +311,11 @@ export default async function DashboardPage({
 interface ActionableClaim {
   readonly status: ClaimContext["status"];
   readonly createdById: string;
-  readonly cpar: {
+  readonly cpars: readonly {
+    readonly id: string;
     readonly responsibleDeptId: string;
     readonly cftMembers: readonly { readonly departmentId: string }[];
-  } | null;
+  }[];
 }
 
 /**
@@ -327,16 +336,7 @@ function range(from: number, to: number): number[] {
 }
 
 function pendingActions(actor: Actor, claim: ActionableClaim): readonly string[] {
-  const context: ClaimContext = {
-    status: claim.status,
-    createdById: claim.createdById,
-    cpar: claim.cpar
-      ? {
-          responsibleDeptId: claim.cpar.responsibleDeptId,
-          cftMemberDeptIds: claim.cpar.cftMembers.map((member) => member.departmentId),
-        }
-      : null,
-  };
+  const context: ClaimContext = toClaimContext(claim);
 
   const labels = availableTransitions(claim.status, actor.roles)
     .filter((transition) => can(actor, transition.action, context))

@@ -558,6 +558,48 @@ async function seedSampleClaims() {
     },
   });
 
+  /*
+   * CPAR kedua pada klaim yang sama, ke departemen yang berbeda.
+   *
+   * Ada di seed karena inilah satu-satunya cara melihat sifat yang paling mudah salah:
+   * status klaim mengikuti CPAR yang **paling tertinggal**. CPAR Produksi di atas sudah
+   * berjalan; yang ini baru terbit, jadi klaimnya terbaca CPAR_ISSUED — bukan tahap
+   * CPAR pertama. Tanpa contoh ini, aturan itu hanya hidup di uji unit.
+   *
+   * Akarnya memang berbeda: yang pertama soal bagaimana cacat terjadi di Produksi, yang
+   * kedua soal bagaimana ia lolos pemeriksaan sebelum dikirim.
+   */
+  const ppic = await db.department.findUniqueOrThrow({ where: { code: "PPIC" } });
+
+  const secondCparNo = await nextCparNo(db, daysAgo(3));
+  await db.cpar.create({
+    data: {
+      claimId: withCpar.id,
+      cparNo: secondCparNo,
+      responsibilityType: "USER_DEPT",
+      responsibleDeptId: ppic.id,
+      dueDate: daysAhead(5),
+      issuedAt: daysAgo(3),
+      sections: {
+        create: [
+          {
+            key: "PROBLEM_DESCRIPTION",
+            content:
+              "Lot terdampak lolos pemeriksaan keluar dan terkirim ke customer; 46 pcs baru tertahan setelah laporan customer.",
+            filledById: qa.id,
+            filledAt: daysAgo(3),
+          },
+          { key: "TEMPORARY_ACTION" },
+          { key: "PROCESS_FLOW" },
+          { key: "ROOT_CAUSE_OCCURRENCE" },
+          { key: "ROOT_CAUSE_OUTFLOW" },
+          { key: "PERMANENT_COUNTERMEASURE" },
+          { key: "STANDARDIZATION_HORIZONTAL" },
+        ],
+      },
+    },
+  });
+
   const requestedDocs = await db.initialDocument.findMany({
     where: { code: { in: ["4M_CHANGE_SHEET", "INSPECTION_STANDARD", "QC_PROCESS_CHART"] } },
   });

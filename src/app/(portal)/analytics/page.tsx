@@ -107,7 +107,7 @@ export default async function AnalyticsPage({
           dateOfReceived: true,
           publishedAt: true,
           closedAt: true,
-          cpar: { select: { issuedAt: true, submittedAt: true, approvedAt: true } },
+          cpars: { select: { issuedAt: true, submittedAt: true, approvedAt: true } },
         },
       }),
 
@@ -176,9 +176,17 @@ export default async function AnalyticsPage({
       (claim): LeadTimeInput => ({
         receivedAt: claim.dateOfReceived,
         publishedAt: claim.publishedAt,
-        cparIssuedAt: claim.cpar?.issuedAt ?? null,
-        cparSubmittedAt: claim.cpar?.submittedAt ?? null,
-        cparApprovedAt: claim.cpar?.approvedAt ?? null,
+        /*
+         * Batas perjalanan klaim, bukan satu CPAR.
+         *
+         * Dengan beberapa CPAR, pertanyaan "berapa lama klaim ini" dijawab oleh CPAR
+         * yang **pertama** terbit sampai yang **terakhir** rampung. Memilih salah satu
+         * CPAR saja akan memendekkan lead time klaim yang justru paling panjang —
+         * klaim dua departemen yang penanganannya tidak berjalan bersamaan.
+         */
+        cparIssuedAt: earliest(claim.cpars.map((cpar) => cpar.issuedAt)),
+        cparSubmittedAt: latest(claim.cpars.map((cpar) => cpar.submittedAt)),
+        cparApprovedAt: latest(claim.cpars.map((cpar) => cpar.approvedAt)),
         closedAt: claim.closedAt,
       }),
     ),
@@ -344,4 +352,26 @@ export default async function AnalyticsPage({
       </div>
     </div>
   );
+}
+
+
+/** Tanggal paling awal yang ada; null bila tidak satu pun terisi. */
+function earliest(dates: readonly (Date | null)[]): Date | null {
+  return dates.reduce<Date | null>(
+    (best, date) => (date && (best === null || date < best) ? date : best),
+    null,
+  );
+}
+
+/**
+ * Tanggal paling akhir yang ada, dan `null` bila **ada** yang belum terisi.
+ *
+ * Bukan sekadar "yang terbesar": selama satu CPAR belum disetujui, klaimnya belum
+ * selesai pada tahap itu. Mengembalikan tanggal CPAR lain akan membuat lead time
+ * terbaca seakan tahap itu sudah lewat padahal masih berjalan.
+ */
+function latest(dates: readonly (Date | null)[]): Date | null {
+  if (dates.length === 0 || dates.some((date) => date === null)) return null;
+
+  return dates.reduce<Date | null>((best, date) => (date && (best === null || date > best) ? date : best), null);
 }

@@ -1522,6 +1522,77 @@ Keduanya harus lolos, sehingga satu kekeliruan di salah satu tabel tidak cukup u
 tahap. `tests/unit/claim-state.test.ts` memeriksa seluruh 144 pasangan status: 14 yang sah harus
 diterima, 130 sisanya harus ditolak.
 
+## Beberapa CPAR dalam satu klaim
+
+Satu klaim dapat menerbitkan **lebih dari satu** CPAR. Masing-masing berdiri sendiri: nomor,
+departemen penanggung jawab, section, rantai verifikasi, dan pemantauannya terpisah.
+
+Yang menuntutnya kenyataan di lapangan. Satu klaim sering berakar di dua tempat sekaligus —
+cacat injeksi di Produksi, lolosnya ke pelanggan di Warehouse — dan memaksa keduanya ke dalam
+satu CPAR berarti satu departemen menandatangani analisis departemen lain. Akar kedua itu pun
+biasanya baru terlihat **dari** analisis CPAR pertama, jadi `claim.followUp` tetap terbuka
+sepanjang rantai CPAR, termasuk setelah klaim ditutup.
+
+Tipe CFT tidak digantikan ini dan tetap dipakai: **CFT** untuk satu akar yang pemecahannya
+butuh banyak departemen, **CPAR terpisah** untuk akar yang memang berbeda.
+
+### Status klaim adalah turunan, bukan nilai yang disetel
+
+Dulu tahap CPAR **adalah** status klaim — sah selama hanya ada satu CPAR — dan sebelas tempat
+di empat berkas aksi menulis `Claim.status` secara langsung. Dengan dua CPAR hal itu runtuh:
+yang terakhir menyimpan yang menang, dan klaim terbaca "approved" padahal ada CPAR yang belum
+tersentuh.
+
+Sekarang tiap CPAR menyimpan tahapnya sendiri (`Cpar.status`, enum `CparStatus`), dan status
+klaim dihitung `server/claim-status.ts` dengan satu aturan:
+
+> **Klaim berada pada tahap CPAR yang paling tertinggal, dan baru tertutup ketika seluruh
+> CPAR-nya tertutup.**
+
+Itu pula jawaban yang diberikan orang ketika ditanya "klaim ini sampai mana" — selalu pekerjaan
+yang belum selesai, bukan yang sudah.
+
+`REVISION` berperingkat **di bawah** `UNDER_VERIFICATION` meski terjadi sesudahnya: CPAR yang
+dikembalikan untuk revisi kembali menjadi pekerjaan yang belum selesai. Urutan lengkapnya ada di
+`lib/cpar-stage.ts`, dipisahkan dari `claim-status.ts` supaya halaman dapat memakainya tanpa
+menarik klien basis data.
+
+`Claim.closedAt` mengikuti CPAR yang **terakhir** tertutup, bukan yang pertama — dasbor
+menghitung ketepatan waktu penutupan dari kolom itu.
+
+**Tahapnya disimpan, bukan diturunkan dari stempel waktu.** Alasannya satu dan konkret: pada
+keputusan REVISE, `submittedAt` sengaja tidak dikosongkan — lembar itu memang pernah dikirim —
+sehingga REVISION dan UNDER_VERIFICATION tidak dapat dibedakan dari timestamp mana pun tanpa
+menebak lewat gabungan `lockedAt` dan siklus verifikasi terakhir.
+
+### Yang ikut berpindah induk
+
+| Tabel | Dulu | Sekarang |
+|---|---|---|
+| `MonitoringPeriod`, `MonitoringCheckItem` | `claimId` | `cparId` (+ `claimId` denormalisasi) |
+| `ImprovementReport` | `claimId` | `cparId` (+ `claimId` denormalisasi) |
+| `GeneratedDocument` | `claimId` | `cparId` nullable — terisi untuk CPAR/MONITORING/A3, kosong untuk Bad News dan Quick Information |
+
+Nomor periode pemantauan bernilai ulang per CPAR: dua CPAR pada satu klaim sama-sama punya
+periode 1 pada siklus 1, dan keduanya sah.
+
+### Rute: id CPAR, dengan tautan lama tetap hidup
+
+`/cpar/[id]` dan `/monitoring/[id]` kini berkunci **id CPAR**. Keduanya dulu berkunci id klaim,
+dan id itu sudah tersebar di email notifikasi, bookmark, dan tautan yang ditempel di chat grup.
+Karena itu id klaim tetap dilayani: satu CPAR → dialihkan ke sana, lebih dari satu → dialihkan ke
+halaman klaim yang memuat daftarnya. Halaman cetak melakukan hal yang sama lewat `resolveCparId`
+di `server/print-data.ts`.
+
+Ekspor Excel kini **satu baris per CPAR**, bukan per klaim. Menggabungkannya menjadi satu sel
+bukan jalan keluar: kolom tenggat dan tanggal persetujuan bertipe tanggal, dan `"12/01 | 03/02"`
+bukan tanggal bagi Excel maupun bagi rumus yang dipakai orang di atasnya. Klaim tanpa CPAR tetap
+muncul satu baris dengan kolom CPAR kosong.
+
+Lead time di Claim Analytics memakai batas perjalanan klaim: CPAR yang **pertama** terbit sampai
+yang **terakhir** rampung. Selama masih ada CPAR yang belum disetujui, tahap itu dihitung belum
+lewat — bukan diambil dari CPAR yang kebetulan sudah selesai.
+
 ## Diagram alur status
 
 Empat belas perpindahan yang sah, dengan kapasitas yang boleh memicunya. Diagram ini

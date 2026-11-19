@@ -23,7 +23,9 @@ export default async function EditClaimPage({ params }: { params: Promise<{ id: 
     where: { id },
     include: {
       parts: true,
-      cpar: { select: { responsibleDeptId: true, cftMembers: { select: { departmentId: true } } } },
+      cpars: {
+        select: { id: true, responsibleDeptId: true, cftMembers: { select: { departmentId: true } } },
+      },
     },
   });
 
@@ -32,12 +34,11 @@ export default async function EditClaimPage({ params }: { params: Promise<{ id: 
   const context = {
     status: claim.status,
     createdById: claim.createdById,
-    cpar: claim.cpar
-      ? {
-          responsibleDeptId: claim.cpar.responsibleDeptId,
-          cftMemberDeptIds: claim.cpar.cftMembers.map((member) => member.departmentId),
-        }
-      : null,
+    cpars: claim.cpars.map((cpar) => ({
+      id: cpar.id,
+      responsibleDeptId: cpar.responsibleDeptId,
+      cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
+    })),
   };
 
   /**

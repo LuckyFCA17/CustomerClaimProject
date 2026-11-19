@@ -63,7 +63,8 @@ export async function GET(request: Request) {
       ncDetail: { select: { name: true } },
       productCategory: { select: { name: true } },
       createdBy: { select: { name: true } },
-      cpar: {
+      cpars: {
+        orderBy: { issuedAt: "asc" },
         select: {
           cparNo: true,
           cycle: true,
@@ -76,7 +77,19 @@ export async function GET(request: Request) {
     },
   });
 
-  const claims: ExportableClaim[] = rows.map((row) => ({
+  /*
+   * Satu baris per CPAR, bukan per klaim.
+   *
+   * Sejak satu klaim dapat menerbitkan beberapa CPAR, satu baris per klaim memaksa
+   * memilih salah satunya — dan yang tidak terpilih hilang dari ekspor tanpa jejak.
+   * Menggabungkannya menjadi satu sel pun bukan jalan keluar: kolom tenggat dan tanggal
+   * persetujuan bertipe tanggal, dan "12/01 | 03/02" bukan tanggal bagi Excel maupun
+   * bagi rumus yang dipakai orang di atasnya.
+   *
+   * Klaim yang belum punya CPAR tetap muncul satu baris dengan kolom CPAR kosong.
+   */
+  const claims: ExportableClaim[] = rows.flatMap((row) =>
+    (row.cpars.length > 0 ? row.cpars : [null]).map((cpar) => ({
     claimNo: row.claimNo,
     status: row.status,
     type: row.type,
@@ -97,13 +110,14 @@ export async function GET(request: Request) {
     createdAt: row.createdAt,
     submittedAt: row.submittedAt,
     publishedAt: row.publishedAt,
-    cparNo: row.cpar?.cparNo ?? null,
-    responsibleDept: row.cpar?.responsibleDept.name ?? null,
-    cparCycle: row.cpar?.cycle ?? null,
-    cparDueDate: row.cpar?.dueDate ?? null,
-    cparSubmittedAt: row.cpar?.submittedAt ?? null,
-    cparApprovedAt: row.cpar?.approvedAt ?? null,
-  }));
+    cparNo: cpar?.cparNo ?? null,
+    responsibleDept: cpar?.responsibleDept.name ?? null,
+    cparCycle: cpar?.cycle ?? null,
+    cparDueDate: cpar?.dueDate ?? null,
+    cparSubmittedAt: cpar?.submittedAt ?? null,
+    cparApprovedAt: cpar?.approvedAt ?? null,
+    })),
+  );
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "NCC Portal";

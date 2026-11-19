@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -16,7 +17,8 @@ import { ClaimDocuments } from "@/components/claim/claim-documents";
 import { db } from "@/lib/db";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { draftLabel } from "@/lib/numbering";
-import { can, canViewClaim } from "@/lib/permissions";
+import { CPAR_STAGE_LABEL, leadCpar } from "@/lib/cpar-stage";
+import { can, canViewClaim, toClaimContext } from "@/lib/permissions";
 import { getPortalUser } from "@/lib/session";
 import { loadPackageContents } from "@/server/claim-package";
 
@@ -65,10 +67,13 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
       createdBy: { select: { name: true, jobTitle: true } },
       reviewedBy: { select: { name: true, jobTitle: true } },
       ignoredBy: { select: { name: true, jobTitle: true } },
-      cpar: {
+      cpars: {
+        orderBy: { issuedAt: "asc" },
         select: {
+          id: true,
           cparNo: true,
           cycle: true,
+          status: true,
           dueDate: true,
           submittedAt: true,
           responsibleDeptId: true,
@@ -81,16 +86,18 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
 
   if (!claim) notFound();
 
-  const context = {
-    status: claim.status,
-    createdById: claim.createdById,
-    cpar: claim.cpar
-      ? {
-          responsibleDeptId: claim.cpar.responsibleDeptId,
-          cftMemberDeptIds: claim.cpar.cftMembers.map((member) => member.departmentId),
-        }
-      : null,
-  };
+  const context = toClaimContext(claim);
+
+  /*
+   * CPAR yang paling perlu diperhatikan: yang paling tertinggal.
+   *
+   * Dipakai kartu tenggat dan rel status di kepala halaman, yang keduanya hanya punya
+   * ruang untuk satu angka. Memilih yang pertama terbit akan membuat kepala halaman
+   * menyatakan "selesai" sementara CPAR kedua masih berjalan — dan yang paling
+   * tertinggal itu pula yang menentukan status klaimnya (lihat `server/claim-status.ts`),
+   * jadi kepala halaman dan badge statusnya bercerita tentang CPAR yang sama.
+   */
+  const lead = leadCpar(claim.cpars);
 
   if (!canViewClaim(user, context)) forbidden();
 
@@ -161,7 +168,7 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
   // Action Button B begitu CPAR ada — keduanya mengikuti matriks izin, bukan ditebak.
   const canFollowUp = can(user, "claim.followUp", context);
   const canIgnore = can(user, "claim.ignore", context);
-  const canOpenCpar = can(user, "cpar.view", context) && claim.cpar !== null;
+  const canOpenCpar = can(user, "cpar.view", context) && lead !== null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -179,14 +186,14 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
 
           <div className="flex flex-wrap items-center gap-2">
             <DueChip
-              dueDate={claim.cpar?.dueDate}
+              dueDate={lead?.dueDate}
               now={new Date()}
-              settled={claim.cpar?.submittedAt !== null}
+              settled={lead?.submittedAt != null}
             />
 
             <StatusBadge
               status={claim.status}
-              closure={closureTiming(claim.closedAt, claim.cpar?.dueDate)}
+              closure={closureTiming(claim.closedAt, lead?.dueDate)}
               showHint
             />
 
@@ -254,17 +261,19 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
             ) : null}
 
             {canFollowUp ? (
-              <Button asChild>
+              <Button asChild variant={claim.cpars.length > 0 ? "outline" : "default"}>
                 <Link href={`/claims/${claim.id}/follow-up`}>
                   <SquareArrowOutUpRight aria-hidden />
-                  Claim follow up
+                  {/* Label berubah begitu CPAR pertama ada: "Claim follow up" pada klaim
+                      yang sudah punya CPAR terbaca seperti tombol yang salah tekan. */}
+                  {claim.cpars.length > 0 ? "Terbitkan CPAR lagi" : "Claim follow up"}
                 </Link>
               </Button>
             ) : null}
 
             {canOpenCpar ? (
               <Button asChild>
-                <Link href={`/cpar/${claim.id}`}>
+                <Link href={`/cpar/${lead?.id ?? ""}`}>
                   <ClipboardList aria-hidden />
                   CPAR form
                 </Link>
@@ -275,7 +284,7 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
 
         <Card>
           <CardContent className="p-4">
-            <StatusRail status={claim.status} cycle={claim.cpar?.cycle} />
+            <StatusRail status={claim.status} cycle={lead?.cycle} />
           </CardContent>
         </Card>
       </header>
@@ -389,20 +398,44 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
         </CardContent>
       </Card>
 
-      {claim.cpar ? (
+      {claim.cpars.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>CPAR</CardTitle>
-            <CardDescription>Penetapan penanggung jawab penanganan klaim ini.</CardDescription>
+            <CardDescription>
+              {claim.cpars.length === 1
+                ? "Penetapan penanggung jawab penanganan klaim ini."
+                : `${claim.cpars.length} CPAR diterbitkan untuk klaim ini, masing-masing ` +
+                  "berjalan sendiri: nomor, pengisian, verifikasi, dan pemantauannya terpisah."}
+            </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-            <Row label="CPAR no." value={claim.cpar.cparNo} />
-            <Row label="Siklus" value={String(claim.cpar.cycle)} />
-            <Row
-              label="Penanggung jawab"
-              value={`${claim.cpar.responsibleDept.code} — ${claim.cpar.responsibleDept.name}`}
-            />
-            <Row label="Tenggat pengisian" value={formatDate(claim.cpar.dueDate)} />
+          <CardContent className="grid gap-4">
+            {claim.cpars.map((entry) => (
+              <div
+                key={entry.id}
+                className="grid gap-x-8 gap-y-4 rounded-md border p-4 sm:grid-cols-2"
+              >
+                <Row
+                  label="CPAR no."
+                  value={
+                    canOpenCpar ? (
+                      <Link className="underline underline-offset-4" href={`/cpar/${entry.id}`}>
+                        {entry.cparNo}
+                      </Link>
+                    ) : (
+                      entry.cparNo
+                    )
+                  }
+                />
+                <Row label="Tahap" value={CPAR_STAGE_LABEL[entry.status]} />
+                <Row
+                  label="Penanggung jawab"
+                  value={`${entry.responsibleDept.code} — ${entry.responsibleDept.name}`}
+                />
+                <Row label="Siklus" value={String(entry.cycle)} />
+                <Row label="Tenggat pengisian" value={formatDate(entry.dueDate)} />
+              </div>
+            ))}
           </CardContent>
         </Card>
       ) : null}
@@ -469,7 +502,7 @@ export default async function ClaimDetailPage({ params }: { params: Promise<{ id
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
       <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>

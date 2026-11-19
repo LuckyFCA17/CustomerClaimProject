@@ -98,10 +98,15 @@ function appUrl(): string {
   return (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 }
 
-export function printUrl(kind: DocumentKind, claimId: string, extra = ""): string {
-  const token = createPrintToken(DOCUMENT_ROUTE[kind], claimId);
+/**
+ * `subjectId` adalah id klaim untuk Bad News dan Quick Information, dan id **CPAR** untuk
+ * lembar CPAR, monitoring, dan A3 — ketiganya menggambarkan satu CPAR, dan satu klaim
+ * dapat memiliki beberapa.
+ */
+export function printUrl(kind: DocumentKind, subjectId: string, extra = ""): string {
+  const token = createPrintToken(DOCUMENT_ROUTE[kind], subjectId);
 
-  return `${appUrl()}/print/${DOCUMENT_ROUTE[kind]}/${claimId}?token=${encodeURIComponent(token)}${extra}`;
+  return `${appUrl()}/print/${DOCUMENT_ROUTE[kind]}/${subjectId}?token=${encodeURIComponent(token)}${extra}`;
 }
 
 /**
@@ -146,17 +151,18 @@ async function waitForFit(page: Page): Promise<number | null> {
 
 export interface RenderPdfOptions {
   readonly kind: DocumentKind;
-  readonly claimId: string;
+  /** Id klaim atau id CPAR — lihat `printUrl`. */
+  readonly subjectId: string;
   /** Menambahkan watermark "DRAFT" pada halaman (§6 Modul 3). */
   readonly draft?: boolean;
 }
 
-export async function renderPdf({ kind, claimId, draft = false }: RenderPdfOptions): Promise<Buffer> {
+export async function renderPdf({ kind, subjectId, draft = false }: RenderPdfOptions): Promise<Buffer> {
   const browser = await sharedBrowser();
   const page = await browser.newPage();
 
   try {
-    const url = printUrl(kind, claimId, draft ? "&draft=1" : "");
+    const url = printUrl(kind, subjectId, draft ? "&draft=1" : "");
     const response = await page.goto(url, { waitUntil: "networkidle0", timeout: 45_000 });
 
     if (!response || !response.ok()) {
@@ -174,12 +180,12 @@ export async function renderPdf({ kind, claimId, draft = false }: RenderPdfOptio
 
       if (fit <= MIN_FIT) {
         console.warn(
-          `${DOCUMENT_TITLE[kind]} ${claimId}: isi mungkin tetap lebih dari satu halaman ` +
+          `${DOCUMENT_TITLE[kind]} ${subjectId}: isi mungkin tetap lebih dari satu halaman ` +
             `walau disusutkan ke ${percent}%, batas bawah keterbacaan.`,
         );
       } else if (percent !== 100) {
         console.info(
-          `${DOCUMENT_TITLE[kind]} ${claimId}: isi ${fit < 1 ? "disusutkan" : "dibesarkan"} ` +
+          `${DOCUMENT_TITLE[kind]} ${subjectId}: isi ${fit < 1 ? "disusutkan" : "dibesarkan"} ` +
             `ke ${percent}% agar memenuhi satu halaman.`,
         );
       }

@@ -20,14 +20,25 @@ export default async function FollowUpPage({ params }: { params: Promise<{ id: s
 
   const claim = await db.claim.findUnique({
     where: { id },
-    select: { id: true, claimNo: true, status: true, createdById: true, partName: true, internalPartNo: true },
+    select: {
+      id: true,
+      claimNo: true,
+      status: true,
+      createdById: true,
+      partName: true,
+      internalPartNo: true,
+      cpars: {
+        orderBy: { issuedAt: "asc" },
+        select: { cparNo: true, responsibleDept: { select: { code: true, name: true } } },
+      },
+    },
   });
 
   if (!claim) notFound();
 
   // Hanya klaim yang sudah terbit punya jalur ini; yang lain dikembalikan ke detail
   // alih-alih diberi formulir yang pasti ditolak server.
-  if (!can(user, "claim.followUp", { status: claim.status, createdById: claim.createdById, cpar: null })) {
+  if (!can(user, "claim.followUp", { status: claim.status, createdById: claim.createdById, cpars: [] })) {
     redirect(`/claims/${id}`);
   }
 
@@ -49,7 +60,9 @@ export default async function FollowUpPage({ params }: { params: Promise<{ id: s
     <div className="mx-auto max-w-4xl space-y-6">
       <header className="space-y-1">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-display text-2xl font-bold text-nid-orange-700">Claim follow up</h1>
+          <h1 className="font-display text-2xl font-bold text-nid-orange-700">
+            {claim.cpars.length > 0 ? "Terbitkan CPAR lagi" : "Claim follow up"}
+          </h1>
           <StatusBadge status={claim.status} />
         </div>
         <p className="text-sm text-muted-foreground">
@@ -58,6 +71,23 @@ export default async function FollowUpPage({ params }: { params: Promise<{ id: s
           </Link>{" "}
           · {claim.partName} · {claim.internalPartNo}
         </p>
+
+        {claim.cpars.length > 0 ? (
+          /*
+           * Pengingat, bukan penghalang.
+           *
+           * Menerbitkan CPAR kedua memang disengaja — akar kedua sering baru terlihat
+           * dari analisis yang pertama. Yang tidak disengaja adalah menerbitkannya dua
+           * kali ke departemen yang sama karena lupa yang pertama sudah ada, dan itu
+           * dicegah dengan menyebutkannya di sini, di layar tempat keputusannya diambil.
+           */
+          <p className="rounded-md border border-nid-border bg-secondary/40 px-3 py-2 text-sm">
+            Klaim ini sudah memiliki{" "}
+            {claim.cpars.map((entry) => `${entry.cparNo} (${entry.responsibleDept.code})`).join(", ")}
+            . CPAR baru berjalan sendiri: nomor, pengisian, verifikasi, dan pemantauannya
+            terpisah.
+          </p>
+        ) : null}
       </header>
 
       <FollowUpForm

@@ -157,7 +157,9 @@ export function claimFilterWhere(query: ClaimQuery): Prisma.ClaimWhereInput {
         { lotNo: contains },
         { qualityProblem: contains },
         { customer: { name: contains } },
-        { cpar: { cparNo: contains } },
+        // Klaim cocok bila **salah satu** CPAR-nya bernomor demikian; satu klaim dapat
+        // memiliki lebih dari satu.
+        { cpars: { some: { cparNo: contains } } },
       ],
     });
   }

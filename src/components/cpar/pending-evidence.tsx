@@ -245,7 +245,7 @@ function EvidenceRow({ row, now }: { row: EvidenceRequestRow; now: Date }) {
         file,
         (chosen) => {
           const formData = new FormData();
-          formData.set("claimId", row.claimId);
+          formData.set("cparId", row.cparId);
           formData.set("file", chosen);
 
           if (row.kind === "INITIAL_DOCUMENT") formData.set("initialDocumentId", row.targetId);
@@ -268,7 +268,7 @@ function EvidenceRow({ row, now }: { row: EvidenceRequestRow; now: Date }) {
       <div className="min-w-0 flex-1">
         <p className="break-words text-sm font-medium">{row.title}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          <Link href={`/cpar/${row.claimId}`} className="tabular text-nid-orange-700 hover:underline">
+          <Link href={`/cpar/${row.cparId}`} className="tabular text-nid-orange-700 hover:underline">
             {row.cparNo}
           </Link>
           {" · "}

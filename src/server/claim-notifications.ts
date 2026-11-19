@@ -246,17 +246,19 @@ export async function notifyClaimPublished(
 
 /** §8 #4 — CPAR terbit; departemen penanggung jawab dan anggota CFT diminta mengisinya. */
 export async function notifyCparIssued(
-  claimId: string,
+  cparId: string,
   actor: { id: string; name: string; jobTitle: string },
 ): Promise<void> {
   const cpar = await db.cpar.findUniqueOrThrow({
-    where: { claimId },
+    where: { id: cparId },
     include: {
       responsibleDept: { select: { id: true, name: true, email: true } },
       cftMembers: { include: { department: { select: { id: true, name: true, email: true } } } },
       initialDocuments: { include: { initialDocument: { select: { name: true } } } },
     },
   });
+
+  const claimId = cpar.claimId;
 
   const departmentIds = [cpar.responsibleDeptId, ...cpar.cftMembers.map((m) => m.departmentId)];
 
@@ -289,9 +291,9 @@ export async function notifyCparIssued(
 
 // ─────────────────────── Modul 3: rantai verifikasi ───────────────────────
 
-async function loadCparContext(claimId: string) {
+async function loadCparContext(cparId: string) {
   return db.cpar.findUniqueOrThrow({
-    where: { claimId },
+    where: { id: cparId },
     include: {
       responsibleDept: { select: { id: true, name: true } },
       sections: { select: { key: true, filledBy: { select: { email: true } } } },
@@ -331,10 +333,11 @@ function capacityLabels(): readonly string[] {
 
 /** §8 #7 — CPAR dikirim final; kapasitas verifier wajib diminta memutuskan. */
 export async function notifyCparUnderVerification(
-  claimId: string,
+  cparId: string,
   actor: { id: string; name: string; jobTitle: string },
 ): Promise<void> {
-  const cpar = await loadCparContext(claimId);
+  const cpar = await loadCparContext(cparId);
+  const claimId = cpar.claimId;
 
   const payload = await buildPayload(claimId, actor, {
     cparNo: cpar.cparNo,
@@ -362,12 +365,13 @@ export async function notifyCparUnderVerification(
  * dedupe harus menandai keputusan itu, dan satu REVISE per siklus hanya mungkin sekali.
  */
 export async function notifyCparRevisionRequested(
-  claimId: string,
+  cparId: string,
   actor: { id: string; name: string; jobTitle: string },
   cycle: number,
   comment: string | null,
 ): Promise<void> {
-  const cpar = await loadCparContext(claimId);
+  const cpar = await loadCparContext(cparId);
+  const claimId = cpar.claimId;
 
   const targeted = await db.cparSection.findMany({
     where: { cparId: cpar.id, revisionNote: { not: null } },
@@ -406,12 +410,13 @@ export async function notifyCparRevisionRequested(
 
 /** §8 #10 — CPAR disetujui seluruh verifier; seluruh user portal diberi tahu. */
 export async function notifyCparApproved(
-  claimId: string,
+  cparId: string,
   actor: { id: string; name: string; jobTitle: string },
   cycle: number,
 ): Promise<void> {
-  const cpar = await loadCparContext(claimId);
-  const document = await generateCparDocument(claimId, actor.id);
+  const cpar = await loadCparContext(cparId);
+  const claimId = cpar.claimId;
+  const document = await generateCparDocument(cparId, actor.id);
 
   const payload = await buildPayload(claimId, actor, {
     cparNo: cpar.cparNo,
@@ -439,9 +444,9 @@ export async function notifyCparApproved(
  * dan QA. Dipakai oleh notifikasi yang harus sampai ke semua orang yang pernah
  * menyentuh countermeasure-nya, bukan hanya ke pengisi terakhir.
  */
-async function cparParticipants(claimId: string): Promise<readonly string[]> {
+async function cparParticipants(cparId: string): Promise<readonly string[]> {
   const cpar = await db.cpar.findUniqueOrThrow({
-    where: { claimId },
+    where: { id: cparId },
     select: {
       responsibleDeptId: true,
       cftMembers: { select: { departmentId: true } },
@@ -474,7 +479,7 @@ async function cparParticipants(claimId: string): Promise<readonly string[]> {
  * tersimpan, dan yang hilang hanya kabarnya.
  */
 export async function notifyEvidenceRequested(
-  claimId: string,
+  cparId: string,
   actor: { id: string; name: string; jobTitle: string },
   request: {
     readonly picId: string;
@@ -493,9 +498,13 @@ export async function notifyEvidenceRequested(
   if (!pic?.email) return;
 
   const cpar = await db.cpar.findUnique({
-    where: { claimId },
+    where: { id: cparId },
     include: { responsibleDept: { select: { name: true } } },
   });
+
+  if (!cpar) return;
+
+  const claimId = cpar.claimId;
 
   const payload = await buildPayload(claimId, actor, {
     cparNo: cpar?.cparNo ?? null,
@@ -518,13 +527,15 @@ export async function notifyEvidenceRequested(
 
 /** §8 #11 — periode pemantauan dibuka; departemen pelaksana diminta mengumpulkan bukti. */
 export async function notifyMonitoringStarted(
-  claimId: string,
+  cparId: string,
   actor: { id: string; name: string; jobTitle: string },
 ): Promise<void> {
   const cpar = await db.cpar.findUniqueOrThrow({
-    where: { claimId },
+    where: { id: cparId },
     include: { responsibleDept: { select: { id: true, name: true } } },
   });
+
+  const claimId = cpar.claimId;
 
   const periods = await db.monitoringPeriod.findMany({
     where: { claimId, cycle: cpar.cycle },
@@ -557,16 +568,18 @@ export async function notifyMonitoringStarted(
 
 /** §8 #13 — satu periode gagal; seluruh pihak CPAR perlu tahu countermeasure dibuka lagi. */
 export async function notifyCapaNotEffective(
-  claimId: string,
+  cparId: string,
   actor: { id: string; name: string; jobTitle: string },
   periodId: string,
   periodNo: number,
   note: string | null,
 ): Promise<void> {
   const cpar = await db.cpar.findUniqueOrThrow({
-    where: { claimId },
+    where: { id: cparId },
     include: { responsibleDept: { select: { name: true } } },
   });
+
+  const claimId = cpar.claimId;
 
   const payload = await buildPayload(claimId, actor, {
     cparNo: cpar.cparNo,
@@ -590,14 +603,16 @@ export async function notifyCapaNotEffective(
 
 /** §8 #14 — seluruh periode efektif dan laporan tersimpan; klaim ditutup. */
 export async function notifyMonitoringFinished(
-  claimId: string,
+  cparId: string,
   actor: { id: string; name: string; jobTitle: string },
   cycle: number,
 ): Promise<void> {
   const cpar = await db.cpar.findUniqueOrThrow({
-    where: { claimId },
+    where: { id: cparId },
     include: { responsibleDept: { select: { name: true } } },
   });
+
+  const claimId = cpar.claimId;
 
   const report = await db.improvementReport.findFirst({
     where: { claimId, cycle },
@@ -611,7 +626,7 @@ export async function notifyMonitoringFinished(
     select: { periodNo: true, filledAt: true },
   });
 
-  const documents = await generateClosingDocuments(claimId, actor.id);
+  const documents = await generateClosingDocuments(cparId, actor.id);
 
   const payload = await buildPayload(claimId, actor, {
     cparNo: cpar.cparNo,
@@ -833,7 +848,13 @@ export async function runMonitoringWeeklyReminders(now = new Date()): Promise<nu
       dueDate: true,
       cycle: true,
       claimId: true,
-      claim: { select: { cpar: { select: { cparNo: true, responsibleDeptId: true, responsibleDept: { select: { name: true } } } } } },
+      cpar: {
+        select: {
+          cparNo: true,
+          responsibleDeptId: true,
+          responsibleDept: { select: { name: true } },
+        },
+      },
     },
   });
 
@@ -841,8 +862,7 @@ export async function runMonitoringWeeklyReminders(now = new Date()): Promise<nu
   let queued = 0;
 
   for (const period of periods) {
-    const cpar = period.claim.cpar;
-    if (!cpar) continue;
+    const cpar = period.cpar;
 
     const payload = await buildPayload(period.claimId, SCHEDULER, {
       cparNo: cpar.cparNo,

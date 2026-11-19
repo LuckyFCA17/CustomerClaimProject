@@ -236,7 +236,7 @@ export default async function CparDashboardPage({
               {cpars.map((cpar) => (
                   <li key={cpar.id}>
                     <Link
-                      href={`/cpar/${cpar.claim.id}`}
+                      href={`/cpar/${cpar.id}`}
                       className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-3.5 transition-colors hover:bg-secondary"
                     >
                       <div className="min-w-0 flex-1">

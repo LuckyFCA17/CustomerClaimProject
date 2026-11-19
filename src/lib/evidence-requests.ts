@@ -22,6 +22,8 @@ export interface EvidenceRequestRow {
   readonly key: string;
   readonly kind: EvidenceRequestKind;
   readonly claimId: string;
+  /** CPAR yang memintanya — tujuan tautan baris dan kunci unggahannya. */
+  readonly cparId: string;
   readonly claimNo: string;
   readonly cparNo: string;
   /** Bagian CPAR yang memintanya — dipakai sebagai keterangan baris. */

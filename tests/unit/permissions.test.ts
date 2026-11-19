@@ -36,7 +36,7 @@ function claim(status: ClaimStatus, overrides: Partial<ClaimContext> = {}): Clai
   return {
     status,
     createdById: qa.id,
-    cpar: null,
+    cpars: [],
     ...overrides,
   };
 }
@@ -44,7 +44,7 @@ function claim(status: ClaimStatus, overrides: Partial<ClaimContext> = {}): Clai
 /** Klaim yang CPAR-nya ditugaskan ke Production dengan Engineering sebagai anggota CFT. */
 function cparClaim(status: ClaimStatus, overrides: Partial<ClaimContext> = {}): ClaimContext {
   return claim(status, {
-    cpar: { responsibleDeptId: PRODUCTION, cftMemberDeptIds: [ENGINEERING] },
+    cpars: [{ responsibleDeptId: PRODUCTION, cftMemberDeptIds: [ENGINEERING] }],
     ...overrides,
   });
 }
@@ -218,11 +218,31 @@ describe("Modul 1 — informasi klaim", () => {
     });
   });
 
-  it("membuka Action Button A hanya pada klaim yang sudah terbit", () => {
+  it("membuka Action Button A pada klaim yang sudah terbit, tidak sebelumnya", () => {
     expect(can(qa, "claim.followUp", claim("PUBLISHED"))).toBe(true);
     expect(can(qa, "claim.ignore", claim("PUBLISHED"))).toBe(true);
     expect(can(qa, "claim.followUp", claim("PENDING_QA_HEAD_REVIEW"))).toBe(false);
-    expect(can(qa, "claim.followUp", claim("CPAR_ISSUED"))).toBe(false);
+    expect(can(qa, "claim.followUp", claim("DRAFT"))).toBe(false);
+  });
+
+  it("tetap membuka penerbitan CPAR setelah CPAR pertama berjalan", () => {
+    // Inilah yang membuat CPAR kedua mungkin: akar kedua sering baru terlihat dari
+    // analisis CPAR pertama, dan akar itu menuntut departemen yang berbeda.
+    for (const status of [
+      "CPAR_ISSUED",
+      "CPAR_IN_PROGRESS",
+      "CPAR_UNDER_VERIFICATION",
+      "CPAR_REVISION",
+      "CPAR_APPROVED",
+      "CAPA_MONITORING",
+      "VERIFIED_CLOSED",
+    ] as ClaimStatus[]) {
+      expect(can(qa, "claim.followUp", cparClaim(status)), status).toBe(true);
+    }
+
+    // Kecuali klaim yang diputuskan tidak ditindaklanjuti: menerbitkan CPAR di sana
+    // berarti membatalkan keputusan itu diam-diam.
+    expect(can(qa, "claim.followUp", claim("IGNORED"))).toBe(false);
   });
 });
 
@@ -324,11 +344,13 @@ describe("Modul 3 — pengisian dan verifikasi CPAR", () => {
   it("memberi hak verifikasi kepada orang yang ditunjuk, walau tidak memegang role verifier", () => {
     const ditunjuk: Actor = { id: "u-qa-lead", roles: ["USER_DEPT"], departmentId: PRODUCTION };
     const target = cparClaim("CPAR_UNDER_VERIFICATION", {
-      cpar: {
-        responsibleDeptId: PRODUCTION,
-        cftMemberDeptIds: [ENGINEERING],
-        userHeadVerifierId: ditunjuk.id,
-      },
+      cpars: [
+          {
+            responsibleDeptId: PRODUCTION,
+            cftMemberDeptIds: [ENGINEERING],
+            userHeadVerifierId: ditunjuk.id,
+          },
+        ],
     });
 
     expect(can(ditunjuk, "cpar.verify", target)).toBe(true);
@@ -341,11 +363,13 @@ describe("Modul 3 — pengisian dan verifikasi CPAR", () => {
 
   it("tidak menjadikan orang lain verifier hanya karena ada penunjukan pada CPAR itu", () => {
     const target = cparClaim("CPAR_UNDER_VERIFICATION", {
-      cpar: {
-        responsibleDeptId: PRODUCTION,
-        cftMemberDeptIds: [ENGINEERING],
-        userHeadVerifierId: "u-qa-lead",
-      },
+      cpars: [
+          {
+            responsibleDeptId: PRODUCTION,
+            cftMemberDeptIds: [ENGINEERING],
+            userHeadVerifierId: "u-qa-lead",
+          },
+        ],
     });
 
     expect(can(prodStaff, "cpar.verify", target)).toBe(false);
@@ -383,15 +407,34 @@ describe("Modul 4 — monitoring", () => {
     expect(can(purchasingStaff, "monitoring.evidence.upload", target)).toBe(false);
   });
 
-  it("menutup seluruh aksi tulis pada klaim yang sudah terminal", () => {
+  it("menutup aksi pengisian dan penilaian pada klaim yang sudah terminal", () => {
     for (const status of ["IGNORED", "VERIFIED_CLOSED"] as const) {
       const target = cparClaim(status);
 
-      expect(can(qa, "claim.followUp", target), status).toBe(false);
       expect(can(qa, "cpar.submitFinal", target), status).toBe(false);
       expect(can(qa, "monitoring.submitReport", target), status).toBe(false);
       expect(can(factoryMgr, "monitoring.setEffectiveness", target), status).toBe(false);
     }
+  });
+
+  it("menyisakan dua pintu pada klaim yang sudah ditutup, dan menutup keduanya pada IGNORED", () => {
+    /*
+     * Keduanya sengaja, dan keduanya ditambahkan belakangan:
+     *
+     *   · `claim.amend` — koreksi Claim Information sering baru datang setelah klaim
+     *     ditutup, dan memutar ulang rantai verifikasi demi satu nomor lot membuat orang
+     *     memilih membiarkan datanya salah;
+     *   · `claim.followUp` — temuan berulang pada part yang sama kadang baru terlihat
+     *     setelah penutupan, dan CPAR baru lebih jujur daripada membuka kembali klaim
+     *     yang pemantauannya sudah dinyatakan efektif.
+     *
+     * IGNORED tidak mendapat keduanya: klaim itu tidak pernah masuk rantai CPAR.
+     */
+    expect(can(qa, "claim.amend", cparClaim("VERIFIED_CLOSED"))).toBe(true);
+    expect(can(qa, "claim.followUp", cparClaim("VERIFIED_CLOSED"))).toBe(true);
+
+    expect(can(qa, "claim.amend", cparClaim("IGNORED"))).toBe(false);
+    expect(can(qa, "claim.followUp", cparClaim("IGNORED"))).toBe(false);
   });
 });
 
@@ -426,10 +469,12 @@ describe("cakupan visibilitas (kriteria penerimaan #4)", () => {
     expect(visibleClaimsWhere(qa)).toEqual({});
     expect(visibleClaimsWhere(admin)).toEqual({});
 
+    // `some`, bukan kecocokan satu CPAR: klaim yang menerbitkan dua CPAR ke dua
+    // departemen terlihat oleh keduanya, masing-masing lewat CPAR-nya sendiri.
     expect(visibleClaimsWhere(prodStaff)).toEqual({
       OR: [
-        { cpar: { responsibleDeptId: PRODUCTION } },
-        { cpar: { cftMembers: { some: { departmentId: PRODUCTION } } } },
+        { cpars: { some: { responsibleDeptId: PRODUCTION } } },
+        { cpars: { some: { cftMembers: { some: { departmentId: PRODUCTION } } } } },
         { status: { in: ["PUBLISHED", "IGNORED"] } },
       ],
     });
@@ -493,7 +538,7 @@ describe("claim.discard", () => {
   const draft = (createdById: string) => ({
     status: "DRAFT" as const,
     createdById,
-    cpar: null,
+    cpars: [],
   });
 
   const qaStaff = { id: "u-qa", roles: ["QA"] as const, departmentId: "d-qa" };
@@ -519,7 +564,7 @@ describe("claim.discard", () => {
     "VERIFIED_CLOSED",
     "IGNORED",
   ] as const)("menolak pembuangan pada status %s", (status) => {
-    expect(can({ ...qaStaff, roles: ["QA"] }, "claim.discard", { status, createdById: "u-qa", cpar: null })).toBe(
+    expect(can({ ...qaStaff, roles: ["QA"] }, "claim.discard", { status, createdById: "u-qa", cpars: [] })).toBe(
       false,
     );
   });

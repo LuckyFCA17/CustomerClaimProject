@@ -24,12 +24,64 @@ export interface Actor {
 export interface ClaimContext {
   readonly status: ClaimStatus;
   readonly createdById: string;
-  readonly cpar: {
+  /**
+   * Seluruh CPAR klaim ini — satu klaim dapat menerbitkan lebih dari satu.
+   *
+   * Daftar, bukan satu nilai: cakupan DEPT berlaku bila **salah satu** CPAR menyentuh
+   * departemen pelakunya. Departemen yang menanggung CPAR kedua berhak atas klaimnya
+   * sama penuhnya dengan yang menanggung CPAR pertama.
+   */
+  readonly cpars: readonly {
+    readonly id?: string;
     readonly responsibleDeptId: string;
     readonly cftMemberDeptIds: readonly string[];
     /** Orang yang ditunjuk mengisi kapasitas User Dept. Head; null bila belum ditunjuk. */
     readonly userHeadVerifierId?: string | null;
-  } | null;
+  }[];
+}
+
+/**
+ * Bentuk `select` Prisma yang memuat tepat apa yang dibutuhkan `ClaimContext`.
+ *
+ * Dikumpulkan di sini supaya kedelapan pemanggil `canViewClaim`/`can` tidak menuliskan
+ * daftar kolomnya masing-masing. Dulu memang begitu, dan ketika CPAR berubah dari satu
+ * menjadi banyak, tiap salinan harus ditemukan satu per satu — persis jenis perubahan
+ * yang paling mudah terlewat di satu tempat tanpa ada yang gagal kompilasi.
+ */
+export const CLAIM_CONTEXT_SELECT = {
+  status: true,
+  createdById: true,
+  cpars: {
+    select: {
+      id: true,
+      responsibleDeptId: true,
+      userHeadVerifierId: true,
+      cftMembers: { select: { departmentId: true } },
+    },
+  },
+} as const;
+
+/** Baris klaim hasil `CLAIM_CONTEXT_SELECT` → `ClaimContext`. */
+export function toClaimContext(claim: {
+  status: ClaimStatus;
+  createdById: string;
+  cpars: readonly {
+    id: string;
+    responsibleDeptId: string;
+    userHeadVerifierId?: string | null;
+    cftMembers: readonly { departmentId: string }[];
+  }[];
+}): ClaimContext {
+  return {
+    status: claim.status,
+    createdById: claim.createdById,
+    cpars: claim.cpars.map((cpar) => ({
+      id: cpar.id,
+      responsibleDeptId: cpar.responsibleDeptId,
+      userHeadVerifierId: cpar.userHeadVerifierId ?? null,
+      cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
+    })),
+  };
 }
 
 /**
@@ -226,9 +278,36 @@ export const PERMISSION_MATRIX: Record<Action, ActionRule> = {
     roles: { QA_HEAD: "ALL" },
     statuses: ["PENDING_QA_HEAD_REVIEW"],
   },
+  /**
+   * Menerbitkan CPAR — yang pertama, maupun yang berikutnya.
+   *
+   * Statusnya mencakup seluruh rantai CPAR, bukan hanya `PUBLISHED`, karena kebutuhan
+   * menerbitkan CPAR kedua justru muncul **setelah** yang pertama berjalan: analisis
+   * CPAR Produksi menunjukkan part-nya juga lolos inspeksi di Warehouse, dan akar kedua
+   * itu menuntut CPAR-nya sendiri ke departemen yang berbeda. Memaksanya masuk CPAR
+   * pertama berarti satu departemen menandatangani analisis departemen lain.
+   *
+   * `VERIFIED_CLOSED` ikut terbuka: temuan berulang pada part yang sama kadang baru
+   * terlihat setelah klaimnya ditutup, dan menerbitkan CPAR baru di sana lebih jujur
+   * daripada membuka kembali klaim yang pemantauannya sudah dinyatakan efektif —
+   * klaimnya otomatis kembali berjalan karena statusnya turunan dari CPAR-nya.
+   *
+   * `IGNORED` tidak termasuk: klaim yang diputuskan tidak ditindaklanjuti tidak memiliki
+   * CPAR sama sekali, dan menerbitkan satu di sana berarti membatalkan keputusan itu
+   * diam-diam alih-alih mencabutnya terang-terangan.
+   */
   "claim.followUp": {
     roles: { QA: "ALL", QA_HEAD: "ALL" },
-    statuses: ["PUBLISHED"],
+    statuses: [
+      "PUBLISHED",
+      "CPAR_ISSUED",
+      "CPAR_IN_PROGRESS",
+      "CPAR_UNDER_VERIFICATION",
+      "CPAR_REVISION",
+      "CPAR_APPROVED",
+      "CAPA_MONITORING",
+      "VERIFIED_CLOSED",
+    ],
   },
   "claim.ignore": {
     roles: { QA: "ALL", QA_HEAD: "ALL" },
@@ -392,11 +471,12 @@ export function requiredVerifierRoles(): readonly RoleCode[] {
 // ─────────────────────────── Evaluasi ───────────────────────────
 
 function isDeptInvolved(actor: Actor, claim: ClaimContext): boolean {
-  if (!actor.departmentId || !claim.cpar) return false;
+  const departmentId = actor.departmentId;
+  if (!departmentId) return false;
 
-  return (
-    claim.cpar.responsibleDeptId === actor.departmentId ||
-    claim.cpar.cftMemberDeptIds.includes(actor.departmentId)
+  return claim.cpars.some(
+    (cpar) =>
+      cpar.responsibleDeptId === departmentId || cpar.cftMemberDeptIds.includes(departmentId),
   );
 }
 
@@ -441,7 +521,16 @@ export function can(actor: Actor, action: Action, claim: ClaimContext | null = n
   // User Dept. Head saat CPAR diterbitkan. Penunjukan itu ada justru karena role tidak
   // selalu cukup — bila main responsible department-nya QA, tidak ada pemegang USER_HEAD
   // di sana, dan tanpa jalur ini rantai verifikasi tidak akan pernah lengkap.
-  if (action === "cpar.verify" && claim?.cpar?.userHeadVerifierId === actor.id) return true;
+  //
+  // Cukup ditunjuk pada **salah satu** CPAR klaim ini. Penunjukan berlaku per CPAR, dan
+  // yang memastikan ia hanya memverifikasi CPAR yang benar adalah aksinya sendiri, yang
+  // selalu dipanggil atas satu CPAR tertentu.
+  if (
+    action === "cpar.verify" &&
+    claim?.cpars.some((cpar) => cpar.userHeadVerifierId === actor.id)
+  ) {
+    return true;
+  }
 
   return actor.roles.some((role) => {
     const scope = rule.roles[role];
@@ -512,8 +601,11 @@ export function visibleClaimsWhere(actor: Actor): Prisma.ClaimWhereInput {
 
   return {
     OR: [
-      { cpar: { responsibleDeptId: actor.departmentId } },
-      { cpar: { cftMembers: { some: { departmentId: actor.departmentId } } } },
+      // Cukup satu CPAR yang menyentuh departemennya. Satu klaim dapat menerbitkan
+      // beberapa CPAR ke departemen yang berbeda-beda, dan tiap departemen berhak
+      // melihat klaimnya begitu salah satunya menjadi tanggungannya.
+      { cpars: { some: { responsibleDeptId: actor.departmentId } } },
+      { cpars: { some: { cftMembers: { some: { departmentId: actor.departmentId } } } } },
       { status: { in: [...BROADCAST_STATUSES] } },
     ],
   };

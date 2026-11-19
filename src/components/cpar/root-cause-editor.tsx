@@ -51,7 +51,7 @@ function toDraft(factor: RootCauseFactor): DraftFactor {
  * pandang tanpa pernah bisa berbeda dari tabelnya.
  */
 export function RootCauseEditor({
-  claimId,
+  cparId,
   sectionKey,
   value,
   canFill,
@@ -59,7 +59,7 @@ export function RootCauseEditor({
   defaultProblem,
   legacyText,
 }: {
-  claimId: string;
+  cparId: string;
   sectionKey: Extract<CparSectionKey, "ROOT_CAUSE_OCCURRENCE" | "ROOT_CAUSE_OUTFLOW">;
   value: RootCauseInput;
   canFill: boolean;
@@ -87,7 +87,7 @@ export function RootCauseEditor({
     setSaving(true);
 
     try {
-      const result = await saveCparRootCause(claimId, {
+      const result = await saveCparRootCause(cparId, {
         sectionKey,
         problem: problem || defaultProblem,
         conclusion,

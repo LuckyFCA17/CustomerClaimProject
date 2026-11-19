@@ -83,17 +83,24 @@ export async function loadEvidenceRequests(actor: Actor): Promise<EvidenceReques
     const context: ClaimContext = {
       status: cpar.claim.status,
       createdById: cpar.claim.createdById,
-      cpar: {
-        responsibleDeptId: cpar.responsibleDeptId,
-        cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
-      },
+      // Satu CPAR per baris: izin unggah dinilai atas CPAR yang barisnya menunjuk,
+      // bukan atas gabungan seluruh CPAR klaimnya.
+      cpars: [
+        {
+          id: cpar.id,
+          responsibleDeptId: cpar.responsibleDeptId,
+          cftMemberDeptIds: cpar.cftMembers.map((member) => member.departmentId),
+        },
+      ],
     };
 
     const allowed = can(actor, "cpar.evidence.upload", context);
     const claimId = cpar.claim.id;
+    const cparId = cpar.id;
 
     for (const request of cpar.initialDocuments) {
       rows.push({
+        cparId,
         key: `${claimId}:doc:${request.initialDocumentId}`,
         kind: "INITIAL_DOCUMENT",
         claimId,
@@ -118,6 +125,7 @@ export async function loadEvidenceRequests(actor: Actor): Promise<EvidenceReques
         if (!item.id) continue;
 
         rows.push({
+          cparId,
           key: `${claimId}:item:${item.id}`,
           kind: "ACTION_ITEM",
           claimId,
@@ -150,10 +158,11 @@ export async function loadEvidenceRequests(actor: Actor): Promise<EvidenceReques
  * yang dianggap evidence" tidak pernah bercabang; kalau satu sumber bertambah, kedua
  * pemakainya ikut berubah.
  */
-export async function loadCparEvidenceSlots(claimId: string): Promise<EvidenceSlot[]> {
+export async function loadCparEvidenceSlots(cparId: string): Promise<EvidenceSlot[]> {
   const cpar = await db.cpar.findUnique({
-    where: { claimId },
+    where: { id: cparId },
     select: {
+      claimId: true,
       initialDocuments: {
         select: { initialDocumentId: true, initialDocument: { select: { name: true } } },
       },
@@ -184,7 +193,7 @@ export async function loadCparEvidenceSlots(claimId: string): Promise<EvidenceSl
     where: {
       entityType: { in: [INITIAL_DOCUMENT_ENTITY, ACTION_ITEM_ENTITY] },
       entityId: { in: targets },
-      claimId,
+      claimId: cpar.claimId,
     },
     _count: { _all: true },
   });
